@@ -10,11 +10,19 @@ namespace Slang {
 class DiagnosticSink;
 class ProgramSyntaxNode;
 
+enum class IncludeResult
+{
+    Error,
+    NotFound,
+    FoundIncludeFile,
+    FoundAutoImportFile,
+};
+
 // Callback interface for the preprocessor to use when looking
 // for files in `#include` directives.
 struct IncludeHandler
 {
-    virtual bool TryToFindIncludeFile(
+    virtual IncludeResult TryToFindIncludeFile(
         String const& pathToInclude,
         String const& pathIncludedFrom,
         String* outFoundPath,

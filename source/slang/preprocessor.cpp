@@ -1483,10 +1483,21 @@ static void HandleIncludeDirective(PreprocessorDirectiveContext* context)
         GetSink(context)->diagnose(pathToken.Position, Diagnostics::noIncludeHandlerSpecified);
         return;
     }
-    if (!includeHandler->TryToFindIncludeFile(path, pathIncludedFrom, &foundPath, &foundSource))
+    auto includeResult = includeHandler->TryToFindIncludeFile(path, pathIncludedFrom, &foundPath, &foundSource);
+
+    switch( includeResult )
     {
+    case IncludeResult::NotFound:
+    case IncludeResult::Error:
         GetSink(context)->diagnose(pathToken.Position, Diagnostics::includeFailed, path);
         return;
+
+    case IncludeResult::FoundIncludeFile:
+        break;
+
+    case IncludeResult::FoundAutoImportFile:
+        GetSink(context)->diagnose(pathToken.Position, Diagnostics::unimplemented, "auto-import");
+        break;
     }
 
     // Do all checking related to the end of this directive before we push a new stream,
