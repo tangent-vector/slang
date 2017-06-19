@@ -18,7 +18,13 @@ static void diagnosticCallback(
     fflush(stderr);
 }
 
-int main(int argc, char** argv)
+#ifdef _WIN32
+#define MAIN slangc_main
+#else
+#define MAIN main
+#endif
+
+int MAIN(int argc, char** argv)
 {
     // Parse any command-line options
 
@@ -89,6 +95,7 @@ int main(int argc, char** argv)
     return 0;
 }
 
+#ifdef _WIN32
 int wmain(int argc, wchar_t** argv)
 {
     // Conver the wide-character Unicode arguments to UTF-8,
@@ -105,5 +112,6 @@ int wmain(int argc, wchar_t** argv)
         argBuffers.Add(args[ii].Buffer());
     }
 
-    return main(argc, (char**) argBuffers[0]);
+    return MAIN(argc, (char**) &argBuffers[0]);
 }
+#endif
