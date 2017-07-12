@@ -166,7 +166,14 @@ SIMPLE_SYNTAX_CLASS(AccessorDecl, FunctionDeclBase)
 SIMPLE_SYNTAX_CLASS(GetterDecl, AccessorDecl)
 SIMPLE_SYNTAX_CLASS(SetterDecl, AccessorDecl)
 
-SIMPLE_SYNTAX_CLASS(FunctionSyntaxNode, FunctionDeclBase)
+// An ordinary user-defined function
+SYNTAX_CLASS(FunctionSyntaxNode, FunctionDeclBase)
+    // In cases where a function is redeclared, this will point
+    // to the first declaration that we saw, which gives us
+    // a way to anchor things.
+    FIELD_INIT(FunctionSyntaxNode*, firstDeclarationIfRedeclared, nullptr)
+    FIELD_INIT(FunctionSyntaxNode*, nextDeclarationIfRedeclared, nullptr)
+END_SYNTAX_CLASS()
 
 SIMPLE_SYNTAX_CLASS(Variable, VarDeclBase);
 

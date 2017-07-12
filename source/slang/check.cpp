@@ -1542,39 +1542,66 @@ namespace Slang
                 //
                 // They might just be redeclarations, which we would want to allow.
 
-                // First, check if the return types match.
-                // TODO(tfolye): this code won't work for generics
-                if (!funcDecl->ReturnType.Equals(prevFuncDecl->ReturnType))
+                if(!prevFuncDecl->firstDeclarationIfRedeclared)
                 {
-                    // Bad dedeclaration
-                    if (!isRewriteMode())
-                    {
-                        getSink()->diagnose(funcDecl, Diagnostics::unimplemented, "redeclaration has a different return type");
-                    }
-
-                    // Don't bother emitting other errors at this point
-                    break;
+                    // The is the first time we are seeing a redeclaration for
+                    // this conceptual function.
+                    prevFuncDecl->firstDeclarationIfRedeclared = prevFuncDecl;
                 }
 
-                // TODO(tfoley): track the fact that there is redeclaration going on,
-                // so that we can detect it and react accordingly during overload resolution
-                // (e.g., by only considering one declaration as the canonical one...)
+                // If there were an earlier matching declaration, we should have seen it already...
+                assert(prevFuncDecl->firstDeclarationIfRedeclared == prevFuncDecl);
 
-                // If both have a body, then there is trouble
-                if (funcDecl->Body && prevFuncDecl->Body)
+                funcDecl->firstDeclarationIfRedeclared = prevFuncDecl->firstDeclarationIfRedeclared;
+
+                // We need to add this function to the list...
+                FunctionSyntaxNode** link = &prevFuncDecl->firstDeclarationIfRedeclared->nextDeclarationIfRedeclared;
+                while(*link)
                 {
-                    // Redefinition
-                    if (!isRewriteMode())
+                    assert(*link != funcDecl);
+                    assert(*link != prevFuncDecl->firstDeclarationIfRedeclared);
+                    link = &(*link)->nextDeclarationIfRedeclared;
+                }
+                *link = funcDecl;
+
+                // Now we have a new declaration of the function,
+                // and we need to validate it against the earlier ones
+
+                for(auto ff = prevFuncDecl->firstDeclarationIfRedeclared; ff; ff = ff->nextDeclarationIfRedeclared)
+                {
+                    if(ff == funcDecl)
+                        continue;
+
+                    // First, check if the return types match.
+                    // TODO(tfolye): this code won't work for generics
+                    if (!funcDecl->ReturnType.Equals(ff->ReturnType))
                     {
-                        getSink()->diagnose(funcDecl, Diagnostics::unimplemented, "function redefinition");
+                        // Bad dedeclaration
+                        if (!isRewriteMode())
+                        {
+                            getSink()->diagnose(funcDecl, Diagnostics::unimplemented, "redeclaration has a different return type");
+                        }
+
+                        // Don't bother emitting other errors at this point
+                        return;
                     }
 
-                    // Don't bother emitting other errors
-                    break;
-                }
+                    // If both have a body, then there is trouble
+                    if (funcDecl->Body && ff->Body)
+                    {
+                        // Redefinition
+                        if (!isRewriteMode())
+                        {
+                            getSink()->diagnose(funcDecl, Diagnostics::unimplemented, "function redefinition");
+                        }
 
-                // TODO(tfoley): If both specific default argument expressions
-                // for the same value, then that is an error too...
+                        // Don't bother emitting other errors
+                        return;
+                    }
+
+                    // TODO(tfoley): If both specific default argument expressions
+                    // for the same value, then that is an error too...
+                }
             }
         }
 
@@ -3628,6 +3655,19 @@ namespace Slang
             OverloadResolveContext&		context)
         {
             EnsureDecl(funcDeclRef.getDecl());
+
+            // If we see an overloaded function declaration,
+            // then we only want to add it to the candidate list once,
+            // which means we need to detect whether we are looking
+            // at the first declaration.
+            if(auto funcDecl = dynamic_cast<FunctionSyntaxNode*>(funcDeclRef.getDecl()) )
+            {
+                if(funcDecl->firstDeclarationIfRedeclared)
+                {
+                    if(funcDecl != funcDecl->firstDeclarationIfRedeclared)
+                        return;
+                }
+            }
 
             OverloadCandidate candidate;
             candidate.flavor = OverloadCandidate::Flavor::Func;

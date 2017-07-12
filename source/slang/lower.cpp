@@ -1370,10 +1370,10 @@ struct LoweringVisitor
         Decl* loweredDecl,
         Decl* decl)
     {
-        registerLoweredDecl(loweredDecl, decl);
-
         loweredDecl->Position = decl->Position;
         loweredDecl->Name = decl->getNameToken();
+
+        registerLoweredDecl(loweredDecl, decl);
 
         // Deal with renaming - we shouldn't allow decls with names that are reserved words
         ensureDeclHasAValidName(loweredDecl);
@@ -2052,6 +2052,20 @@ struct LoweringVisitor
         return SourceLanguage::Unknown;
     }
 
+    SourceLanguage getSourceLanguage(Decl* decl)
+    {
+        while( decl )
+        {
+            if( auto moduleDecl = dynamic_cast<ProgramSyntaxNode*>(decl) )
+            {
+                return getSourceLanguage(moduleDecl);
+            }
+
+            decl = decl->ParentDecl;
+        }
+        return SourceLanguage::Unknown;
+    }
+
     RefPtr<VarDeclBase> visitVariable(
         Variable* decl)
     {
@@ -2092,12 +2106,49 @@ struct LoweringVisitor
     }
 
     RefPtr<FunctionSyntaxNode> visitFunctionDeclBase(
-        FunctionDeclBase*   decl)
+        FunctionDeclBase*   inDecl)
     {
+        auto decl = inDecl;
         // TODO: need to generate a name
 
+        // Is this a redeclaraed function?
+        FunctionSyntaxNode* firstDeclIfRedeclared = nullptr;
+        if( auto funcDecl = dynamic_cast<FunctionSyntaxNode*>(decl) )
+        {
+            firstDeclIfRedeclared = funcDecl->firstDeclarationIfRedeclared;
+        }
+
+        // Are we outputting an imported, redeclared function?
+        if(firstDeclIfRedeclared)
+        {
+            if( getSourceLanguage(firstDeclIfRedeclared) == SourceLanguage::Slang )
+            {
+                // If we are being to lower anything other than the first declaration,
+                // it probably means something went wrong, but we can try to be
+                // robust and just output a reference to the first.
+                if(firstDeclIfRedeclared != decl)
+                {
+                    return translateDeclRef(firstDeclIfRedeclared).As<FunctionSyntaxNode>();
+                }
+
+                // Now the tricky bit is that we really ought to output the
+                // declaration with a body (and then things get even worse with
+                // default parameter values...)
+                for( auto ff = firstDeclIfRedeclared; ff; ff = ff->nextDeclarationIfRedeclared )
+                {
+                    if( ff->Body )
+                    {
+                        // Take the redeclaration that actually gave a body definition,
+                        // and use that.
+                        decl = ff;
+                        break;
+                    }
+                }
+            }
+        }
+
         RefPtr<FunctionSyntaxNode> loweredDecl = new FunctionSyntaxNode();
-        lowerDeclCommon(loweredDecl, decl);
+        lowerDeclCommon(loweredDecl, inDecl);
 
         // TODO: push scope for parent decl here...
         LoweringVisitor subVisitor = *this;
