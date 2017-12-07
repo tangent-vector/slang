@@ -4747,4 +4747,467 @@ LoweredEntryPoint lowerEntryPoint(
 
     return sharedContext.result;
 }
+
+struct FindIRDeclUsedByASTVisitor
+    : ExprVisitor<FindIRDeclUsedByASTVisitor, void>
+    , StmtVisitor<FindIRDeclUsedByASTVisitor, void>
+    , DeclVisitor<FindIRDeclUsedByASTVisitor, void>
+    , ValVisitor<FindIRDeclUsedByASTVisitor, void, void>
+
+{
+    CompileRequest*         compileRequest;
+    IRSpecializationState*  irSpecializationState;
+    ModuleDecl*             mainModuleDecl;
+
+    List<DeclBase*>         workList;
+    HashSet<DeclBase*>      addedDecls;
+
+    void walkType(Type* type)
+    {
+        if(!type) return;
+
+        TypeVisitor::dispatch(type);
+    }
+
+    void walkVal(Val* val)
+    {
+        if(!val) return;
+
+        ValVisitor::dispatch(val);
+    }
+
+    void walkExpr(Expr* expr)
+    {
+        if(!expr) return;
+
+        ExprVisitor::dispatch(expr);
+    }
+
+    void walkStmt(Stmt* stmt)
+    {
+        if(!stmt) return;
+
+        StmtVisitor::dispatch(stmt);
+    }
+
+    void walkDeclRef(DeclRef<Decl> const& declRef)
+    {
+        Decl* decl = declRef.getDecl();
+        if (!decl) return;
+
+        // If any parent of the declaration was in the stdlib, or
+        // is registered as a builtin, then skip it.
+        for (auto pp = decl; pp; pp = pp->ParentDecl)
+        {
+            if (pp->HasModifier<FromStdLibModifier>())
+                return;
+
+            if (pp->HasModifier<BuiltinModifier>())
+                return;
+        }
+
+        // If we are using the IR, and the declaration comes from
+        // an imported module (rather than the "rewrite-mode" module
+        // being translated), then we need to ensure that it gets lowered
+        // to IR instead.
+        if (compileRequest->compileFlags & SLANG_COMPILE_FLAG_USE_IR)
+        {
+            auto parentModule = findModuleForDecl(decl);
+            if (parentModule && (parentModule != mainModuleDecl))
+            {
+                // Ensure that the IR code for the given declaration
+                // gets included in the output IR module, and *also*
+                // that we generate a suitable specialization of it
+                // if there are any substitutions in effect.
+
+                getSpecializedGlobalValueForDeclRef(
+                    irSpecializationState,
+                    declRef);
+
+                // TODO: we probably need to track this value...
+
+                return;
+            }
+        }
+
+        // If none of the above triggered, then we seemingly have
+        // a declaration from the current module, and we should
+        // add it to our work list so we can walk it too.
+        addDecl(decl);
+    }
+
+    // Vals
+
+    void visitIRProxyVal(IRProxyVal*)
+    {}
+
+    void visitConstantIntVal(ConstantIntVal*)
+    {}
+
+    void visitGenericParamIntVal(GenericParamIntVal* val)
+    {
+        walkDeclRef(val->declRef);
+    }
+
+    void visitWitness(Witness*)
+    {}
+
+    // Types
+
+    void visitOverloadGroupType(OverloadGroupType*)
+    {}
+
+    void visitInitializerListType(InitializerListType*)
+    {}
+
+    void visitErrorType(ErrorType*)
+    {}
+
+    void visitIRBasicBlockType(IRBasicBlockType*)
+    {}
+
+    void visitDeclRefType(DeclRefType* type)
+    {
+        walkDeclRef(type->declRef);
+    }
+
+    void visitGenericDeclRefType(GenericDeclRefType* type)
+    {
+        walkDeclRef(type->declRef);
+    }
+
+    void visitNamedExpressionType(NamedExpressionType* type)
+    {
+        walkDeclRef(type->declRef);
+    }
+
+    void visitFuncType(FuncType* type)
+    {
+        for( auto p : type->paramTypes )
+        {
+            walkType(p);
+        }
+        walkType(type->resultType);
+    }
+
+    void visitTypeType(TypeType* type)
+    {
+        walkType(type->type);
+    }
+
+    void visitGroupSharedType(GroupSharedType* type)
+    {
+        walkType(type->valueType);
+    }
+
+    void visitArrayExpressionType(ArrayExpressionType* type)
+    {
+        walkType(type->baseType);
+        walkVal(type->ArrayLength);
+    }
+
+    // Exprs
+
+    void visitVarExpr(VarExpr* expr)
+    {
+        walkDeclRef(expr->declRef);
+    }
+
+    void visitMemberExpr(MemberExpr* expr)
+    {
+        walkExpr(expr->BaseExpression);
+        walkDeclRef(expr->declRef);
+    }
+
+    void visitStaticMemberExpr(StaticMemberExpr* expr)
+    {
+        walkExpr(expr->BaseExpression);
+        walkDeclRef(expr->declRef);
+    }
+
+    void visitOverloadedExpr(OverloadedExpr* expr)
+    {
+        walkExpr(expr->base);
+
+        // TODO: need to walk the lookup result too
+    }
+
+    void visitConstantExpr(ConstantExpr*)
+    {}
+
+    void visitInitializerListExpr(InitializerListExpr* expr)
+    {
+        for(auto a : expr->args)
+            walkExpr(a);
+    }
+
+    void visitAppExprBase(AppExprBase* expr)
+    {
+        walkExpr(expr->FunctionExpr);
+        for(auto a : expr->Arguments)
+            walkExpr(a);
+    }
+
+    void visitAggTypeCtorExpr(AggTypeCtorExpr* expr)
+    {
+        walkType(expr->base);
+        for(auto a : expr->Arguments)
+            walkExpr(a);
+    }
+
+    void visitSharedTypeExpr(SharedTypeExpr* expr)
+    {
+        walkType(expr->base);
+    }
+
+    void visitAssignExpr(AssignExpr* expr)
+    {
+        walkExpr(expr->left);
+        walkExpr(expr->right);
+    }
+
+    void visitIndexExpr(IndexExpr* expr)
+    {
+        walkExpr(expr->BaseExpression);
+        walkExpr(expr->IndexExpression);
+    }
+
+    void visitSwizzleExpr(SwizzleExpr* expr)
+    {
+        walkExpr(expr->base);
+    }
+
+    void visitDerefExpr(DerefExpr* expr)
+    {
+        walkExpr(expr->base);
+    }
+
+    void visitParenExpr(ParenExpr* expr)
+    {
+        walkExpr(expr->base);
+    }
+
+    void visitThisExpr(ThisExpr*)
+    {}
+
+    // Stmts
+
+    void visitSeqStmt(SeqStmt* stmt)
+    {
+        for( auto s : stmt->stmts )
+        {
+            walkStmt(s);
+        }
+    }
+
+    void visitBlockStmt(BlockStmt* stmt)
+    {
+        walkStmt(stmt->body);
+    }
+
+    void visitUnparsedStmt(UnparsedStmt*)
+    {}
+
+    void visitEmptyStmt(EmptyStmt*)
+    {}
+
+    void visitDiscardStmt(DiscardStmt*)
+    {}
+
+    void visitDeclStmt(DeclStmt* stmt)
+    {
+        addDecl(stmt->decl);
+    }
+
+    void visitIfStmt(IfStmt* stmt)
+    {
+        walkExpr(stmt->Predicate);
+        walkStmt(stmt->PositiveStatement);
+        walkStmt(stmt->NegativeStatement);
+    }
+
+    void visitSwitchStmt(SwitchStmt* stmt)
+    {
+        walkExpr(stmt->condition);
+        walkStmt(stmt->body);
+    }
+
+    void visitCaseStmt(CaseStmt* stmt)
+    {
+        walkExpr(stmt->expr);
+    }
+
+    void visitDefaultStmt(DefaultStmt*)
+    {}
+
+    void visitForStmt(ForStmt* stmt)
+    {
+        walkStmt(stmt->InitialStatement);
+        walkExpr(stmt->SideEffectExpression);
+        walkExpr(stmt->PredicateExpression);
+        walkStmt(stmt->Statement);
+    }
+
+    void visitWhileStmt(WhileStmt* stmt)
+    {
+        walkExpr(stmt->Predicate);
+        walkStmt(stmt->Statement);
+    }
+
+    void visitDoWhileStmt(DoWhileStmt* stmt)
+    {
+        walkExpr(stmt->Predicate);
+        walkStmt(stmt->Statement);
+    }
+
+    void visitCompileTimeForStmt(CompileTimeForStmt* stmt)
+    {
+        addDecl(stmt->varDecl);
+        walkExpr(stmt->rangeBeginExpr);
+        walkExpr(stmt->rangeEndExpr);
+        walkStmt(stmt->body);
+    }
+
+    void visitReturnStmt(ReturnStmt* stmt)
+    {
+        walkExpr(stmt->Expression);
+    }
+
+    void visitExpressionStmt(ExpressionStmt* stmt)
+    {
+        walkExpr(stmt->Expression);
+    }
+
+    void visitJumpStmt(JumpStmt*)
+    {}
+
+    // Decls
+
+    void visitDeclGroup(DeclGroup* declGroup)
+    {
+        for( auto dd : declGroup->decls )
+        {
+            addDecl(dd);
+        }
+    }
+
+    void visitContainerDeclCommon(ContainerDecl* decl)
+    {
+        for( auto mm : decl->Members )
+        {
+            addDecl(mm);
+        }
+    }
+
+    void visitContainerDecl(ContainerDecl* decl)
+    {
+        visitContainerDeclCommon(decl);
+    }
+
+    void visitVarDeclBase(VarDeclBase* decl)
+    {
+        walkType(decl->type);
+        walkExpr(decl->initExpr);
+    }
+
+    void visitAggTypeDeclBase(AggTypeDeclBase* decl)
+    {
+        visitContainerDeclCommon(decl);
+    }
+
+    void visitInheritanceDecl(InheritanceDecl* decl)
+    {
+        walkType(decl->base);
+    }
+
+    void visitTypeDefDecl(TypeDefDecl* decl)
+    {
+        walkType(decl->type);
+    }
+
+    void visitCallableDeclCommon(CallableDecl* decl)
+    {
+        visitContainerDeclCommon(decl);
+        walkType(decl->ReturnType);
+    }
+
+    void visitCallableDecl(CallableDecl* decl)
+    {
+        visitCallableDeclCommon(decl);
+    }
+
+    void visitFunctionDeclBase(FunctionDeclBase* decl)
+    {
+        visitCallableDeclCommon(decl);
+        walkStmt(decl->Body);
+    }
+
+    void visitImportDecl(ImportDecl*)
+    {}
+
+    void visitGenericTypeParamDecl(GenericTypeParamDecl*)
+    {}
+
+    void visitGenericTypeConstraintDecl(GenericTypeConstraintDecl*)
+    {}
+
+    void visitEmptyDecl(EmptyDecl*)
+    {}
+
+    void visitSyntaxDecl(SyntaxDecl*)
+    {}
+
+    //
+
+    void addDecl(DeclBase* decl)
+    {
+        if(addedDecls.Contains(decl))
+            return;
+
+        workList.Add(decl);
+        addedDecls.Add(decl);
+    }
+
+    void flush()
+    {
+        while( workList.Count() != 0 )
+        {
+            DeclBase* decl = workList[workList.Count() - 1];
+            workList.FastRemoveAt(workList.Count() - 1);
+
+            DeclVisitor::dispatch(decl);
+        }
+    }
+};
+
+
+void findIRDeclsUsedByASTEntryPoint(
+    EntryPointRequest*          entryPoint,
+    CodeGenTarget               target,
+    IRSpecializationState*      irSpecializationState)
+{
+    auto translationUnit = entryPoint->getTranslationUnit();
+    auto mainModuleDecl = translationUnit->SyntaxNode;
+
+    FindIRDeclUsedByASTVisitor visitor;
+    visitor.compileRequest = entryPoint->compileRequest;
+    visitor.irSpecializationState = irSpecializationState;
+    visitor.mainModuleDecl = mainModuleDecl;
+
+    bool isRewrite = isRewriteRequest(translationUnit->sourceLanguage, target);
+
+    if (isRewrite)
+    {
+        visitor.addDecl(mainModuleDecl);
+    }
+    else
+    {
+        visitor.addDecl(entryPoint->decl);
+    }
+
+    visitor.flush();
+}
+
+
+
 }

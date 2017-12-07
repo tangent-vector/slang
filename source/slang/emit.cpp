@@ -7134,25 +7134,21 @@ String emitEntryPoint(
 
         typeLegalizationContext.irModule = irModule;
 
-        LoweredEntryPoint lowered;
         if(translationUnit->compileFlags & SLANG_COMPILE_FLAG_NO_CHECKING)
         {
             // We are in case (2b), where the main module is in unchecked
             // HLSL/GLSL that we need to "rewrite," and any library code
             // is in Slang that will need to be cross-compiled via the IR.
 
-            // Initially, we will apply the AST-to-AST pass to legalize
-            // the user's code, much like we would for any other target.
-            // Along the way, this pass will discover any IR declarations
-            // that we use, and try to emit code for them into our IR module.
+            // We first need to walk the AST part of the code to look
+            // for any places where it references declarations that
+            // are implemented in the IR, so that we can be sure to
+            // generate suitable IR code for them.
 
-            lowered = lowerEntryPoint(
+            findIRDeclsUsedByASTEntryPoint(
                 entryPoint,
-                programLayout,
                 target,
-                &sharedContext.extensionUsageTracker,
-                irSpecializationState,
-                &typeLegalizationContext);
+                irSpecializationState);
         }
         else
         {
@@ -7205,6 +7201,32 @@ String emitEntryPoint(
         fprintf(stderr, "###\n");
 #endif
 
+        LoweredEntryPoint lowered;
+        if(translationUnit->compileFlags & SLANG_COMPILE_FLAG_NO_CHECKING)
+        {
+            // In the (2b) case, once we have legalized the IR code,
+            // we now need to go in and legalize the AST code.
+            // This order is important because when referring to a variable
+            // that is defined in the IR, we need to legalize it first (which
+            // might split it into many decls) before we can legalize an AST
+            // expression that references that decl (which will also need
+            // to get split).
+            //
+            // We don't have to worry about references in the other direction;
+            // we don't allow the user to define something in unchecked AST
+            // code and then use it from the IR shader library.
+
+            lowered = lowerEntryPoint(
+                entryPoint,
+                programLayout,
+                target,
+                &sharedContext.extensionUsageTracker,
+                irSpecializationState,
+                &typeLegalizationContext);
+        }
+
+        // When emitting IR-based declarations, we wnat to
+        // track which decls have already been lowered.
         sharedContext.irDeclSetForAST = &lowered.irDecls;
 
         // After all of the required optimization and legalization
