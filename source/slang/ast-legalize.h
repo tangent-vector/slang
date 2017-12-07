@@ -70,5 +70,10 @@ namespace Slang
         ExtensionUsageTracker*      extensionUsageTracker,
         IRSpecializationState*      irSpecializationState,
         TypeLegalizationContext*    typeLegalizationContext);
+
+     void findIRDeclsUsedByASTEntryPoint(
+        EntryPointRequest*          entryPoint,
+        CodeGenTarget               target,
+        IRSpecializationState*      irSpecializationState);
 }
 #endif
