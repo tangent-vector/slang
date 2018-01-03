@@ -187,6 +187,13 @@ extern "C"
     */
     typedef struct SlangSession SlangSession;
 
+    /** A repository of loaded modules.
+
+    A linkage stores zero or more loaded and compiled modules, allowing
+    them to be re-used across multiple compile requests.
+    */
+    typedef struct SlangLinkage SlangLinkage;
+
     /*!
     @bref A request for one or more compilation actions to be performed.
     */
@@ -213,6 +220,40 @@ extern "C"
         char const*     sourcePath,
         char const*     sourceString);
 
+    /** Create a linkage.
+
+    Creates a linkage that can be used to cache and re-use loaded modules
+    across multiple compile requests.
+    */
+    SLANG_API SlangLinkage* spCreateLinkage(
+        SlangSession*   session);
+
+    /** Destroy a linkage.
+
+    Creates a linkage that can be used to cache and re-use loaded modules
+    across multiple compile requests.
+    */
+    SLANG_API void spDestroyLinkage(
+        SlangLinkage*   linkage);
+
+    /** Load a named module into a linkage.
+
+    Returns a compile request that represents the loaded module.
+    This compile request should be treated as if `spCompile()` has already
+    been called on it (and appropriate success or failure state will
+    be set).
+
+    The user is responsible for calling `spDestroyCompileRequest()` on
+    the result.
+
+    If the module matching `name` has already been loaded (successfully)
+    into the given linkage, then this function will return the existing
+    module matching that name.
+    */
+    SLANG_API SlangCompileRequest* spLoadModuleIntoLinkage(
+        SlangLinkage*   linkage,
+        char const*     name);
+
     /*!
     @brief Create a compile request.
     */
@@ -224,6 +265,19 @@ extern "C"
     */
     SLANG_API void spDestroyCompileRequest(
         SlangCompileRequest*    request);
+
+    /** Set a linkage to be used by a compile request for loading modules.
+
+    When code being compiled by this request performs an `import`, the imported
+    module will be loaded into the given linkage, as if `spLoadModuleIntoLinkage()`
+    had been called.
+
+    By default, each compile request gets its own "fresh" linkage that is
+    not shared with any other compile request.
+    */
+    SLANG_API void spSetLinkageForImports(
+        SlangCompileRequest*    request,
+        SlangLinkage*           linkage);
 
 
     /*!

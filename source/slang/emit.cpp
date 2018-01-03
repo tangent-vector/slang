@@ -7322,7 +7322,7 @@ String emitEntryPoint(
     // We'll try to detect the cases here, starting with case (1):
     //
     if ((translationUnit->compileFlags & SLANG_COMPILE_FLAG_NO_CHECKING)
-        && translationUnit->compileRequest->loadedModulesList.Count() == 0)
+        && translationUnit->compileRequest->importedModuleList.Count() == 0)
     {
         // The user has opted out of semantic checking for their own code
         // (in the "main" module), and also hasn't `import`ed any Slang

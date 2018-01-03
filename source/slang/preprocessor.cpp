@@ -2239,10 +2239,11 @@ static void HandleImportDirective(PreprocessorDirectiveContext* context)
     {
         auto translationUnit = context->preprocessor->translationUnit;
         auto request = translationUnit->compileRequest;
+        auto linkage = request->getLinkage();
 
 
         // Have we already loaded a module matching this name?
-        if (request->mapPathToLoadedModule.TryGetValue(moduleKey))
+        if (linkage->mapPathToLoadedModule.TryGetValue(moduleKey))
         {
             // The module has already been loaded, so we don't need to
             // actually tokenize the code here. But note that we *do*
@@ -2276,7 +2277,7 @@ static void HandleImportDirective(PreprocessorDirectiveContext* context)
             preprocessor->inputStream = savedStream;
 
             // Now we need to do something with those tokens we read
-            request->handlePoundImport(
+            linkage->handlePoundImport(
                 moduleKey,
                 subTokens);
         }

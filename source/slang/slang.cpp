@@ -113,7 +113,7 @@ struct IncludeHandlerImpl : IncludeHandler
 };
 
 CompileRequest::CompileRequest(Session* session)
-    : mSession(session)
+    : CompileRequestBase(session)
 {
     getNamePool()->setRootNamePool(session->getRootNamePool());
 
@@ -430,16 +430,20 @@ UInt CompileRequest::addTarget(
     return (int) result;
 }
 
-void CompileRequest::loadParsedModule(
-    RefPtr<TranslationUnitRequest> const&   translationUnit,
-    Name*                                   name,
-    String const&                           path)
+}
+
+void SlangLinkage::loadParsedModule(
+    Slang::RefPtr<Slang::LoadedModule>           const& loadedModule,
+    Slang::RefPtr<Slang::TranslationUnitRequest> const& translationUnit,
+    Slang::Name*                                        name,
+    Slang::String const&                                path)
 {
+    using namespace Slang;
+
     checkTranslationUnit(translationUnit.Ptr());
 
     RefPtr<ModuleDecl> moduleDecl = translationUnit->SyntaxNode;
 
-    RefPtr<LoadedModule> loadedModule = new LoadedModule();
     loadedModule->moduleDecl = moduleDecl;
     loadedModule->irModule = generateIRForTranslationUnit(translationUnit);
 
@@ -448,14 +452,21 @@ void CompileRequest::loadParsedModule(
     loadedModulesList.Add(loadedModule);
 }
 
-RefPtr<ModuleDecl> CompileRequest::loadModule(
-    Name*               name,
-    String const&       path,
-    String const&       source,
-    SourceLoc const&)
+Slang::RefPtr<Slang::ModuleDecl> SlangLinkage::loadModule(
+    Slang::LoadedModule*    loadedModule,
+    Slang::Name*            name,
+    Slang::String const&    path,
+    Slang::String const&    source,
+    Slang::SourceLoc const&)
 {
+    using namespace Slang;
+
+    // A `LoadedModule` is a `CompileRequest` in order to service the
+    // public API, so we take advantage of that here.
+    CompileRequest* compileRequest = loadedModule;
+
     RefPtr<TranslationUnitRequest> translationUnit = new TranslationUnitRequest();
-    translationUnit->compileRequest = this;
+    translationUnit->compileRequest = compileRequest;
 
     // We don't want to use the same options that the user specified
     // for loading modules on-demand. In particular, we always want
@@ -464,15 +475,16 @@ RefPtr<ModuleDecl> CompileRequest::loadModule(
     // TODO: decide which options, if any, should be inherited.
     translationUnit->compileFlags = this->compileFlags & (SLANG_COMPILE_FLAG_USE_IR);
 
-    RefPtr<SourceFile> sourceFile = getSourceManager()->allocateSourceFile(path, source);
+    RefPtr<SourceFile> sourceFile = compileRequest->getSourceManager()->allocateSourceFile(path, source);
 
     translationUnit->sourceFiles.Add(sourceFile);
 
-    parseTranslationUnit(translationUnit.Ptr());
+    compileRequest->parseTranslationUnit(translationUnit.Ptr());
 
     // TODO: handle errors
 
     loadParsedModule(
+        loadedModule,
         translationUnit,
         name,
         path);
@@ -480,14 +492,19 @@ RefPtr<ModuleDecl> CompileRequest::loadModule(
     return translationUnit->SyntaxNode;
 }
 
-void CompileRequest::handlePoundImport(
-    String const&       path,
-    TokenList const&    tokens)
+void SlangLinkage::handlePoundImport(
+    Slang::String const&    path,
+    Slang::TokenList const& tokens)
 {
-    RefPtr<TranslationUnitRequest> translationUnit = new TranslationUnitRequest();
-    translationUnit->compileRequest = this;
+    using namespace Slang;
 
-    translationUnit->compileFlags = this->compileFlags & (SLANG_COMPILE_FLAG_USE_IR);
+    RefPtr<LoadedModule> loadedModule = new LoadedModule(mSession);
+    CompileRequest* compileRequest = loadedModule;
+
+    RefPtr<TranslationUnitRequest> translationUnit = new TranslationUnitRequest();
+    translationUnit->compileRequest = compileRequest;
+
+    translationUnit->compileFlags = compileRequest->compileFlags & (SLANG_COMPILE_FLAG_USE_IR);
 
     // Imported code is always native Slang code
     RefPtr<Scope> languageScope = mSession->slangLanguageScope;
@@ -498,7 +515,7 @@ void CompileRequest::handlePoundImport(
     parseSourceFile(
         translationUnit.Ptr(),
         tokens,
-        &mSink,
+        &compileRequest->mSink,
         languageScope);
 
     // TODO: handle errors
@@ -511,18 +528,22 @@ void CompileRequest::handlePoundImport(
     // Ideally we'd construct a suitable name by effectively
     // running the name->path logic in reverse (e.g., replacing
     // `-` with `_` and `/` with `.`).
-    Name* name = getNamePool()->getName(path);
+    Name* name = mSession->getNamePool()->getName(path);
 
     loadParsedModule(
+        loadedModule,
         translationUnit,
         name,
         path);
 }
 
-RefPtr<ModuleDecl> CompileRequest::findOrImportModule(
-    Name*               name,
-    SourceLoc const&    loc)
+Slang::RefPtr<Slang::ModuleDecl> SlangLinkage::findOrImportModule(
+    Slang::CompileRequest*  originalRequest,
+    Slang::Name*            name,
+    Slang::SourceLoc const& loc)
 {
+    using namespace Slang;
+
     // Have we already loaded a module matching this name?
     // If so, return it.
     RefPtr<LoadedModule> loadedModule;
@@ -547,13 +568,19 @@ RefPtr<ModuleDecl> CompileRequest::findOrImportModule(
 
     String fileName = sb.ProduceString();
 
+    // Create an object to represent the loaded module, in
+    // anticipation of the compilation succeeding.
+    loadedModule = new LoadedModule(mSession);
+    // TODO: copy state into the loaded module so that it can
+    // properly look up files, etc.
+
     // Next, try to find the file of the given name,
     // using our ordinary include-handling logic.
 
     IncludeHandlerImpl includeHandler;
-    includeHandler.request = this;
+    includeHandler.request = loadedModule;
 
-    auto expandedLoc = getSourceManager()->expandSourceLoc(loc);
+    auto expandedLoc = originalRequest->getSourceManager()->expandSourceLoc(loc);
 
     String pathIncludedFrom = expandedLoc.getSpellingPath();
 
@@ -565,7 +592,7 @@ RefPtr<ModuleDecl> CompileRequest::findOrImportModule(
     case IncludeResult::NotFound:
     case IncludeResult::Error:
         {
-            this->mSink.diagnose(loc, Diagnostics::cannotFindFile, fileName);
+            originalRequest->mSink.diagnose(loc, Diagnostics::cannotFindFile, fileName);
 
             mapNameToLoadedModules[name] = nullptr;
             return nullptr;
@@ -584,19 +611,41 @@ RefPtr<ModuleDecl> CompileRequest::findOrImportModule(
     // We've found a file that we can load for the given module, so
     // go ahead and perform the module-load action
     return loadModule(
+        loadedModule,
         name,
         foundPath,
         foundSource,
         loc);
 }
 
+namespace Slang
+{
+
+RefPtr<ModuleDecl> CompileRequest::findOrImportModule(
+    Name*            name,
+    SourceLoc const& loc)
+{
+    return getLinkage()->findOrImportModule(this, name, loc);
+
+}
+
+void CompileRequest::handlePoundImport(
+    String const&    path,
+    TokenList const& tokens)
+{
+
+}
+
+
+
 RefPtr<ModuleDecl> findOrImportModule(
     CompileRequest*     request,
     Name*               name,
     SourceLoc const&    loc)
 {
-    return request->findOrImportModule(name, loc);
+    return request->findOrImportModule(request, name, loc);
 }
+
 
 void Session::addBuiltinSource(
     RefPtr<Scope> const&    scope,
@@ -694,6 +743,28 @@ SLANG_API void spAddBuiltins(
         sourceString);
 }
 
+SLANG_API SlangLinkage* spCreateLinkage(
+    SlangSession*   session)
+{
+    auto s = SESSION(session);
+    auto linkage = new Slang::Linkage(s);
+    return linkage;
+}
+
+SLANG_API void spDestroyLinkage(
+    SlangLinkage*   linkage)
+{
+    linkage->releaseReference();
+}
+
+SLANG_API SlangCompileRequest* spLoadModuleIntoLinkage(
+    SlangLinkage*   linkage,
+    char const*     name)
+{
+    (void) linkage;
+    (void) name;
+    return nullptr;
+}
 
 SLANG_API SlangCompileRequest* spCreateCompileRequest(
     SlangSession* session)
@@ -713,6 +784,16 @@ SLANG_API void spDestroyCompileRequest(
     auto req = REQ(request);
     delete req;
 }
+
+SLANG_API void spSetLinkageForImports(
+    SlangCompileRequest*    request,
+    SlangLinkage*           linkage)
+{
+    if(!request) return;
+    auto req = REQ(request);
+    req->linkageForImports = linkage;
+}
+
 
 SLANG_API void spSetCompileFlags(
     SlangCompileRequest*    request,

@@ -1728,7 +1728,7 @@ static void collectParameters(
     }
 
     // Now collect parameters from loaded modules
-    for (auto& loadedModule : request->loadedModulesList)
+    for (auto& loadedModule : request->importedModuleList)
     {
         collectModuleParameters(context, loadedModule->moduleDecl.Ptr());
     }
@@ -1755,7 +1755,7 @@ static bool isGLSLCrossCompilerNeeded(
     // If we `import`ed any Slang code, then the
     // cross compiler is definitely needed, to
     // translate that Slang over to GLSL.
-    if (compileReq->loadedModulesList.Count() != 0)
+    if (compileReq->importedModuleList.Count() != 0)
         return true;
 
     // If there are any non-GLSL translation units,

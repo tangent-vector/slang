@@ -4090,7 +4090,7 @@ namespace Slang
 
         // We also need to attach the IR definitions for symbols from
         // any loaded modules:
-        for (auto loadedModule : compileRequest->loadedModulesList)
+        for (auto loadedModule : compileRequest->importedModuleList)
         {
             insertGlobalValueSymbols(sharedContext, loadedModule->irModule);
         }

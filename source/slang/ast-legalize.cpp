@@ -3696,7 +3696,13 @@ struct LoweringVisitor
                 return translationUnit->sourceLanguage;
         }
 
-        for (auto loadedModule : shared->compileRequest->loadedModulesList)
+        // TODO: this linear search is pointless and slow.
+        //
+        // We should probalby just have distinct subclasses of `ModuleDecl` depending
+        // on the source language involved *or* go even simpler and store the `SourceLanguage`
+        // directly in the `ModuleDecl`.
+        //
+        for (auto loadedModule : shared->compileRequest->getLinkage()->loadedModulesList)
         {
             if (moduleDecl == loadedModule->moduleDecl)
                 return SourceLanguage::Slang;
@@ -4820,7 +4826,12 @@ LoweredEntryPoint lowerEntryPoint(
     // We also need to register the lowered program as the lowered version
     // of any imported modules (since we will be collecting everything into
     // a single module for code generation).
-    for (auto rr : entryPoint->compileRequest->loadedModulesList)
+    //
+    // TODO: This is registering *all* of the modules that have been loaded
+    // in the associated linkage, when we really only need to deal with those
+    // that have been explicit `import`ed by the current module.
+    //
+    for (auto rr : entryPoint->compileRequest->getLinkage()->loadedModulesList)
     {
         sharedContext.mapOriginalDeclToLowered.Add(
             rr->moduleDecl,
