@@ -3692,7 +3692,7 @@ struct LoweringVisitor
     {
         for (auto translationUnit : shared->compileRequest->translationUnits)
         {
-            if (moduleDecl == translationUnit->SyntaxNode)
+            if (moduleDecl == translationUnit->getModuleDecl())
                 return translationUnit->sourceLanguage;
         }
 
@@ -3747,7 +3747,7 @@ struct LoweringVisitor
                     pp = pp->ParentDecl;
 
                 // Did the declaration come from this translation unit?
-                if (pp == shared->entryPointRequest->getTranslationUnit()->SyntaxNode.Ptr())
+                if (pp == shared->entryPointRequest->getTranslationUnit()->getModuleDecl())
                     return false;
 
                 return true;
@@ -4797,7 +4797,7 @@ LoweredEntryPoint lowerEntryPoint(
     sharedContext.typeLegalizationContext = typeLegalizationContext;
 
     auto translationUnit = entryPoint->getTranslationUnit();
-    sharedContext.mainModuleDecl = translationUnit->SyntaxNode;
+    sharedContext.mainModuleDecl = translationUnit->getModuleDecl();
 
     // Create a single module/program to hold all the lowered code
     // (with the exception of instrinsic/stdlib declarations, which
@@ -4821,7 +4821,7 @@ LoweredEntryPoint lowerEntryPoint(
     
     visitor.registerLoweredDecl(
         loweredProgram,
-        translationUnit->SyntaxNode);
+        translationUnit->getModuleDecl());
 
     // We also need to register the lowered program as the lowered version
     // of any imported modules (since we will be collecting everything into
@@ -5366,7 +5366,7 @@ void findDeclsUsedByASTEntryPoint(
     List<Decl*>&                outASTDecls)
 {
     auto translationUnit = entryPoint->getTranslationUnit();
-    auto mainModuleDecl = translationUnit->SyntaxNode;
+    auto mainModuleDecl = translationUnit->getModuleDecl();
 
     FindIRDeclUsedByASTVisitor visitor;
     visitor.compileRequest = entryPoint->compileRequest;

@@ -204,7 +204,7 @@ struct Preprocessor
 
     ModuleDecl* getSyntax()
     {
-        return getTranslationUnit()->SyntaxNode.Ptr();
+        return getTranslationUnit()->getModuleDecl().Ptr();
     }
 
     CompileRequest* getCompileRequest()

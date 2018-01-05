@@ -4078,7 +4078,7 @@ namespace Slang
 
         auto compileRequest = entryPointRequest->compileRequest;
         auto translationUnit = entryPointRequest->getTranslationUnit();
-        auto originalIRModule = translationUnit->irModule;
+        auto originalIRModule = translationUnit->getIRModule();
 
         auto sharedContext = state->getSharedContext();
         initializeSharedSpecContext(
@@ -4089,8 +4089,17 @@ namespace Slang
         state->irModule = sharedContext->module;
 
         // We also need to attach the IR definitions for symbols from
-        // any loaded modules:
-        for (auto loadedModule : compileRequest->importedModuleList)
+        // any loaded modules.
+        //
+        // TODO: This is walking every singel module that has been loaded into
+        // the linkage that is active for the compile request, which could include
+        // a bunch of modules we don't actually care about. As a result, this
+        // step could take a lot longer than we'd like.
+        //
+        // It seems like it would be better to try and insert things on-demand,
+        // by detecting the module that an imported value comes from, and making
+        // sure to load that module's IR definitions.
+        for (auto loadedModule : compileRequest->getLinkage()->loadedModulesList)
         {
             insertGlobalValueSymbols(sharedContext, loadedModule->irModule);
         }
@@ -4169,7 +4178,7 @@ namespace Slang
         auto compileRequest = entryPointRequest->compileRequest;
         auto session = compileRequest->mSession;
         auto translationUnit = entryPointRequest->getTranslationUnit();
-        auto originalIRModule = translationUnit->irModule;
+        auto originalIRModule = translationUnit->getIRModule();
         if (!originalIRModule)
         {
             // We should already have emitted IR for the original

@@ -6607,7 +6607,7 @@ namespace Slang
             auto scope = decl->scope;
 
             // Try to load a module matching the name
-            auto importedModuleDecl = findOrImportModule(request, name, decl->moduleNameAndLoc.loc);
+            auto importedModuleDecl = findOrImportModule(translationUnit, name, decl->moduleNameAndLoc.loc);
 
             // If we didn't find a matching module, then bail out
             if (!importedModuleDecl)
@@ -6686,7 +6686,7 @@ namespace Slang
 
         auto translationUnit = entryPoint->getTranslationUnit();
         auto sink = &entryPoint->compileRequest->mSink;
-        auto translationUnitSyntax = translationUnit->SyntaxNode;
+        auto translationUnitSyntax = translationUnit->getModuleDecl();
 
 
         // Make sure we've got a query-able member dictionary
@@ -6809,17 +6809,25 @@ namespace Slang
             List<RefPtr<GlobalGenericParamDecl>> globalGenericParams;
             // add current translation unit first
             {
-                auto globalGenParams = translationUnit->SyntaxNode->getMembersOfType<GlobalGenericParamDecl>();
+                auto globalGenParams = translationUnit->getModuleDecl()->getMembersOfType<GlobalGenericParamDecl>();
                 for (auto p : globalGenParams)
                     globalGenericParams.Add(p);
             }
             // add imported modules
-            for (auto loadedModule : entryPoint->compileRequest->importedModuleList)
+            HashSet<RefPtr<LoadedModule>> visitedModules;
+            for( auto tu : entryPoint->compileRequest->translationUnits )
             {
-                auto moduleDecl = loadedModule->moduleDecl;
-                auto globalGenParams = moduleDecl->getMembersOfType<GlobalGenericParamDecl>();
-                for (auto p : globalGenParams)
-                    globalGenericParams.Add(p);
+                for (auto loadedModule : tu->module->importedModules)
+                {
+                    if(visitedModules.Contains(loadedModule))
+                        continue;
+                    visitedModules.Add(loadedModule);
+
+                    auto moduleDecl = loadedModule->moduleDecl;
+                    auto globalGenParams = moduleDecl->getMembersOfType<GlobalGenericParamDecl>();
+                    for (auto p : globalGenParams)
+                        globalGenericParams.Add(p);
+                }
             }
             if (globalGenericParams.Count() != entryPoint->genericParameterTypes.Count())
             {
@@ -6867,7 +6875,7 @@ namespace Slang
         // Apply the visitor to do the main semantic
         // checking that is required on all declarations
         // in the translation unit.
-        visitor.checkDecl(translationUnit->SyntaxNode);
+        visitor.checkDecl(translationUnit->getModuleDecl());
 
         // Next, do follow-up validation on any entry
         // points that the user declared via API or

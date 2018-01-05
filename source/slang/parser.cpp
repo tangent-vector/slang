@@ -3969,7 +3969,7 @@ namespace Slang
 
         parser.translationUnit = translationUnit;
 
-        return parser.parseSourceFile(translationUnit->SyntaxNode.Ptr());
+        return parser.parseSourceFile(translationUnit->getModuleDecl().Ptr());
     }
 
     static void addBuiltinSyntaxImpl(

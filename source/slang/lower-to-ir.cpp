@@ -3945,7 +3945,7 @@ IRModule* generateIRForTranslationUnit(
     SharedIRGenContext* sharedContext = &sharedContextStorage;
 
     sharedContext->compileRequest = compileRequest;
-    sharedContext->mainModuleDecl = translationUnit->SyntaxNode;
+    sharedContext->mainModuleDecl = translationUnit->getModuleDecl();
 
     IRGenContext contextStorage;
     IRGenContext* context = &contextStorage;
@@ -3981,7 +3981,7 @@ IRModule* generateIRForTranslationUnit(
     //
     // Next, ensure that all other global declarations have
     // been emitted.
-    for (auto decl : translationUnit->SyntaxNode->Members)
+    for (auto decl : translationUnit->getModuleDecl()->Members)
     {
         ensureDecl(context, decl);
     }

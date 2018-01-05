@@ -7282,7 +7282,7 @@ String emitEntryPoint(
     StructTypeLayout* globalStructLayout = getGlobalStructLayout(programLayout);
     sharedContext.globalStructLayout = globalStructLayout;
 
-    auto translationUnitSyntax = translationUnit->SyntaxNode.Ptr();
+    auto translationUnitSyntax = translationUnit->getModuleDecl().Ptr();
 
     EmitContext context;
     context.shared = &sharedContext;
@@ -7322,7 +7322,7 @@ String emitEntryPoint(
     // We'll try to detect the cases here, starting with case (1):
     //
     if ((translationUnit->compileFlags & SLANG_COMPILE_FLAG_NO_CHECKING)
-        && translationUnit->compileRequest->importedModuleList.Count() == 0)
+        && translationUnit->module->importedModules.Count() == 0)
     {
         // The user has opted out of semantic checking for their own code
         // (in the "main" module), and also hasn't `import`ed any Slang

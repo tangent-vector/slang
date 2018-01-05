@@ -1716,7 +1716,7 @@ static void collectParameters(
         context->sourceLanguage = translationUnit->sourceLanguage;
 
         // First look at global-scope parameters
-        collectGlobalScopeParameters(context, translationUnit->SyntaxNode.Ptr());
+        collectGlobalScopeParameters(context, translationUnit->getModuleDecl().Ptr());
 
         // Next consider parameters for entry points
         for( auto& entryPoint : translationUnit->entryPoints )
@@ -1727,10 +1727,21 @@ static void collectParameters(
         context->entryPointLayout = nullptr;
     }
 
-    // Now collect parameters from loaded modules
-    for (auto& loadedModule : request->importedModuleList)
+    // Now collect parameters from loaded modules.
+    //
+    // Each tranlsation unit keeps its own list of imported modules, so
+    // we'll need to be careful not to visit the same module more than once.
+    HashSet<RefPtr<LoadedModule>> visitedModules;
+    for( auto& translationUnit : request->translationUnits )
     {
-        collectModuleParameters(context, loadedModule->moduleDecl.Ptr());
+        for (auto& importedModule : translationUnit->module->importedModules)
+        {
+            if(visitedModules.Contains(importedModule))
+                continue;
+
+            visitedModules.Add(importedModule);
+            collectModuleParameters(context, importedModule->moduleDecl.Ptr());
+        }
     }
 }
 
@@ -1755,8 +1766,12 @@ static bool isGLSLCrossCompilerNeeded(
     // If we `import`ed any Slang code, then the
     // cross compiler is definitely needed, to
     // translate that Slang over to GLSL.
-    if (compileReq->importedModuleList.Count() != 0)
-        return true;
+    for (auto tu : compileReq->translationUnits)
+    {
+        if (tu->module->importedModules.Count() != 0)
+            return true;
+    }
+
 
     // If there are any non-GLSL translation units,
     // then we need to cross compile those...

@@ -144,11 +144,41 @@ namespace Slang
 
     class SourceFile;
 
+    // Represents a module that has been loaded through the front-end
+    // (up through IR generation).
+    //
+    // Inherits from `CompileRequest` so that the public API can
+    // query it the same as any other compile request.
+    //
+    class LoadedModule : public RefObject
+    {
+    public:
+        // The AST for the module
+        RefPtr<ModuleDecl>  moduleDecl;
+
+        // The IR for the module
+        IRModule* irModule = nullptr;
+
+        // An ordered list of other modules that this module depends on.
+        // This is not just the modules it directly `import`s, but also
+        // those that are transitively imported. The order of the list
+        // reflects dependency order: later entries may depend on earlier
+        // entries, but not vice versa.
+        List<RefPtr<LoadedModule>>  importedModules;
+
+    };
+
+    typedef struct SlangLinkage Linkage;
+
     // A single translation unit requested to be compiled.
+    // Each translation unit will turn into a single `LoadedModule`
+    // after compilation.
     //
     class TranslationUnitRequest : public RefObject
     {
     public:
+        TranslationUnitRequest();
+
         // The parent compile request
         CompileRequest* compileRequest = nullptr;
 
@@ -171,14 +201,32 @@ namespace Slang
         // Compile flags for this translation unit
         SlangCompileFlags compileFlags = 0;
 
-        // The parsed syntax for the translation unit
-        RefPtr<ModuleDecl>   SyntaxNode;
+        // The module that results from this translation unit.
+        // This will be filled in during the compilation process,
+        // so in general it isn't safe to use this field or
+        // the fields inside it without checking for NULL.
+        RefPtr<LoadedModule>    module;
 
-        // The IR-level code for this translation unit.
-        // This will only be valid/non-null after semantic
-        // checking and IR generation are complete, so it
-        // is not safe to use this field without testing for NULL.
-        IRModule* irModule;
+        RefPtr<ModuleDecl> getModuleDecl() { return module->moduleDecl; }
+        IRModule* getIRModule() { return module->irModule; }
+
+        Linkage* getLinkage();
+
+        // While compiling, we need to build the list of modules
+        // that the translation unit depends on; these are stored
+        // in `module->importedModules`. We don't want to add
+        // anything to that list twice, so we track which modules
+        // have already been added here.
+        HashSet<RefPtr<LoadedModule>> importedModuleSet;
+
+        void registerImportedModule(
+            RefPtr<LoadedModule>    loadedModule);
+        void registerImportedModuleImpl(
+            RefPtr<LoadedModule>    loadedModule);
+
+        RefPtr<LoadedModule> findOrImportModule(
+            Name*            name,
+            SourceLoc const& loc);
     };
 
     // A request to generate output in some target format
@@ -211,7 +259,6 @@ namespace Slang
         String  path;
     };
 
-    class LoadedModule;
     class Session;
 
     // Shared logic between `Linkage` and `CompileRequest`
@@ -220,10 +267,20 @@ namespace Slang
     public:
         Slang::Session*    mSession;
 
+        // Compile flags to be shared by all translation units
+        SlangCompileFlags compileFlags = 0;
+
+        // Directories to search for `#include` files or `import`ed modules
+        List<SearchDirectory> searchDirectories;
+
+        // Definitions to provide during preprocessing
+        Dictionary<String, String> preprocessorDefinitions;
+
         CompileRequestBase(Session* session)
             : mSession(session)
         {}
 
+        void copyConfigurationFrom(CompileRequestBase* other);
     };
 
 }
@@ -235,10 +292,6 @@ namespace Slang
 struct SlangLinkage : public Slang::CompileRequestBase
 {
 public:
-
-    // Compile flags for this linkage
-    SlangCompileFlags compileFlags = 0;
-
     // Modules that have been dynamically loaded via `import`
     //
     // This is a list of unique modules loaded, in the order they were encountered.
@@ -250,24 +303,24 @@ public:
     // Map from the logical name of a module to its definition
     Slang::Dictionary<Slang::Name*, Slang::RefPtr<Slang::LoadedModule>> mapNameToLoadedModules;
 
+
     SlangLinkage(Slang::Session* session)
         : Slang::CompileRequestBase(session)
     {}
 
-    void loadParsedModule(
-        Slang::RefPtr<Slang::LoadedModule>           const& loadedModule,
+    Slang::RefPtr<Slang::LoadedModule> loadParsedModule(
         Slang::RefPtr<Slang::TranslationUnitRequest> const& translationUnit,
         Slang::Name*                                        name,
         Slang::String const&                                path);
 
-    Slang::RefPtr<Slang::ModuleDecl> loadModule(
-        Slang::LoadedModule*    loadedModule,
+    Slang::RefPtr<Slang::LoadedModule> loadModule(
+        Slang::CompileRequest*  compileRequest,
         Slang::Name*            name,
         Slang::String const&    path,
         Slang::String const&    source,
         Slang::SourceLoc const& loc);
 
-    Slang::RefPtr<Slang::ModuleDecl> findOrImportModule(
+    Slang::RefPtr<Slang::LoadedModule> findOrImportModule(
         Slang::CompileRequest*  originalRequest,
         Slang::Name*            name,
         Slang::SourceLoc const& loc);
@@ -279,14 +332,9 @@ public:
 
 namespace Slang
 {
-    typedef struct SlangLinkage Linkage;
-
     class CompileRequest : public CompileRequestBase
     {
     public:
-        // Pointer to parent session
-        Session* mSession;
-
         // Information on the targets we are being asked to
         // generate code for.
         List<RefPtr<TargetRequest>> targets;
@@ -296,12 +344,6 @@ namespace Slang
 
         // Path to output container to
         String containerOutputPath;
-
-        // Directories to search for `#include` files or `import`ed modules
-        List<SearchDirectory> searchDirectories;
-
-        // Definitions to provide during preprocessing
-        Dictionary<String, String> preprocessorDefinitions;
 
         // Translation units we are being asked to compile
         List<RefPtr<TranslationUnitRequest> > translationUnits;
@@ -315,9 +357,6 @@ namespace Slang
 
         // Should we just pass the input to another compiler?
         PassThroughMode passThrough = PassThroughMode::None;
-
-        // Compile flags to be shared by all translation units
-        SlangCompileFlags compileFlags = 0;
 
         // Should we dump intermediate results along the way, for debugging?
         bool shouldDumpIntermediates = false;
@@ -353,22 +392,7 @@ namespace Slang
         // The linkage to use when `import`ing modules
         RefPtr<Linkage> linkageForImports;
 
-        Linkage* getLinkage() { return linkageForImports; }
-
-        // We need to track a list of modules that have been `import`ed
-        // directly or indireclty by this compile request, separate
-        // from those that have been imported into the linkage. This
-        // is because the linkage might have loaded many modules that
-        // we don't use, and we don't want to pay for them.
-        //
-        // We track both a list (that we hope to keep in dependency
-        // order), and a set (to avoid adding anything to the list twice).
-        List<RefPtr<LoadedModule>>  importedModuleList;
-        HashSet<RefPtr<LoadedModule>> importedModuleSet;
-
-        RefPtr<ModuleDecl> findOrImportModule(
-            Name*            name,
-            SourceLoc const& loc);
+        Linkage* getLinkage();
 
         void handlePoundImport(
             String const&    path,
@@ -425,28 +449,6 @@ namespace Slang
             mSink.sourceManager = sm;
         }
     };
-
-    // Represents a module that has been loaded through the front-end
-    // (up through IR generation).
-    //
-    // Inherits from `CompileRequest` so that the public API can
-    // query it the same as any other compile request.
-    //
-    class LoadedModule : public CompileRequest
-    {
-    public:
-        LoadedModule(
-            Session* session)
-            : CompileRequest(session)
-        {}
-
-        // The AST for the module
-        RefPtr<ModuleDecl>  moduleDecl;
-
-        // The IR for the module
-        IRModule* irModule = nullptr;
-    };
-
 
     void generateOutput(
         CompileRequest* compileRequest);

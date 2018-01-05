@@ -112,6 +112,15 @@ struct IncludeHandlerImpl : IncludeHandler
     }
 };
 
+//
+
+TranslationUnitRequest::TranslationUnitRequest()
+{
+    module = new LoadedModule();
+}
+
+//
+
 CompileRequest::CompileRequest(Session* session)
     : CompileRequestBase(session)
 {
@@ -155,7 +164,7 @@ void CompileRequest::parseTranslationUnit(
         combinedPreprocessorDefinitions.Add(def.Key, def.Value);
 
     RefPtr<ModuleDecl> translationUnitSyntax = new ModuleDecl();
-    translationUnit->SyntaxNode = translationUnitSyntax;
+    translationUnit->module->moduleDecl = translationUnitSyntax;
 
     for (auto sourceFile : translationUnit->sourceFiles)
     {
@@ -208,7 +217,7 @@ void CompileRequest::generateIR()
         if(translationUnit->compileFlags & SLANG_COMPILE_FLAG_NO_CHECKING)
             continue;
 
-        translationUnit->irModule = generateIRForTranslationUnit(translationUnit);
+        translationUnit->module->irModule = generateIRForTranslationUnit(translationUnit);
     }
 }
 
@@ -430,10 +439,17 @@ UInt CompileRequest::addTarget(
     return (int) result;
 }
 
+void CompileRequestBase::copyConfigurationFrom(CompileRequestBase* other)
+{
+    this->searchDirectories = other->searchDirectories;
+    this->preprocessorDefinitions = other->preprocessorDefinitions;
+    this->compileFlags = other->compileFlags;
 }
 
-void SlangLinkage::loadParsedModule(
-    Slang::RefPtr<Slang::LoadedModule>           const& loadedModule,
+
+}
+
+Slang::RefPtr<Slang::LoadedModule> SlangLinkage::loadParsedModule(
     Slang::RefPtr<Slang::TranslationUnitRequest> const& translationUnit,
     Slang::Name*                                        name,
     Slang::String const&                                path)
@@ -442,28 +458,24 @@ void SlangLinkage::loadParsedModule(
 
     checkTranslationUnit(translationUnit.Ptr());
 
-    RefPtr<ModuleDecl> moduleDecl = translationUnit->SyntaxNode;
-
-    loadedModule->moduleDecl = moduleDecl;
+    RefPtr<LoadedModule> loadedModule = translationUnit->module;
     loadedModule->irModule = generateIRForTranslationUnit(translationUnit);
 
     mapPathToLoadedModule.Add(path, loadedModule);
     mapNameToLoadedModules.Add(name, loadedModule);
     loadedModulesList.Add(loadedModule);
+
+    return loadedModule;
 }
 
-Slang::RefPtr<Slang::ModuleDecl> SlangLinkage::loadModule(
-    Slang::LoadedModule*    loadedModule,
+Slang::RefPtr<Slang::LoadedModule> SlangLinkage::loadModule(
+    Slang::CompileRequest*  compileRequest,
     Slang::Name*            name,
     Slang::String const&    path,
     Slang::String const&    source,
     Slang::SourceLoc const&)
 {
     using namespace Slang;
-
-    // A `LoadedModule` is a `CompileRequest` in order to service the
-    // public API, so we take advantage of that here.
-    CompileRequest* compileRequest = loadedModule;
 
     RefPtr<TranslationUnitRequest> translationUnit = new TranslationUnitRequest();
     translationUnit->compileRequest = compileRequest;
@@ -483,13 +495,10 @@ Slang::RefPtr<Slang::ModuleDecl> SlangLinkage::loadModule(
 
     // TODO: handle errors
 
-    loadParsedModule(
-        loadedModule,
+    return loadParsedModule(
         translationUnit,
         name,
         path);
-
-    return translationUnit->SyntaxNode;
 }
 
 void SlangLinkage::handlePoundImport(
@@ -498,8 +507,9 @@ void SlangLinkage::handlePoundImport(
 {
     using namespace Slang;
 
-    RefPtr<LoadedModule> loadedModule = new LoadedModule(mSession);
-    CompileRequest* compileRequest = loadedModule;
+    // Create a compile request to handle the load
+    RefPtr<CompileRequest> compileRequest = new CompileRequest(mSession);
+    compileRequest->copyConfigurationFrom(this);
 
     RefPtr<TranslationUnitRequest> translationUnit = new TranslationUnitRequest();
     translationUnit->compileRequest = compileRequest;
@@ -510,7 +520,7 @@ void SlangLinkage::handlePoundImport(
     RefPtr<Scope> languageScope = mSession->slangLanguageScope;
 
     RefPtr<ModuleDecl> translationUnitSyntax = new ModuleDecl();
-    translationUnit->SyntaxNode = translationUnitSyntax;
+    translationUnit->module->moduleDecl = translationUnitSyntax;
 
     parseSourceFile(
         translationUnit.Ptr(),
@@ -531,13 +541,12 @@ void SlangLinkage::handlePoundImport(
     Name* name = mSession->getNamePool()->getName(path);
 
     loadParsedModule(
-        loadedModule,
         translationUnit,
         name,
         path);
 }
 
-Slang::RefPtr<Slang::ModuleDecl> SlangLinkage::findOrImportModule(
+Slang::RefPtr<Slang::LoadedModule> SlangLinkage::findOrImportModule(
     Slang::CompileRequest*  originalRequest,
     Slang::Name*            name,
     Slang::SourceLoc const& loc)
@@ -548,7 +557,7 @@ Slang::RefPtr<Slang::ModuleDecl> SlangLinkage::findOrImportModule(
     // If so, return it.
     RefPtr<LoadedModule> loadedModule;
     if (mapNameToLoadedModules.TryGetValue(name, loadedModule))
-        return loadedModule->moduleDecl;
+        return loadedModule;
 
     // Derive a file name for the module, by taking the given
     // identifier, replacing all occurences of `_` with `-`,
@@ -568,17 +577,15 @@ Slang::RefPtr<Slang::ModuleDecl> SlangLinkage::findOrImportModule(
 
     String fileName = sb.ProduceString();
 
-    // Create an object to represent the loaded module, in
-    // anticipation of the compilation succeeding.
-    loadedModule = new LoadedModule(mSession);
-    // TODO: copy state into the loaded module so that it can
-    // properly look up files, etc.
+    // Create a compile request to use for the load operation
+    RefPtr<CompileRequest> compileRequest = new CompileRequest(mSession);
+    compileRequest->copyConfigurationFrom(this);
 
     // Next, try to find the file of the given name,
     // using our ordinary include-handling logic.
 
     IncludeHandlerImpl includeHandler;
-    includeHandler.request = loadedModule;
+    includeHandler.request = compileRequest;
 
     auto expandedLoc = originalRequest->getSourceManager()->expandSourceLoc(loc);
 
@@ -605,13 +612,13 @@ Slang::RefPtr<Slang::ModuleDecl> SlangLinkage::findOrImportModule(
 
     // Maybe this was loaded previously via `#import`
     if (mapPathToLoadedModule.TryGetValue(foundPath, loadedModule))
-        return loadedModule->moduleDecl;
+        return loadedModule;
 
 
     // We've found a file that we can load for the given module, so
     // go ahead and perform the module-load action
     return loadModule(
-        loadedModule,
+        compileRequest,
         name,
         foundPath,
         foundSource,
@@ -621,29 +628,90 @@ Slang::RefPtr<Slang::ModuleDecl> SlangLinkage::findOrImportModule(
 namespace Slang
 {
 
-RefPtr<ModuleDecl> CompileRequest::findOrImportModule(
+Linkage * CompileRequest::getLinkage()
+{
+    // If a linkage was specified for our compile request to use, then use
+    // that one. Otherwise, create a linkage that will be specific to our
+    // compile request, that clones all of the relevant state.
+
+    if(!linkageForImports)
+    {
+        linkageForImports = new Linkage(mSession);
+        linkageForImports->copyConfigurationFrom(this);
+    }
+
+    return linkageForImports;
+}
+
+Linkage* TranslationUnitRequest::getLinkage()
+{
+    return compileRequest->getLinkage();
+}
+
+void TranslationUnitRequest::registerImportedModule(
+    RefPtr<LoadedModule>    loadedModule)
+{
+    // We need to register that we depend on the given module,
+    // but we also need to remember that we depend on everything
+    // it transitively depends on.
+
+    for(auto dependency : loadedModule->importedModules)
+    {
+        registerImportedModuleImpl(dependency);
+    }
+    registerImportedModuleImpl(loadedModule);
+}
+
+void TranslationUnitRequest::registerImportedModuleImpl(
+    RefPtr<LoadedModule>    loadedModule)
+{
+    // If we've already imported this module before, there is
+    // nothing left to do.
+    if(importedModuleSet.Contains(loadedModule))
+        return;
+
+    // Othwerise, add the module to our dependency list,
+    // and then also put it in our set so we don't add
+    // it again.
+    module->importedModules.Add(loadedModule);
+    importedModuleSet.Add(loadedModule);
+}
+
+RefPtr<LoadedModule> TranslationUnitRequest::findOrImportModule(
     Name*            name,
     SourceLoc const& loc)
 {
-    return getLinkage()->findOrImportModule(this, name, loc);
+    // Delegate to the linkage to perform the actual load operation.
+    auto loadedModule = getLinkage()->findOrImportModule(compileRequest, name, loc);
 
+    // Bail out if loading failed.
+    if(!loadedModule)
+        return nullptr;
+
+    // Remember that we've imported this module.
+    registerImportedModule(loadedModule);
+
+    return loadedModule;
 }
 
 void CompileRequest::handlePoundImport(
     String const&    path,
     TokenList const& tokens)
 {
-
+    getLinkage()->handlePoundImport(path, tokens);
 }
 
 
 
 RefPtr<ModuleDecl> findOrImportModule(
-    CompileRequest*     request,
-    Name*               name,
-    SourceLoc const&    loc)
+    TranslationUnitRequest* request,
+    Name*                   name,
+    SourceLoc const&        loc)
 {
-    return request->findOrImportModule(request, name, loc);
+    auto loadedModule = request->findOrImportModule(name, loc);
+    if(!loadedModule)
+        return nullptr;
+    return loadedModule->moduleDecl;
 }
 
 
@@ -677,7 +745,7 @@ void Session::addBuiltinSource(
     }
 
     // Extract the AST for the code we just parsed
-    auto syntax = compileRequest->translationUnits[translationUnitIndex]->SyntaxNode;
+    auto syntax = compileRequest->translationUnits[translationUnitIndex]->getModuleDecl();
 
     // HACK(tfoley): mark all declarations in the "stdlib" so
     // that we can detect them later (e.g., so we don't emit them)

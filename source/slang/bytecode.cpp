@@ -1060,7 +1060,7 @@ void generateBytecodeContainer(
     List<BytecodeGenerationPtr<BCModule>> bcModulesList;
     for (auto translationUnitReq : compileReq->translationUnits)
     {
-        auto bcModule = generateBytecodeForModule(context, translationUnitReq->irModule);
+        auto bcModule = generateBytecodeForModule(context, translationUnitReq->getIRModule());
         bcModulesList.Add(bcModule);
     }
 
