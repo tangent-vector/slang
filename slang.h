@@ -254,6 +254,39 @@ extern "C"
         SlangLinkage*   linkage,
         char const*     name);
 
+    /** Add a path to use when searching for `import`ed modules.
+
+    The given `path` will be used by the linkage when loading modules,
+    whether through a call to `spLoadModuleIntoLinkage`, or through
+    an `import` declaration in code processed under this linkage.
+    */
+    SLANG_API void spLinkage_AddSearchPath(
+        SlangLinkage*   linkage,
+        const char*     path);
+
+    /** Add a macro definition to be used for code loaded by this linkage.
+
+    The macro definition will be visible to all code loaded under this
+    linkage (including by compile requests that are set to use this
+    linkage).
+    */
+    SLANG_API void spLinkage_AddPreprocessorDefine(
+        SlangLinkage*   linkage,
+        const char*     key,
+        const char*     value);
+
+    /** Add a code generation target to be used for code loaded in this linkage.
+    */
+    SLANG_API void spLinkage_AddCodeGenTarget(
+        SlangLinkage*       linkage,
+        SlangCompileTarget  target);
+
+    /** Add compilation flags to be used for all code loaded in this linkage.
+    */
+    SLANG_API void spLinkage_SetCompileFlags(
+        SlangLinkage*       linkage,
+        SlangCompileFlags   flags);
+
     /*!
     @brief Create a compile request.
     */

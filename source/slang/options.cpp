@@ -80,6 +80,7 @@ struct OptionsParser
     int profileOptionCount = 0;
 
     SlangCompileFlags flags = 0;
+    SlangCompileFlags flagsMask = 0;
     SlangTargetFlags targetFlags = 0;
 
     struct RawOutputPath
@@ -241,10 +242,6 @@ struct OptionsParser
         int             argc,
         char const* const*  argv)
     {
-        // Copy some state out of the current request, in case we've been called
-        // after some other initialization has been performed.
-        flags = requestImpl->compileFlags;
-
         //
 
         char const* const* argCursor = &argv[0];
@@ -625,7 +622,7 @@ struct OptionsParser
 
         // If the user is requesting multiple targets, *and* is asking
         // for direct output files for entry points, that is an error.
-        if (rawOutputPaths.Count() != 0 && requestImpl->targets.Count() > 1)
+        if (rawOutputPaths.Count() != 0 && requestImpl->options->rawTargets.Count() > 1)
         {
             requestImpl->mSink.diagnose(
                 SourceLoc(),

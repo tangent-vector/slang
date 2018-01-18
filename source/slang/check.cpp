@@ -1221,7 +1221,7 @@ namespace Slang
 
         bool isRewriteMode()
         {
-            return (getTranslationUnit()->compileFlags & SLANG_COMPILE_FLAG_NO_CHECKING) != 0;
+            return (getTranslationUnit()->getCompileFlags() & SLANG_COMPILE_FLAG_NO_CHECKING) != 0;
         }
 
         // Perform type coercion, and emit errors if it isn't possible
@@ -6800,7 +6800,7 @@ namespace Slang
         }
         
         // validate global type arguments only when we are generating code
-        if ((entryPoint->compileRequest->compileFlags & SLANG_COMPILE_FLAG_NO_CODEGEN) == 0)
+        if ((entryPoint->compileRequest->getCompileFlags() & SLANG_COMPILE_FLAG_NO_CODEGEN) == 0)
         {
             // check that user-provioded type arguments conforms to the generic type
             // parameter declaration of this translation unit

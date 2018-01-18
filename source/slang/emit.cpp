@@ -4469,7 +4469,7 @@ emitDeclImpl(decl, nullptr);
         //
 
         String name;
-        if (!(context->shared->entryPoint->compileRequest->compileFlags & SLANG_COMPILE_FLAG_NO_MANGLING))
+        if (!(context->shared->entryPoint->compileRequest->getCompileFlags() & SLANG_COMPILE_FLAG_NO_MANGLING))
         {
             name.append("_s");
         }
@@ -4496,7 +4496,7 @@ emitDeclImpl(decl, nullptr);
         //
 
         String name;
-        if (context->shared->entryPoint->compileRequest->compileFlags & SLANG_COMPILE_FLAG_NO_MANGLING)
+        if (context->shared->entryPoint->compileRequest->getCompileFlags() & SLANG_COMPILE_FLAG_NO_MANGLING)
         {
             // Special case (1):
             name.append(getText(declRef.GetName()));
@@ -4575,7 +4575,7 @@ emitDeclImpl(decl, nullptr);
                 return getText(reflectionNameMod->nameAndLoc.name);
             }
 
-            if ((context->shared->entryPoint->compileRequest->compileFlags & SLANG_COMPILE_FLAG_NO_MANGLING))
+            if ((context->shared->entryPoint->compileRequest->getCompileFlags() & SLANG_COMPILE_FLAG_NO_MANGLING))
             {
                 return getIRName(decl);
             }
@@ -7264,7 +7264,7 @@ String emitEntryPoint(
    
     SharedEmitContext sharedContext;
     sharedContext.target = target;
-    sharedContext.finalTarget = targetRequest->target;
+    sharedContext.finalTarget = targetRequest->getTarget();
     sharedContext.entryPoint = entryPoint;
 
     if (entryPoint)
@@ -7321,7 +7321,7 @@ String emitEntryPoint(
     //
     // We'll try to detect the cases here, starting with case (1):
     //
-    if ((translationUnit->compileFlags & SLANG_COMPILE_FLAG_NO_CHECKING)
+    if ((translationUnit->getCompileFlags() & SLANG_COMPILE_FLAG_NO_CHECKING)
         && translationUnit->module->importedModules.Count() == 0)
     {
         // The user has opted out of semantic checking for their own code
@@ -7341,7 +7341,7 @@ String emitEntryPoint(
     }
     //
     // Next we will check for case (2a):
-    else if (!(translationUnit->compileRequest->compileFlags & SLANG_COMPILE_FLAG_USE_IR))
+    else if (!(translationUnit->compileRequest->getCompileFlags() & SLANG_COMPILE_FLAG_USE_IR))
     {
         TypeLegalizationContext typeLegalizationContext;
         typeLegalizationContext.session = entryPoint->compileRequest->mSession;
@@ -7409,7 +7409,7 @@ String emitEntryPoint(
         typeLegalizationContext.irModule = irModule;
 
         List<Decl*> astDecls;
-        if(translationUnit->compileFlags & SLANG_COMPILE_FLAG_NO_CHECKING)
+        if(translationUnit->getCompileFlags() & SLANG_COMPILE_FLAG_NO_CHECKING)
         {
             // We are in case (2b), where the main module is in unchecked
             // HLSL/GLSL that we need to "rewrite," and any library code
@@ -7480,7 +7480,7 @@ String emitEntryPoint(
 #endif
 
         LoweredEntryPoint lowered;
-        if(translationUnit->compileFlags & SLANG_COMPILE_FLAG_NO_CHECKING)
+        if(translationUnit->getCompileFlags() & SLANG_COMPILE_FLAG_NO_CHECKING)
         {
             // In the (2b) case, once we have legalized the IR code,
             // we now need to go in and legalize the AST code.
@@ -7518,7 +7518,7 @@ String emitEntryPoint(
 
         // If we are in case (2b) and the user *also* has AST-based code
         // that we need to output, we'll do it now.
-        if (translationUnit->compileFlags & SLANG_COMPILE_FLAG_NO_CHECKING)
+        if (translationUnit->getCompileFlags() & SLANG_COMPILE_FLAG_NO_CHECKING)
         {
             // First make sure that we've emitted any types that were declared
             // in the IR, but then subsequently only used by the AST

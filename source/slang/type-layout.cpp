@@ -618,7 +618,7 @@ LayoutRulesImpl* GetLayoutRulesImpl(LayoutRule rule)
 
 LayoutRulesFamilyImpl* getDefaultLayoutRulesFamilyForTarget(TargetRequest* targetReq)
 {
-    switch (targetReq->target)
+    switch (targetReq->getTarget())
     {
     case CodeGenTarget::HLSL:
     case CodeGenTarget::DXBytecode:
@@ -768,7 +768,7 @@ static bool isOpenGLTarget(TargetRequest*)
 
 static bool isD3DTarget(TargetRequest* targetReq)
 {
-    switch( targetReq->target )
+    switch( targetReq->getTarget() )
     {
     case CodeGenTarget::HLSL:
     case CodeGenTarget::DXBytecode:
@@ -800,7 +800,7 @@ static bool isSM5OrEarlier(TargetRequest* targetReq)
     if(!isD3DTarget(targetReq))
         return false;
 
-    auto profile = targetReq->targetProfile;
+    auto profile = targetReq->getTargetProfile();
 
     if(profile.getFamily() == ProfileFamily::DX)
     {
@@ -813,7 +813,7 @@ static bool isSM5OrEarlier(TargetRequest* targetReq)
 
 static bool isVulkanTarget(TargetRequest* targetReq)
 {
-    switch( targetReq->target )
+    switch( targetReq->getTarget() )
     {
     default:
         return false;
@@ -852,7 +852,7 @@ static bool shouldAllocateRegisterSpaceForParameterBlock(
     // the target options tell us to:
     if( isD3D12Target(targetReq) )
     {
-        if(targetReq->targetFlags & SLANG_TARGET_FLAG_PARAMETER_BLOCKS_USE_REGISTER_SPACES)
+        if(targetReq->getTargetFlags() & SLANG_TARGET_FLAG_PARAMETER_BLOCKS_USE_REGISTER_SPACES)
             return true;
     }
 

@@ -2999,7 +2999,7 @@ namespace Slang
         // If we are being asked not to check things *and* we haven't
         // seen any `import` declarations yet, then we can safely assume
         // that function bodies should be left as-is.
-        if( (translationUnit->compileFlags & SLANG_COMPILE_FLAG_NO_CHECKING)
+        if( (translationUnit->getCompileFlags() & SLANG_COMPILE_FLAG_NO_CHECKING)
             && !haveSeenAnyImportDecls )
         {
             // We have been asked to parse the input, but not attempt to understand it.

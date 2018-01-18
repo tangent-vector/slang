@@ -1108,7 +1108,7 @@ if (getTarget() == CodeGenTarget::GLSL)
     // due to, e.g., bindless textures.
     shouldDesugarTupleTypes = true;
 }
-else if( shared->compileRequest->compileFlags & SLANG_COMPILE_FLAG_SPLIT_MIXED_TYPES )
+else if( shared->compileRequest->getCompileFlags() & SLANG_COMPILE_FLAG_SPLIT_MIXED_TYPES )
 {
     // If the user is directly asking us to do this transformation,
     // then obviously we need to do it.

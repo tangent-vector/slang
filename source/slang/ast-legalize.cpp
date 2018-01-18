@@ -2804,7 +2804,7 @@ struct LoweringVisitor
         // an imported module (rather than the "rewrite-mode" module
         // being translated), then we need to ensure that it gets lowered
         // to IR instead.
-        if (shared->compileRequest->compileFlags & SLANG_COMPILE_FLAG_USE_IR)
+        if (shared->compileRequest->getCompileFlags() & SLANG_COMPILE_FLAG_USE_IR)
         {
             auto parentModule = findModuleForDecl(decl);
             if (parentModule && (parentModule != shared->mainModuleDecl))
@@ -4974,7 +4974,7 @@ struct FindIRDeclUsedByASTVisitor
         // an imported module (rather than the "rewrite-mode" module
         // being translated), then we need to ensure that it gets lowered
         // to IR instead.
-        if (compileRequest->compileFlags & SLANG_COMPILE_FLAG_USE_IR)
+        if (compileRequest->getCompileFlags() & SLANG_COMPILE_FLAG_USE_IR)
         {
             auto parentModule = findModuleForDecl(decl);
             if (parentModule && (parentModule != mainModuleDecl))

@@ -3936,7 +3936,7 @@ IRModule* generateIRForTranslationUnit(
 {
     // If the user did not opt into IR usage, then don't compile IR
     // for the translation unit.
-    if (!(translationUnit->compileFlags & SLANG_COMPILE_FLAG_USE_IR))
+    if (!(translationUnit->getCompileFlags() & SLANG_COMPILE_FLAG_USE_IR))
         return nullptr;
 
     auto compileRequest = translationUnit->compileRequest;

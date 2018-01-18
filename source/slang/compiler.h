@@ -170,6 +170,155 @@ namespace Slang
 
     typedef struct SlangLinkage Linkage;
 
+    // A description of a target we want to generate code for
+    class TargetDesc : public RefObject
+    {
+    public:
+        CodeGenTarget       target;
+        SlangTargetFlags    targetFlags = 0;
+        Slang::Profile      targetProfile = Slang::Profile::Unknown;
+    };
+
+    // Compilation results for a particular target
+    // A request to generate output in some target format
+    class TargetRequest : public RefObject
+    {
+    public:
+        CompileRequest*     compileRequest;
+        RefPtr<TargetDesc>  targetDesc;
+
+        CodeGenTarget       getTarget() { return targetDesc->target; }
+        SlangTargetFlags    getTargetFlags() { return targetDesc->targetFlags; }
+        Slang::Profile      getTargetProfile() { return targetDesc->targetProfile; }
+
+        // The resulting reflection layout information
+        RefPtr<ProgramLayout> layout;
+
+        // Generated compile results for each entry point
+        // in the parent compile request (indexing matches
+        // the order they are given in the compile request)
+        List<CompileResult> entryPointResults;
+    };
+
+    // A directory to be searched when looking for files (e.g., `#include`)
+    struct SearchDirectory
+    {
+        SearchDirectory() = default;
+        SearchDirectory(SearchDirectory const& other) = default;
+        SearchDirectory(String const& path)
+            : path(path)
+        {}
+
+        String  path;
+    };
+
+    // Several different objects need to maintain compilation options,
+    // and in some cases we need options from one object to override
+    // those from a "parent" object.
+    //
+    // We centralize these settings into a `CompileOptions` class,
+    // that holds these common settings and allows for chaining.
+    //
+    class CompileOptions : public Slang::RefObject
+    {
+    public:
+        CompileOptions()
+        {}
+
+        CompileOptions(CompileOptions* base)
+            : base(base)
+        {}
+
+        // We will start an options object in "raw" mode,
+        // where we can freely set any of its field (including `base`)
+        // and then we will toggle it to "cooked" mode on demand,
+        // when the user starts trying to pull out options.
+        enum class Mode { raw, cooked };
+        Mode mode = Mode::raw;
+
+        // When we need to extract cooked data, we need to ensure
+        // that the options have been cooked.
+        void ensureCooked();
+
+        // A set of "base" options to be extended.
+        // The options in the current option will be applied
+        // "on top of" the options from the base (if it is present).
+        RefPtr<CompileOptions> base;
+
+        // Compile flags to be applied, along with a mask of which
+        // of these flags to actually set (that is, when a bit in
+        // `compileFlagMask` is zero, the settings from `base`
+        // will be used instead.
+        SlangCompileFlags rawCompileFlags = 0;
+        SlangCompileFlags rawCompileFlagsMask = 0;
+        SlangCompileFlags cookedCompileFlags = 0;
+        SlangCompileFlags getCompileFlags()
+        {
+            ensureCooked();
+            return cookedCompileFlags;
+        }
+        void setCompileFlags(SlangCompileFlags mask, SlangCompileFlags value)
+        {
+            assert(mode == Mode::raw);
+            rawCompileFlags = (rawCompileFlags & ~mask) | (value & mask);
+            rawCompileFlagsMask = rawCompileFlagsMask | mask;
+        }
+        void enableCompileFlags(SlangCompileFlags flags)
+        {
+            setCompileFlags(flags, flags);
+        }
+        void disableCompileFlags(SlangCompileFlags flags)
+        {
+            setCompileFlags(flags, 0);
+        }
+
+        // Directories to search for `#include` files or `import`ed modules.
+        // These are logically appended to the list from `base`.
+        typedef  List<SearchDirectory> SearchDirectoryList;
+        SearchDirectoryList rawSearchDirectories;
+        SearchDirectoryList cookedSearchDirectories;
+        CompileOptions::SearchDirectoryList const& getSearchDirectories()
+        {
+            ensureCooked();
+            return cookedSearchDirectories;
+        }
+        void addSearchPath(char const* path)
+        {
+            assert(mode == Mode::raw);
+            rawSearchDirectories.Add(SearchDirectory(path));
+        }
+
+        // Definitions to provide during preprocessing.
+        // When a key occurs here and in `base`, the one here "wins."
+        typedef  Dictionary<String, String> PreprocessorDefinitions;
+        PreprocessorDefinitions rawPreprocessorDefinitions;
+        PreprocessorDefinitions cookedPreprocessorDefinitions;
+        PreprocessorDefinitions const& getPreprocessorDefinitions()
+        {
+            ensureCooked();
+            return cookedPreprocessorDefinitions;
+        }
+        void addPreprocessorDefine(char const* key, char const* value)
+        {
+            assert(mode == Mode::raw);
+            rawPreprocessorDefinitions[key] = value;
+        }
+
+        // Information on the targets we are being asked to
+        // generate code for.
+        //
+        // Logically appended to the list from `base`.
+        typedef List<RefPtr<TargetDesc>> TargetDescList;
+        TargetDescList rawTargets;
+        TargetDescList cookedTargets;
+        TargetDescList const& getTargets()
+        {
+            ensureCooked();
+            return cookedTargets;
+        }
+        UInt addTarget(CodeGenTarget target);
+    };
+
     // A single translation unit requested to be compiled.
     // Each translation unit will turn into a single `LoadedModule`
     // after compilation.
@@ -182,6 +331,13 @@ namespace Slang
         // The parent compile request
         CompileRequest* compileRequest = nullptr;
 
+        RefPtr<CompileOptions> options;
+        SlangCompileFlags getCompileFlags() { return options->getCompileFlags(); }
+        CompileOptions::PreprocessorDefinitions const& getPreprocessorDefinitions()
+        {
+            return options->getPreprocessorDefinitions();
+        }
+
         // The language in which the source file(s)
         // are assumed to be written
         SourceLanguage sourceLanguage = SourceLanguage::Unknown;
@@ -193,13 +349,6 @@ namespace Slang
 
         // The entry points associated with this translation unit
         List<RefPtr<EntryPointRequest> > entryPoints;
-
-        // Preprocessor definitions to use for this translation unit only
-        // (whereas the ones on `CompileOptions` will be shared)
-        Dictionary<String, String> preprocessorDefinitions;
-
-        // Compile flags for this translation unit
-        SlangCompileFlags compileFlags = 0;
 
         // The module that results from this translation unit.
         // This will be filled in during the compilation process,
@@ -229,69 +378,20 @@ namespace Slang
             SourceLoc const& loc);
     };
 
-    // A request to generate output in some target format
-    class TargetRequest : public RefObject
-    {
-    public:
-        CompileRequest*     compileRequest;
-        CodeGenTarget       target;
-        SlangTargetFlags    targetFlags = 0;
-        Slang::Profile      targetProfile = Slang::Profile::Unknown;
-
-        // The resulting reflection layout information
-        RefPtr<ProgramLayout> layout;
-
-        // Generated compile results for each entry point
-        // in the parent compile request (indexing matches
-        // the order they are given in the compile request)
-        List<CompileResult> entryPointResults;
-    };
-
-    // A directory to be searched when looking for files (e.g., `#include`)
-    struct SearchDirectory
-    {
-        SearchDirectory() = default;
-        SearchDirectory(SearchDirectory const& other) = default;
-        SearchDirectory(String const& path)
-            : path(path)
-        {}
-
-        String  path;
-    };
-
     class Session;
-
-    // Shared logic between `Linkage` and `CompileRequest`
-    class CompileRequestBase : public Slang::RefObject
-    {
-    public:
-        Slang::Session*    mSession;
-
-        // Compile flags to be shared by all translation units
-        SlangCompileFlags compileFlags = 0;
-
-        // Directories to search for `#include` files or `import`ed modules
-        List<SearchDirectory> searchDirectories;
-
-        // Definitions to provide during preprocessing
-        Dictionary<String, String> preprocessorDefinitions;
-
-        CompileRequestBase(Session* session)
-            : mSession(session)
-        {}
-
-        void copyConfigurationFrom(CompileRequestBase* other);
-    };
-
 }
 
 // A linkage holds a collection of loaded modules, so that multiple
 // compile requests don't need to load the same library code over
 // and over again.
 //
-struct SlangLinkage : public Slang::CompileRequestBase
+struct SlangLinkage : public Slang::RefObject
 {
 public:
+    Slang::Session* session;
+
+    Slang::RefPtr<Slang::CompileOptions> options;
+
     // Modules that have been dynamically loaded via `import`
     //
     // This is a list of unique modules loaded, in the order they were encountered.
@@ -305,7 +405,7 @@ public:
 
 
     SlangLinkage(Slang::Session* session)
-        : Slang::CompileRequestBase(session)
+        : session(session)
     {}
 
     Slang::RefPtr<Slang::LoadedModule> loadParsedModule(
@@ -332,12 +432,20 @@ public:
 
 namespace Slang
 {
-    class CompileRequest : public CompileRequestBase
+    class CompileRequest : public RefObject
     {
     public:
-        // Information on the targets we are being asked to
-        // generate code for.
-        List<RefPtr<TargetRequest>> targets;
+        Session* mSession;
+
+        RefPtr<CompileOptions> options;
+        SlangCompileFlags getCompileFlags() { return options->getCompileFlags(); }
+        CompileOptions::SearchDirectoryList const& getSearchDirectories() { return options->getSearchDirectories(); }
+
+        typedef List<RefPtr<TargetRequest>> TargetRequestList;
+        TargetRequestList targetRequests;
+
+        CompileOptions::TargetDescList const& getTargetDescs() { return options->getTargets(); }
+        TargetRequestList const& getTargetRequests();
 
         // What container format are we being asked to generate?
         ContainerFormat containerFormat = ContainerFormat::None;

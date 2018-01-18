@@ -1752,7 +1752,7 @@ static bool isGLSLCrossCompilerNeeded(
 
     // We only need cross-compilation if we
     // are targetting something GLSL-based.
-    switch (targetReq->target)
+    switch (targetReq->getTarget())
     {
     default:
         return false;

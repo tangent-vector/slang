@@ -524,7 +524,7 @@ String dissassembleDXILUsingDXC(
         CompileResult result;
 
         auto compileRequest = entryPoint->compileRequest;
-        auto target = targetReq->target;
+        auto target = targetReq->getTarget();
 
         switch (target)
         {
@@ -744,7 +744,7 @@ String dissassembleDXILUsingDXC(
                 {
                     // Writing to console, so we need to generate text output.
 
-                    switch (targetReq->target)
+                    switch (targetReq->getTarget())
                     {
                 #if SLANG_ENABLE_DXBC_SUPPORT
                     case CodeGenTarget::DXBytecode:
@@ -852,7 +852,7 @@ String dissassembleDXILUsingDXC(
         // Go through the code-generation targets that the user
         // has specified, and generate code for each of them.
         //
-        for (auto targetReq : compileRequest->targets)
+        for (auto targetReq : compileRequest->getTargetRequests())
         {
             generateOutputForTarget(targetReq);
         }
@@ -874,7 +874,7 @@ String dissassembleDXILUsingDXC(
 
         if (compileRequest->isCommandLineCompile)
         {
-            for (auto targetReq : compileRequest->targets)
+            for (auto targetReq : compileRequest->getTargetRequests())
             {
                 UInt entryPointCount = compileRequest->entryPoints.Count();
                 for (UInt ee = 0; ee < entryPointCount; ++ee)

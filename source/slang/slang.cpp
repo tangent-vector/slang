@@ -95,7 +95,7 @@ struct IncludeHandlerImpl : IncludeHandler
             return IncludeResult::Found;
         }
 
-        for (auto & dir : request->searchDirectories)
+        for (auto & dir : request->getSearchDirectories())
         {
             path = Path::Combine(dir.path, pathToInclude);
             if (File::Exists(path))
@@ -122,7 +122,7 @@ TranslationUnitRequest::TranslationUnitRequest()
 //
 
 CompileRequest::CompileRequest(Session* session)
-    : CompileRequestBase(session)
+    : mSession(session)
 {
     getNamePool()->setRootNamePool(session->getRootNamePool());
 
@@ -157,11 +157,7 @@ void CompileRequest::parseTranslationUnit(
         break;
     }
 
-    Dictionary<String, String> combinedPreprocessorDefinitions;
-    for(auto& def : preprocessorDefinitions)
-        combinedPreprocessorDefinitions.Add(def.Key, def.Value);
-    for(auto& def : translationUnit->preprocessorDefinitions)
-        combinedPreprocessorDefinitions.Add(def.Key, def.Value);
+    auto& combinedPreprocessorDefinitions = translationUnit->getPreprocessorDefinitions();
 
     RefPtr<ModuleDecl> translationUnitSyntax = new ModuleDecl();
     translationUnit->module->moduleDecl = translationUnitSyntax;
@@ -202,7 +198,7 @@ void CompileRequest::generateIR()
     // At the moment, use of the IR is not enabled by
     // default, so we will skip this step unless
     // the flag was set to op in.
-    if (!(compileFlags & SLANG_COMPILE_FLAG_USE_IR))
+    if (!(getCompileFlags() & SLANG_COMPILE_FLAG_USE_IR))
         return;
 
     // Each translation unit is its own little world
@@ -214,7 +210,7 @@ void CompileRequest::generateIR()
     {
         // Also skip IR generation if semantic checking is turned off
         // for a given translation unit.
-        if(translationUnit->compileFlags & SLANG_COMPILE_FLAG_NO_CHECKING)
+        if(translationUnit->getCompileFlags() & SLANG_COMPILE_FLAG_NO_CHECKING)
             continue;
 
         translationUnit->module->irModule = generateIRForTranslationUnit(translationUnit);
@@ -249,23 +245,20 @@ static SourceLanguage inferSourceLanguage(CompileRequest* request)
 int CompileRequest::executeActionsInner()
 {
     // Do some cleanup on settings specified by user.
-    // In particular, we want to propagate flags from the overall request down to
-    // each translation unit.
     for (auto& translationUnit : translationUnits)
     {
-        translationUnit->compileFlags |= compileFlags;
-
-        // However, the "no checking" flag shouldn't be applied to
+        // The "no checking" flag shouldn't be applied to
         // any translation unit that is native Slang code.
         if (translationUnit->sourceLanguage == SourceLanguage::Slang)
         {
-            translationUnit->compileFlags &= ~SLANG_COMPILE_FLAG_NO_CHECKING;
+            translationUnit->options->ensureCooked();
+            translationUnit->options->cookedCompileFlags &= ~SLANG_COMPILE_FLAG_NO_CHECKING;
         }
     }
 
     // If no code-generation target was specified, then try to infer one from the source language,
     // just to make sure we can do something reasonable when invoked from the command line.
-    if (targets.Count() == 0)
+    if (getTargetDescs().Count() == 0)
     {
         auto language = inferSourceLanguage(this);
         switch (language)
@@ -302,7 +295,7 @@ int CompileRequest::executeActionsInner()
         if (mSink.GetErrorCount() != 0)
             return 1;
 
-        if ((compileFlags & SLANG_COMPILE_FLAG_NO_CODEGEN) == 0)
+        if ((getCompileFlags() & SLANG_COMPILE_FLAG_NO_CODEGEN) == 0)
         {
             // Generate initial IR for all the translation
             // units, if we are in a mode where IR is called for.
@@ -317,7 +310,7 @@ int CompileRequest::executeActionsInner()
         // This step is done globaly, because all translation
         // units and entry points need to agree on where
         // parameters are allocated.
-        for (auto targetReq : targets)
+        for (auto targetReq : getTargetRequests())
         {
             generateParameterBindings(targetReq);
             if (mSink.GetErrorCount() != 0)
@@ -328,7 +321,7 @@ int CompileRequest::executeActionsInner()
     // If command line specifies to skip codegen, we exit here.
     // Note: this is a debugging option.
     if (shouldSkipCodegen ||
-        ((compileFlags & SLANG_COMPILE_FLAG_NO_CODEGEN) != 0))
+        ((getCompileFlags() & SLANG_COMPILE_FLAG_NO_CODEGEN) != 0))
         return 0;
 
     // Generate output code, in whatever format was requested
@@ -356,6 +349,8 @@ int CompileRequest::addTranslationUnit(SourceLanguage language, String const&)
     RefPtr<TranslationUnitRequest> translationUnit = new TranslationUnitRequest();
     translationUnit->compileRequest = this;
     translationUnit->sourceLanguage = SourceLanguage(language);
+
+    translationUnit->options = new CompileOptions(options);
 
     translationUnits.Add(translationUnit);
 
@@ -427,25 +422,46 @@ int CompileRequest::addEntryPoint(
     return (int) result;
 }
 
-UInt CompileRequest::addTarget(
+void CompileOptions::ensureCooked()
+{
+    if(mode == Mode::cooked)
+        return;
+
+    mode = Mode::cooked;
+
+    if(base)
+    {
+        base->ensureCooked();
+        cookedCompileFlags = base->cookedCompileFlags;
+        cookedSearchDirectories = base->cookedSearchDirectories;
+        cookedPreprocessorDefinitions = base->cookedPreprocessorDefinitions;
+        cookedTargets = base->cookedTargets;
+    }
+
+    cookedCompileFlags = (cookedCompileFlags & ~rawCompileFlagsMask) | (rawCompileFlags & rawCompileFlagsMask);
+    cookedSearchDirectories.AddRange(rawSearchDirectories);
+    for(auto p : rawPreprocessorDefinitions)
+        cookedPreprocessorDefinitions[p.Key] = p.Value;
+    cookedTargets.AddRange(rawTargets);
+}
+
+
+UInt CompileOptions::addTarget(
     CodeGenTarget   target)
 {
-    RefPtr<TargetRequest> targetReq = new TargetRequest();
-    targetReq->compileRequest = this;
-    targetReq->target = target;
+    RefPtr<TargetDesc> targetDesc = new TargetDesc();
+    targetDesc->target = target;
 
-    UInt result = targets.Count();
-    targets.Add(targetReq);
+    UInt result = rawTargets.Count();
+    rawTargets.Add(targetDesc);
     return (int) result;
 }
 
-void CompileRequestBase::copyConfigurationFrom(CompileRequestBase* other)
+UInt CompileRequest::addTarget(
+    CodeGenTarget   target)
 {
-    this->searchDirectories = other->searchDirectories;
-    this->preprocessorDefinitions = other->preprocessorDefinitions;
-    this->compileFlags = other->compileFlags;
+    return options->addTarget(target);
 }
-
 
 }
 
@@ -479,13 +495,7 @@ Slang::RefPtr<Slang::LoadedModule> SlangLinkage::loadModule(
 
     RefPtr<TranslationUnitRequest> translationUnit = new TranslationUnitRequest();
     translationUnit->compileRequest = compileRequest;
-
-    // We don't want to use the same options that the user specified
-    // for loading modules on-demand. In particular, we always want
-    // semantic checking to be enabled.
-    //
-    // TODO: decide which options, if any, should be inherited.
-    translationUnit->compileFlags = this->compileFlags & (SLANG_COMPILE_FLAG_USE_IR);
+    translationUnit->options = compileRequest->options;
 
     RefPtr<SourceFile> sourceFile = compileRequest->getSourceManager()->allocateSourceFile(path, source);
 
@@ -508,16 +518,15 @@ void SlangLinkage::handlePoundImport(
     using namespace Slang;
 
     // Create a compile request to handle the load
-    RefPtr<CompileRequest> compileRequest = new CompileRequest(mSession);
-    compileRequest->copyConfigurationFrom(this);
+    RefPtr<CompileRequest> compileRequest = new CompileRequest(session);
+    compileRequest->options = options;
 
     RefPtr<TranslationUnitRequest> translationUnit = new TranslationUnitRequest();
     translationUnit->compileRequest = compileRequest;
-
-    translationUnit->compileFlags = compileRequest->compileFlags & (SLANG_COMPILE_FLAG_USE_IR);
+    translationUnit->options = compileRequest->options;
 
     // Imported code is always native Slang code
-    RefPtr<Scope> languageScope = mSession->slangLanguageScope;
+    RefPtr<Scope> languageScope = session->slangLanguageScope;
 
     RefPtr<ModuleDecl> translationUnitSyntax = new ModuleDecl();
     translationUnit->module->moduleDecl = translationUnitSyntax;
@@ -538,7 +547,7 @@ void SlangLinkage::handlePoundImport(
     // Ideally we'd construct a suitable name by effectively
     // running the name->path logic in reverse (e.g., replacing
     // `-` with `_` and `/` with `.`).
-    Name* name = mSession->getNamePool()->getName(path);
+    Name* name = session->getNamePool()->getName(path);
 
     loadParsedModule(
         translationUnit,
@@ -578,8 +587,8 @@ Slang::RefPtr<Slang::LoadedModule> SlangLinkage::findOrImportModule(
     String fileName = sb.ProduceString();
 
     // Create a compile request to use for the load operation
-    RefPtr<CompileRequest> compileRequest = new CompileRequest(mSession);
-    compileRequest->copyConfigurationFrom(this);
+    RefPtr<CompileRequest> compileRequest = new CompileRequest(session);
+    compileRequest->options = options;
 
     // Next, try to find the file of the given name,
     // using our ordinary include-handling logic.
@@ -628,6 +637,25 @@ Slang::RefPtr<Slang::LoadedModule> SlangLinkage::findOrImportModule(
 namespace Slang
 {
 
+CompileRequest::TargetRequestList const & CompileRequest::getTargetRequests()
+{
+    auto& targetDescs = getTargetDescs();
+    if( targetRequests.Count() != targetDescs.Count() )
+    {
+        assert(targetRequests.Count() == 0);
+
+        for(auto targetDesc : targetDescs)
+        {
+            RefPtr<TargetRequest> targetRequest = new TargetRequest();
+            targetRequest->compileRequest = this;
+            targetRequest->targetDesc = targetDesc;
+
+            targetRequests.Add(targetRequest);
+        }
+    }
+    return targetRequests;
+}
+
 Linkage * CompileRequest::getLinkage()
 {
     // If a linkage was specified for our compile request to use, then use
@@ -637,7 +665,22 @@ Linkage * CompileRequest::getLinkage()
     if(!linkageForImports)
     {
         linkageForImports = new Linkage(mSession);
-        linkageForImports->copyConfigurationFrom(this);
+
+        // We need to ensure that anything loaded through the linkage
+        // will have semantic checking applied (since it is required
+        // for Slang code), so the linkgae will need its own options
+        // object if our has the no-checking flag.
+        if(options->getCompileFlags() & SLANG_COMPILE_FLAG_NO_CHECKING)
+        {
+            RefPtr<CompileOptions> linkageOptions = new CompileOptions(options);
+            linkageOptions->setCompileFlags(SLANG_COMPILE_FLAG_NO_CHECKING, 0);
+            linkageForImports->options = linkageOptions;
+        }
+        else
+        {
+            linkageForImports->options = options;
+        }
+
     }
 
     return linkageForImports;
@@ -721,6 +764,7 @@ void Session::addBuiltinSource(
     String const&           source)
 {
     RefPtr<CompileRequest> compileRequest = new CompileRequest(this);
+    compileRequest->options = new CompileOptions();
     compileRequest->setSourceManager(getBuiltinSourceManager());
 
     auto translationUnitIndex = compileRequest->addTranslationUnit(SourceLanguage::Slang, path);
@@ -816,6 +860,7 @@ SLANG_API SlangLinkage* spCreateLinkage(
 {
     auto s = SESSION(session);
     auto linkage = new Slang::Linkage(s);
+    linkage->options = new Slang::CompileOptions();
     return linkage;
 }
 
@@ -834,11 +879,42 @@ SLANG_API SlangCompileRequest* spLoadModuleIntoLinkage(
     return nullptr;
 }
 
+SLANG_API void spLinkage_AddSearchPath(
+    SlangLinkage*   linkage,
+    const char*     path)
+{
+    linkage->options->addSearchPath(path);
+}
+
+SLANG_API void spLinkage_AddPreprocessorDefine(
+    SlangLinkage*   linkage,
+    const char*     key,
+    const char*     value)
+{
+    linkage->options->addPreprocessorDefine(key,value);
+}
+
+SLANG_API void spLinkage_AddCodeGenTarget(
+    SlangLinkage*       linkage,
+    SlangCompileTarget  target)
+{
+    linkage->options->addTarget(Slang::CodeGenTarget(target));
+}
+
+SLANG_API void spLinkage_SetCompileFlags(
+    SlangLinkage*       linkage,
+    SlangCompileFlags   flags)
+{
+    linkage->options->setCompileFlags(flags, flags);
+}
+
+
 SLANG_API SlangCompileRequest* spCreateCompileRequest(
     SlangSession* session)
 {
     auto s = SESSION(session);
     auto req = new Slang::CompileRequest(s);
+    req->options = new Slang::CompileOptions();
     return reinterpret_cast<SlangCompileRequest*>(req);
 }
 
@@ -860,6 +936,7 @@ SLANG_API void spSetLinkageForImports(
     if(!request) return;
     auto req = REQ(request);
     req->linkageForImports = linkage;
+    req->options->base = linkage->options;
 }
 
 
@@ -867,7 +944,10 @@ SLANG_API void spSetCompileFlags(
     SlangCompileRequest*    request,
     SlangCompileFlags       flags)
 {
-    REQ(request)->compileFlags = flags;
+    // Note: We are interpreting this option as enabling the given flags,
+    // but not changing flags that were previously set.
+
+    REQ(request)->options->enableCompileFlags(flags);
 }
 
 SLANG_API void spSetDumpIntermediates(
@@ -898,8 +978,9 @@ SLANG_API void spSetCodeGenTarget(
         int target)
 {
     auto req = REQ(request);
-    req->targets.Clear();
-    req->addTarget(Slang::CodeGenTarget(target));
+    auto options = req->options;
+    options->rawTargets.Clear();
+    options->addTarget(Slang::CodeGenTarget(target));
 }
 
 SLANG_API int spAddCodeGenTarget(
@@ -907,7 +988,8 @@ SLANG_API int spAddCodeGenTarget(
     SlangCompileTarget      target)
 {
     auto req = REQ(request);
-    return (int) req->addTarget(Slang::CodeGenTarget(target));
+    auto options = req->options;
+    return (int) options->addTarget(Slang::CodeGenTarget(target));
 }
 
 SLANG_API void spSetTargetProfile(
@@ -916,7 +998,7 @@ SLANG_API void spSetTargetProfile(
     SlangProfileID          profile)
 {
     auto req = REQ(request);
-    req->targets[targetIndex]->targetProfile = profile;
+    req->options->rawTargets[targetIndex]->targetProfile = profile;
 }
 
 SLANG_API void spSetTargetFlags(
@@ -925,7 +1007,7 @@ SLANG_API void spSetTargetFlags(
     SlangTargetFlags        flags)
 {
     auto req = REQ(request);
-    req->targets[targetIndex]->targetFlags = flags;
+    req->options->rawTargets[targetIndex]->targetFlags = flags;
 }
 
 SLANG_API void spSetOutputContainerFormat(
@@ -960,7 +1042,7 @@ SLANG_API void spAddSearchPath(
         SlangCompileRequest*    request,
         const char*             path)
 {
-    REQ(request)->searchDirectories.Add(Slang::SearchDirectory(path));
+    REQ(request)->options->addSearchPath(path);
 }
 
 SLANG_API void spAddPreprocessorDefine(
@@ -968,7 +1050,7 @@ SLANG_API void spAddPreprocessorDefine(
     const char*             key,
     const char*             value)
 {
-    REQ(request)->preprocessorDefinitions[key] = value;
+    REQ(request)->options->addPreprocessorDefine(key, value);
 }
 
 SLANG_API char const* spGetDiagnosticOutput(
@@ -1001,8 +1083,7 @@ SLANG_API void spTranslationUnit_addPreprocessorDefine(
 {
     auto req = REQ(request);
 
-    req->translationUnits[translationUnitIndex]->preprocessorDefinitions[key] = value;
-
+    req->translationUnits[translationUnitIndex]->options->addPreprocessorDefine(key, value);
 }
 
 SLANG_API void spAddTranslationUnitSourceFile(
@@ -1176,10 +1257,11 @@ SLANG_API void const* spGetEntryPointCode(
     auto req = REQ(request);
 
     // TODO: We should really accept a target index in this API
-    auto targetCount = req->targets.Count();
+    auto& targets = req->getTargetRequests();
+    auto targetCount = targets.Count();
     if (targetCount == 0)
         return nullptr;
-    auto targetReq = req->targets[0];
+    auto targetReq = targets[0];
 
     Slang::CompileResult& result = targetReq->entryPointResults[entryPointIndex];
 
@@ -1243,10 +1325,11 @@ SLANG_API SlangReflection* spGetReflection(
     // so that we can do this better, and make it clear that
     // `spGetReflection()` is shorthand for `targetIndex == 0`.
     //
-    auto targetCount = req->targets.Count();
+    auto& targets = req->getTargetRequests();
+    auto targetCount = targets.Count();
     if (targetCount == 0)
         return 0;
-    auto targetReq = req->targets[0];
+    auto targetReq = targets[0];
 
     return (SlangReflection*) targetReq->layout.Ptr();
 }
