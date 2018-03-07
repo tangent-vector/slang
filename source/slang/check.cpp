@@ -168,64 +168,96 @@ namespace Slang
             RefPtr<Expr>    baseExpr,
             SourceLoc       loc)
         {
+            // Compute the type that this declaration reference will have in context.
+            //
+            auto type = GetTypeForDeclRef(declRef);
+
+#if 0
+            // If we are constructing a reference to a constraint declaration
+            // showing that some type conforms to some interface, then we
+            // need to ensure that we have a "this type" substitution in place,
+            // which shows the actual type to be subsituted through for
+            // the interface type.
+            //
+            if (auto typeConstraintDecl = declRef.As<TypeConstraintDecl>())
+            {
+                auto supType = GetSup(typeConstraintDecl);
+                if (auto supDeclRefType = supType->As<DeclRefType>())
+                {
+                    if (auto interfaceDeclRef = supDeclRefType->declRef.As<InterfaceDecl>())
+                    {
+                        // Okay, we are trying to reference something "through"
+                        // the interface constraint, so we need to figure out
+                        // what the "this type" should be:
+                        //
+                        RefPtr<Type> thisType = baseExpr ? baseExpr->type : nullptr;
+                        if (auto thisTypeType = thisType->As<TypeType>())
+                            thisType = thisTypeType->type;
+
+                        // Now create a substitution which notes that the "this type"
+                        // is the underyling type for the interface, in the context
+                        // of this declaration.
+                        //
+                        RefPtr<ThisTypeSubstitution> thisTypeSubst = new ThisTypeSubstitution();
+                        thisTypeSubst->declRef = typeConstraintDecl;
+
+                        // Apply the substitution we created to the original declaration reference.
+                        //
+                        declRef.substitutions.thisTypeSubstitution = thisTypeSubst;
+
+                        // Also, replace the type computed above with one that includes
+                        // the this-type substitution.
+                        interfaceDeclRef.substitutions.thisTypeSubstitution = thisTypeSubst;
+                        type = DeclRefType::Create(getSession(), interfaceDeclRef);
+                    }
+                }
+            }
+#endif
+
+            // Construct an appropriate expression based on teh structured of
+            // the declaration reference.
+            //
             if (baseExpr)
             {
-                RefPtr<Expr> expr;
-                DeclRef<Decl> *declRefOut;
+                // If there was a base expression, we will have some kind of 
+                // member expression.
+                //
                 if (baseExpr->type->As<TypeType>())
                 {
-                    auto sexpr = new StaticMemberExpr();
-                    sexpr->loc = loc;
-                    sexpr->BaseExpression = baseExpr;
-                    sexpr->name = declRef.GetName();
-                    sexpr->declRef = declRef;
-                    declRefOut = &sexpr->declRef;
-                    expr = sexpr;
+                    // If the base expression was a type, then that means we
+                    // are constructing a static member reference.
+                    //
+                    auto expr = new StaticMemberExpr();
+                    expr->loc = loc;
+                    expr->type = type;
+                    expr->BaseExpression = baseExpr;
+                    expr->name = declRef.GetName();
+                    expr->declRef = declRef;
+                    return expr;
                 }
                 else
                 {
-                    auto sexpr = new MemberExpr();
-                    sexpr->loc = loc;
-                    sexpr->BaseExpression = baseExpr;
-                    sexpr->name = declRef.GetName();
-                    sexpr->declRef = declRef;
-                    declRefOut = &sexpr->declRef;
-                    expr = sexpr;
+                    // If the base expression wasn't a type, then this
+                    // is a normal member expression.
+                    //
+                    auto expr = new MemberExpr();
+                    expr->loc = loc;
+                    expr->type = type;
+                    expr->BaseExpression = baseExpr;
+                    expr->name = declRef.GetName();
+                    expr->declRef = declRef;
+                    return expr;
                 }
-
-                RefPtr<ThisTypeSubstitution> baseThisTypeSubst;
-                if (auto baseDeclRefExpr = baseExpr->As<DeclRefExpr>())
-                {
-                    baseThisTypeSubst = getThisTypeSubst(baseDeclRefExpr->declRef, false);
-                }
-                if (declRef.As<TypeConstraintDecl>())
-                {
-                    // if this is a reference to type constraint, insert a this-type substitution
-                    RefPtr<Type> expType;
-                    expType = baseExpr->type;
-                    if (auto baseExprTT = baseExpr->type->As<TypeType>())
-                        expType = baseExprTT->type;
-                    auto thisTypeSubst = getNewThisTypeSubst(*declRefOut);
-                    thisTypeSubst->sourceType = expType;
-                    baseThisTypeSubst = nullptr;
-                }
-                // propagate "this-type" substitutions
-                if (baseThisTypeSubst)
-                {
-                    if (auto declRefExpr = expr.As<DeclRefExpr>())
-                    {
-                        getNewThisTypeSubst(declRefExpr->declRef)->sourceType = baseThisTypeSubst->sourceType;
-                    }
-                }
-                expr->type = GetTypeForDeclRef(*declRefOut);
-                return expr;
             }
             else
             {
+                // If there is no base expression, then the result must
+                // be an ordinary variable expression.
+                //
                 auto expr = new VarExpr();
                 expr->loc = loc;
                 expr->name = declRef.GetName();
-                expr->type = GetTypeForDeclRef(declRef);
+                expr->type = type;
                 expr->declRef = declRef;
                 return expr;
             }
@@ -7166,6 +7198,8 @@ namespace Slang
         scopesToTry.Add(entryPoint->getTranslationUnit()->SyntaxNode->scope);
         for (auto & module : entryPoint->compileRequest->loadedModulesList)
             scopesToTry.Add(module->moduleDecl->scope);
+
+        List<RefPtr<Type>> globalGenericArgs;
         for (auto name : entryPoint->genericParameterTypeNames)
         {   
             // parse type name
@@ -7185,7 +7219,8 @@ namespace Slang
                 sink->diagnose(firstDeclWithName, Diagnostics::entryPointTypeSymbolNotAType, name);
                 return;
             }
-            entryPoint->genericParameterTypes.Add(type);
+
+            globalGenericArgs.Add(type);
         }
         
         // validate global type arguments only when we are generating code
@@ -7210,31 +7245,88 @@ namespace Slang
                 for (auto p : globalGenParams)
                     globalGenericParams.Add(p);
             }
-            if (globalGenericParams.Count() != entryPoint->genericParameterTypes.Count())
+
+            if (globalGenericParams.Count() != globalGenericArgs.Count())
             {
-                sink->diagnose(entryPoint->decl, Diagnostics::mismatchEntryPointTypeArgument, globalGenericParams.Count(),
-                    entryPoint->genericParameterTypes.Count());
+                sink->diagnose(entryPoint->decl, Diagnostics::mismatchEntryPointTypeArgument,
+                    globalGenericParams.Count(),
+                    globalGenericArgs.Count());
                 return;
             }
-            // if entry-point type arguments matches parameters, try find
-            // SubtypeWitness for each argument
-            int index = 0;
-            for (auto & gParam : globalGenericParams)
+
+            // We have an appropriate number of arguments for the global generic parameters,
+            // and now we need to check that the arguments conform to the declared constraints.
+            //
+            // Along the way, we will build up an appropriate set of substitutions to represent
+            // the generic arguments and their conformances.
+            //
+            RefPtr<GlobalGenericParamSubstitution> globalGenericSubsts = new GlobalGenericParamSubstitution();
+            auto globalGenericSubstLink = &globalGenericSubsts;
+            //
+            // TODO: There is a serious flaw to this checking logic if we ever have cases where
+            // the constraints on one `type_param` can depend on another `type_param`, e.g.:
+            //
+            //      type_param A;
+            //      type_param B : ISidekick<A>;
+            //
+            // In that case, if a user tries to set `B` to `Robin` and `Robin` conforms to
+            // `ISidekick<Batman>`, then the compiler needs to know whether `A` is being
+            // set to `Batman` to know whether the setting for `B` is valid. In this limit
+            // the constraints can be mutually recursive (so `A : IMentor<B>`).
+            //
+            // The only way to check things corectly is to validate each conformance under
+            // a set of assumptions (substitutions) that includes all the type substitutions,
+            // and possibly also all the other constraints *except* the one to be validated.
+            //
+            // We will punt on this for now, and just check each constraint in isolation.
+            //
+            UInt argCounter = 0;
+            for(auto& globalGenericParam : globalGenericParams)
             {
-                for (auto constraint : gParam->getMembersOfType<GenericTypeConstraintDecl>())
+                // Get the argument that matches this parameter.
+                UInt argIndex = argCounter++;
+                SLANG_ASSERT(argIndex < globalGenericArgs.Count());
+                auto globalGenericArg = globalGenericArgs[argIndex];
+
+                // Create a substitution for this parameter/argument.
+                RefPtr<GlobalGenericParamSubstitution> subst = new GlobalGenericParamSubstitution();
+                subst->paramDecl = globalGenericParam;
+                subst->actualType = globalGenericArg;
+
+                // Walk through the declared constraints for the parameter,
+                // and check that the argument actually satisfies them.
+                for(auto constraint : globalGenericParam->getMembersOfType<GenericTypeConstraintDecl>())
                 {
+                    // Get the type that the constraint is enforcing conformance to
                     auto interfaceType = GetSup(DeclRef<GenericTypeConstraintDecl>(constraint, nullptr));
+
+                    // Use our semantic-checking logic to search for a witness to the required conformance
                     SemanticsVisitor visitor(sink, entryPoint->compileRequest, translationUnit);
-                    auto witness = visitor.tryGetSubtypeWitness(entryPoint->genericParameterTypes[index], interfaceType);
+                    auto witness = visitor.tryGetSubtypeWitness(globalGenericArg, interfaceType);
                     if (!witness)
                     {
-                        sink->diagnose(gParam,
-                            Diagnostics::typeArgumentDoesNotConformToInterface, gParam->nameAndLoc.name, entryPoint->genericParameterTypes[index],
+                        // If no witness was found, then we will be unable to satisfy
+                        // the conformances required.
+                        sink->diagnose(globalGenericParam,
+                            Diagnostics::typeArgumentDoesNotConformToInterface,
+                            globalGenericParam->nameAndLoc.name,
+                            globalGenericArg,
                             interfaceType);
                     }
-                    entryPoint->genericParameterWitnesses.Add(witness);
+
+                    // Attach the concrete witness for this conformance to the
+                    // substutiton
+                    GlobalGenericParamSubstitution::ConstraintArg constraintArg;
+                    constraintArg.decl = constraint;
+                    constraintArg.val = witness;
+                    subst->constraintArgs.Add(constraintArg);
                 }
-                index++;
+
+                // Add the substitution for this parameter to the global substitution
+                // set that we are building.
+
+                *globalGenericSubstLink = subst;
+                globalGenericSubstLink = &subst->outer;
             }
         }
         if (sink->errorCount != 0)
@@ -7242,6 +7334,11 @@ namespace Slang
 
         // Now that we've *found* the entry point, it is time to validate
         // that it actually meets the constraints for the chosen stage/profile.
+        //
+        // TODO: This validation should be performed "under" any global generic
+        // parameter substitution we might have created, so that we can validate
+        // based on knowledge of actual types.
+        //
         validateEntryPoint(entryPoint);
     }
 
@@ -7465,7 +7562,9 @@ namespace Slang
         SubstitutionSet resultSubst = parentSubst;
         if (auto interfaceDecl = dynamic_cast<InterfaceDecl*>(decl))
         {
-            resultSubst.thisTypeSubstitution = new ThisTypeSubstitution();
+            RefPtr<ThisTypeSubstitution> thisTypeSubst = new ThisTypeSubstitution();
+            thisTypeSubst->declRef = makeDeclRef(interfaceDecl);
+            resultSubst.thisTypeSubstitution = thisTypeSubst;
         }
         auto dd = decl->ParentDecl;
         if( auto genericDecl = dynamic_cast<GenericDecl*>(dd) )

@@ -26,12 +26,12 @@ struct PropagateConstExprContext
     DiagnosticSink* getSink() { return sink; }
 };
 
-bool isConstExpr(Type* type)
+bool isConstExpr(IRType* fullType)
 {
-    if( auto rateQualifiedType = type->As<RateQualifiedType>() )
+    if( auto rateQualifiedType = as<IRRateQualifiedType>(fullType))
     {
-        auto rate = rateQualifiedType->rate;
-        if(auto constExprRate = rate->As<ConstExprRate>())
+        auto rate = rateQualifiedType->getRate();
+        if(auto constExprRate = as<IRConstExprRate>(rate))
             return true;
     }
 
@@ -101,7 +101,7 @@ void markConstExpr(
     PropagateConstExprContext*  context,
     IRInst*                    value)
 {
-    Slang::markConstExpr(context->getSession(), value);
+    Slang::markConstExpr(context->getBuilder(), value);
 }
 
 
@@ -285,14 +285,14 @@ bool propagateConstExprBackward(
                     UInt callArgCount = operandCount - firstCallArg;
 
                     auto callee = callInst->getOperand(0);
-                    while( callee->op == kIROp_specialize )
+                    while( callee->op == kIROp_Specialize )
                     {
                         callee = ((IRSpecialize*) callee)->getOperand(0);
                     }
                     if( callee->op == kIROp_Func )
                     {
                         auto calleeFunc = (IRFunc*) callee;
-                        auto calleeFuncType = calleeFunc->getType();
+                        auto calleeFuncType = calleeFunc->getDataType();
 
                         UInt callParamCount = calleeFuncType->getParamCount();
                         SLANG_RELEASE_ASSERT(callParamCount == callArgCount);
@@ -323,7 +323,7 @@ bool propagateConstExprBackward(
                             // If we don't have the definition/body for the callee,
                             // then we have to glean `constexpr` information from its
                             // type instead.
-                            auto calleeType = calleeFunc->getType();
+                            auto calleeType = calleeFunc->getDataType();
                             auto paramCount = calleeType->getParamCount();
                             for( UInt pp = 0; pp < paramCount; ++pp )
                             {

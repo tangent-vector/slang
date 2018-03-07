@@ -228,12 +228,6 @@ void Type::accept(IValVisitor* visitor, void* extra)
 
         overloadedType = new OverloadGroupType();
         overloadedType->setSession(this);
-
-        irBasicBlockType = new IRBasicBlockType();
-        irBasicBlockType->setSession(this);
-
-        constExprRate = new ConstExprRate();
-        constExprRate->setSession(this);
     }
 
     Type* Session::getBoolType()
@@ -286,31 +280,10 @@ void Type::accept(IValVisitor* visitor, void* extra)
         return errorType;
     }
 
-    Type* Session::getIRBasicBlockType()
-    {
-        return irBasicBlockType;
-    }
-
-    Type* Session::getConstExprRate()
-    {
-        return constExprRate;
-    }
-
     Type* Session::getStringType()
     {
         auto stringTypeDecl = findMagicDecl(this, "StringType");
         return DeclRefType::Create(this, makeDeclRef<Decl>(stringTypeDecl));
-    }
-
-    RefPtr<RateQualifiedType> Session::getRateQualifiedType(
-        Type*   rate,
-        Type*   valueType)
-    {
-        RefPtr<RateQualifiedType> rateQualifiedType = new RateQualifiedType();
-        rateQualifiedType->setSession(this);
-        rateQualifiedType->rate = rate;
-        rateQualifiedType->valueType = valueType;
-        return rateQualifiedType;
     }
 
     RefPtr<PtrType> Session::getPtrType(
@@ -362,16 +335,6 @@ void Type::accept(IValVisitor* visitor, void* extra)
         arrayType->ArrayLength = elementCount;
         return arrayType;
     }
-
-
-    RefPtr<GroupSharedType> Session::getGroupSharedType(RefPtr<Type> valueType)
-    {
-        RefPtr<GroupSharedType> groupSharedType = new GroupSharedType();
-        groupSharedType->setSession(this);
-        groupSharedType->valueType = valueType;
-        return groupSharedType;
-    }
-
 
     SyntaxClass<RefObject> Session::findSyntaxClass(Name* name)
     {
@@ -430,117 +393,6 @@ void Type::accept(IValVisitor* visitor, void* extra)
             return baseType->ToString() + "[" + ArrayLength->ToString() + "]";
         else
             return baseType->ToString() + "[]";
-    }
-
-    // RateQualifiedType
-
-    Slang::String RateQualifiedType::ToString()
-    {
-        return "@" + rate->ToString() + " " + valueType->ToString();
-    }
-
-    bool RateQualifiedType::EqualsImpl(Type * type)
-    {
-        auto rateQualifiedType = type->As<RateQualifiedType>();
-        if(!rateQualifiedType)
-            return false;
-
-        return rate->Equals(rateQualifiedType->rate)
-            && valueType->Equals(rateQualifiedType->valueType);
-    }
-
-    RefPtr<Val> RateQualifiedType::SubstituteImpl(SubstitutionSet subst, int* ioDiff)
-    {
-        int diff = 0;
-        auto substRate = rate->SubstituteImpl(subst, &diff).As<Type>();
-        auto substValueType = valueType->SubstituteImpl(subst, &diff).As<Type>();
-        if(!diff)
-            return this;
-
-        (*ioDiff)++;
-
-        return getSession()->getRateQualifiedType(substRate, substValueType);
-    }
-
-    RefPtr<Type> RateQualifiedType::CreateCanonicalType()
-    {
-        RefPtr<Type> canRate = rate->GetCanonicalType();
-        RefPtr<Type> canValueType = valueType->GetCanonicalType();
-
-        RefPtr<RateQualifiedType> canRateQualifiedType = new RateQualifiedType();
-        canRateQualifiedType->setSession(session);
-        canRateQualifiedType->rate = canRate;
-        canRateQualifiedType->valueType = valueType;
-        return canRateQualifiedType;
-    }
-
-    int RateQualifiedType::GetHashCode()
-    {
-        auto hash = (int)(typeid(this).hash_code());
-        hash = combineHash(hash, rate->GetHashCode());
-        hash = combineHash(hash, valueType->GetHashCode());
-        return hash;
-    }
-
-    // ConstExprRate
-
-    Slang::String ConstExprRate::ToString()
-    {
-        return "ConstExpr";
-    }
-
-    bool ConstExprRate::EqualsImpl(Type * type)
-    {
-        auto constExprRate = type->As<ConstExprRate>();
-        if(!constExprRate)
-            return false;
-
-        return true;
-    }
-
-    RefPtr<Val> ConstExprRate::SubstituteImpl(SubstitutionSet /*subst*/, int* /*ioDiff*/)
-    {
-        return this;
-    }
-
-    RefPtr<Type> ConstExprRate::CreateCanonicalType()
-    {
-        return this;
-    }
-
-    int ConstExprRate::GetHashCode()
-    {
-        auto hash = (int)(typeid(this).hash_code());
-        return hash;
-    }
-
-    // GroupSharedType
-
-    Slang::String GroupSharedType::ToString()
-    {
-        return "@ThreadGroup " + valueType->ToString();
-    }
-
-    bool GroupSharedType::EqualsImpl(Type * type)
-    {
-        auto t = type->As<GroupSharedType>();
-        if (!t)
-            return false;
-        return valueType->Equals(t->valueType);
-    }
-
-    RefPtr<Type> GroupSharedType::CreateCanonicalType()
-    {
-        auto canonicalValueType = valueType->GetCanonicalType();
-        auto canonicalGroupSharedType = getSession()->getGroupSharedType(canonicalValueType);
-        return canonicalGroupSharedType;
-    }
-
-    int GroupSharedType::GetHashCode()
-    {
-        return combineHash(
-            valueType->GetHashCode(),
-            (int)(typeid(this).hash_code()));
     }
 
     // DeclRefType
@@ -611,45 +463,6 @@ void Type::accept(IValVisitor* visitor, void* extra)
                 }
             }
         }
-        // the second case we care about is when this decl type refers to an associatedtype decl
-        // we want to replace it with the actual associated type
-        else if (auto assocTypeDecl = dynamic_cast<AssocTypeDecl*>(declRef.getDecl()))
-        {
-            auto thisSubst = getThisTypeSubst(declRef, false);
-            auto oldSubstSrc = thisSubst ? thisSubst->sourceType : nullptr;
-            bool restore = false;
-            if (thisSubst && thisSubst->sourceType.Ptr() == dynamic_cast<Val*>(this))
-                thisSubst->sourceType = nullptr;
-            auto newSubst = substituteSubstitutions(declRef.substitutions, subst, ioDiff);
-            if (restore)
-                thisSubst->sourceType = oldSubstSrc;
-            if (auto thisTypeSubst = newSubst.thisTypeSubstitution)
-            {
-                if (thisTypeSubst->sourceType)
-                {
-                    if (auto aggTypeDeclRef = thisTypeSubst->sourceType.As<DeclRefType>()->declRef.As<AggTypeDecl>())
-                    {
-                        Decl * targetType = nullptr;
-                        if (aggTypeDeclRef.getDecl()->memberDictionary.TryGetValue(assocTypeDecl->getName(), targetType))
-                        {
-                            if (auto typeDefDecl = dynamic_cast<TypeDefDecl*>(targetType))
-                            {
-                                DeclRef<TypeDefDecl> targetTypeDeclRef(typeDefDecl, aggTypeDeclRef.substitutions);
-                                return GetType(targetTypeDeclRef);
-                            }
-                            else if (auto targetAggType = dynamic_cast<AggTypeDecl*>(targetType))
-                            {
-                                return DeclRefType::Create(getSession(), DeclRef<Decl>(targetAggType, aggTypeDeclRef.substitutions));
-                            }
-                            else
-                            {
-                                SLANG_UNIMPLEMENTED_X("unknown assoctype implementation type.");
-                            }
-                        }
-                    }
-                }
-            }
-        }
         else if (auto globalGenParam = dynamic_cast<GlobalGenericParamDecl*>(declRef.getDecl()))
         {
             // search for a substitution that might apply to us
@@ -670,6 +483,51 @@ void Type::accept(IValVisitor* visitor, void* extra)
 
         // Make sure to record the difference!
         *ioDiff += diff;
+
+        // It is possible that the original decl-ref was to an associated type,
+        // and then after substitution is applied, it becomes possible to
+        // specialize the reference to the concrete type that is used
+        // for a particular implementation.
+        //
+        if(auto substAssocTypeDecl = substDeclRef.As<AssocTypeDecl>())
+        {
+            // We need to figure out whether there is a concrete `ThisTypeSubstitution` we can use.
+            auto thisSubst = substAssocTypeDecl.substitutions.thisTypeSubstitution;
+
+            // In order to make a concrete type replacement, we'd need to find an inheritance
+            // declaration that shows how a concrete type implements the interface that
+            // declared the associated type.
+            //
+            if (auto inheritanceDeclRef = thisSubst->declRef.As<InheritanceDecl>())
+            {
+                // TODO: Need to figure out which substiutions on the "key" might
+                // need to be stripped off to make it valid for the `requirementWitnesses` map.
+                DeclRef<Decl> requirementKey = substAssocTypeDecl;
+                DeclRef<Decl> satisfyingVal;
+                if (inheritanceDeclRef.getDecl()->requirementWitnesses.TryGetValue(requirementKey, satisfyingVal))
+                {
+                    // TODO: we need to apply subsitutions to the `satisfyingVal` to
+                    // make it line up with the concrete decl-ref we have.
+
+                    // We have found a concrete declaration to satisfy the requirement,
+                    // and that is what we should use now.
+                    if (auto typeDefDeclRef = satisfyingVal.As<TypeDefDecl>())
+                    {
+                        // TODO: We should return a `NamedType` here, rather than
+                        // unwrapping the `typedef`.
+                        return GetType(typeDefDeclRef);
+                    }
+                    else if (auto aggTypeDeclRef = satisfyingVal.As<AggTypeDecl>())
+                    {
+                        return DeclRefType::Create(getSession(), aggTypeDeclRef);
+                    }
+                    else
+                    {
+                        SLANG_UNIMPLEMENTED_X("unknown assoctype implementation type.");
+                    }
+                }
+            }
+        }
 
         // Re-construct the type in case we are using a specialized sub-class
         return DeclRefType::Create(getSession(), substDeclRef);
@@ -906,28 +764,6 @@ void Type::accept(IValVisitor* visitor, void* extra)
     }
 
     int OverloadGroupType::GetHashCode()
-    {
-        return (int)(int64_t)(void*)this;
-    }
-
-    // IRBasicBlockType
-
-    String IRBasicBlockType::ToString()
-    {
-        return "Block";
-    }
-
-    bool IRBasicBlockType::EqualsImpl(Type * /*type*/)
-    {
-        return false;
-    }
-
-    RefPtr<Type> IRBasicBlockType::CreateCanonicalType()
-    {
-        return this;
-    }
-
-    int IRBasicBlockType::GetHashCode()
     {
         return (int)(int64_t)(void*)this;
     }
@@ -1349,38 +1185,22 @@ void Type::accept(IValVisitor* visitor, void* extra)
         if (!this) return nullptr;
 
         int diff = 0;
-        RefPtr<Val> newSourceType;
-        if (sourceType)
-            newSourceType = sourceType->SubstituteImpl(subst, &diff);
-        else
-        {
-            // this_type is a free variable, use this_type from subst
-            if (subst.thisTypeSubstitution)
-            {
-                if (subst.thisTypeSubstitution->sourceType != sourceType)
-                {
-                    newSourceType = subst.thisTypeSubstitution->sourceType;
-                    diff = 1;
-                }
-            }
-        }
+        auto substDeclRef = declRef.SubstituteImpl(subst, &diff);
         if (!diff) return this;
 
         (*ioDiff)++;
         auto substSubst = new ThisTypeSubstitution();
-        substSubst->sourceType = newSourceType;
+        substSubst->declRef = substDeclRef;
         return substSubst;
     }
 
     bool ThisTypeSubstitution::Equals(Substitutions* subst)
     {
         if (!subst)
-            return true;
+            return this == nullptr;
         if (auto thisTypeSubst = dynamic_cast<ThisTypeSubstitution*>(subst))
         {
-            if (!sourceType || !thisTypeSubst->sourceType)
-                return true;
-            return sourceType->EqualsVal(thisTypeSubst->sourceType);
+            return declRef.Equals(thisTypeSubst->declRef);
         }
         return false;
     }
@@ -1425,13 +1245,11 @@ void Type::accept(IValVisitor* visitor, void* extra)
                 return false;
             if (!actualType->EqualsVal(genSubst->actualType))
                 return false;
-            if (witnessTables.Count() != genSubst->witnessTables.Count())
+            if (constraintArgs.Count() != genSubst->constraintArgs.Count())
                 return false;
-            for (UInt i = 0; i < witnessTables.Count(); i++)
+            for (UInt i = 0; i < constraintArgs.Count(); i++)
             {
-                if (!witnessTables[i].Key->Equals(genSubst->witnessTables[i].Key))
-                    return false;
-                if (!witnessTables[i].Value->EqualsVal(genSubst->witnessTables[i].Value))
+                if (!constraintArgs[i].val->EqualsVal(genSubst->constraintArgs[i].val))
                     return false;
             }
             return true;
@@ -1518,6 +1336,8 @@ void Type::accept(IValVisitor* visitor, void* extra)
         // if this is a AssocTypeDecl, try lookup the actual associated type
         if (auto assocTypeDecl = substDeclRef.decl->As<AssocTypeDecl>())
         {
+            SLANG_UNEXPECTED("need to implement this");
+#if 0
             auto thisSubst = getThisTypeSubst(substDeclRef, false);
             if (thisSubst)
             {
@@ -1541,6 +1361,7 @@ void Type::accept(IValVisitor* visitor, void* extra)
                     }
                 }
             }
+#endif
         }
         return substDeclRef;
     }
@@ -1873,6 +1694,9 @@ void Type::accept(IValVisitor* visitor, void* extra)
                 if (globalGenParamSubst->paramDecl != genConstraintDecl.getDecl()->ParentDecl)
                     continue;
 
+                SLANG_UNEXPECTED("need to implement this search");
+
+#if 0
                 // find witness table for the required interface
                 for (auto witness : globalGenParamSubst->witnessTables)
                     if (witness.Key->EqualsVal(supType))
@@ -1880,6 +1704,7 @@ void Type::accept(IValVisitor* visitor, void* extra)
                         (*ioDiff)++;
                         return witness.Value;
                     }
+#endif
             }
         }
         RefPtr<DeclaredSubtypeWitness> rs = new DeclaredSubtypeWitness();
@@ -1985,28 +1810,6 @@ void Type::accept(IValVisitor* visitor, void* extra)
         return hash;
     }
 
-    // IRProxyVal
-
-    bool IRProxyVal::EqualsVal(Val* val)
-    {
-        auto otherProxy = dynamic_cast<IRProxyVal*>(val);
-        if(!otherProxy)
-            return false;
-
-        return this->inst.get() == otherProxy->inst.get();
-    }
-
-    String IRProxyVal::ToString()
-    {
-        return "IRProxyVal(...)";
-    }
-
-    int IRProxyVal::GetHashCode()
-    {
-        auto hash = Slang::GetHashCode(inst.get());
-        return hash;
-    }
-
     //
 
     String DeclRefBase::toString() const
@@ -2020,26 +1823,6 @@ void Type::accept(IValVisitor* visitor, void* extra)
         return name->text;
     }
     
-    RefPtr<ThisTypeSubstitution> getThisTypeSubst(DeclRefBase & declRef, bool insertSubstEntry)
-    {
-        RefPtr<ThisTypeSubstitution> thisSubst = declRef.substitutions.thisTypeSubstitution;
-        if (!thisSubst)
-        {
-            thisSubst = new ThisTypeSubstitution();
-            if (insertSubstEntry)
-            {
-                declRef.substitutions.thisTypeSubstitution = thisSubst;
-            }
-        }
-        return thisSubst;
-    }
-
-    RefPtr<ThisTypeSubstitution> getNewThisTypeSubst(DeclRefBase & declRef)
-    {
-        declRef.substitutions.thisTypeSubstitution = new ThisTypeSubstitution();
-        return declRef.substitutions.thisTypeSubstitution;
-    }
-
     SubstitutionSet substituteSubstitutions(SubstitutionSet oldSubst, SubstitutionSet subst, int * ioDiff)
     {
         return oldSubst.substituteImpl(subst, ioDiff);
@@ -2064,7 +1847,7 @@ void Type::accept(IValVisitor* visitor, void* extra)
         }
         else
         {
-            if (substSet.thisTypeSubstitution && substSet.thisTypeSubstitution->sourceType != nullptr)
+            if (substSet.thisTypeSubstitution)
                 return false;
         }
         return true;

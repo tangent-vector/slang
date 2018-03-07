@@ -32,7 +32,7 @@ SLANG_RAW("\n")
 SLANG_RAW("__generic<T>\n")
 SLANG_RAW("__magic_type(HLSLStructuredBufferType)\n")
 SLANG_RAW("__intrinsic_type(")
-SLANG_SPLICE(kIROp_structuredBufferType
+SLANG_SPLICE(kIROp_HLSLStructuredBufferType
 )
 SLANG_RAW(")\n")
 SLANG_RAW("struct StructuredBuffer\n")
@@ -182,7 +182,7 @@ SLANG_RAW("\n")
 SLANG_RAW("__generic<T>\n")
 SLANG_RAW("__magic_type(HLSLRWStructuredBufferType)\n")
 SLANG_RAW("__intrinsic_type(")
-SLANG_SPLICE(kIROp_readWriteStructuredBufferType
+SLANG_SPLICE(kIROp_HLSLRWStructuredBufferType
 )
 SLANG_RAW(")\n")
 SLANG_RAW("struct RWStructuredBuffer\n")

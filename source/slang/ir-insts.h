@@ -81,6 +81,22 @@ struct IRTargetIntrinsicDecoration : IRTargetSpecificDecoration
     }
 };
 
+// A decoration that marks a field key as having been associated
+// with a particular simple semantic (e.g., `COLOR` or `SV_Position`,
+// but not a `register` semantic).
+//
+// This is currently needed so that we can round-trip HLSL `struct`
+// types that get used for varying input/output. This is an unfortunate
+// case where some amount of "layout" information can't just come
+// in via the `TypeLayout` part of things.
+//
+struct IRSemanticDecoration : IRDecoration
+{
+    enum { kDecorationOp = kIRDecorationOp_Semantic };
+
+    Name* semanticName;
+};
+
 //
 
 // An IR node to represent a reference to an AST-level
@@ -101,8 +117,16 @@ struct IRDeclRef : IRInst
 //
 struct IRSpecialize : IRInst
 {
-    IRUse genericVal;
-    IRUse specDeclRefVal;
+    // The "base" for the call is the generic to be specialized
+    IRUse base;
+    IRInst* getBase() { return getOperand(0); }
+
+    // after the generic value come the arguments
+    UInt getArgCount() { return getOperandCount() - 1; }
+    IRInst* getArg(UInt index) { return getOperand(index + 1); }
+
+    IR_LEAF_ISA(Specialize)
+
 };
 
 // An instruction that looks up the implementation
@@ -112,7 +136,10 @@ struct IRSpecialize : IRInst
 struct IRLookupWitnessMethod : IRInst
 {
     IRUse witnessTable;
-    IRUse requirementDeclRef;
+    IRUse requirementKey;
+
+    IRInst* getWitnessTable() { return witnessTable.get(); }
+    IRInst* getRequirementKey() { return requirementKey.get(); }
 };
 
 struct IRLookupWitnessTable : IRInst
@@ -307,9 +334,9 @@ struct IRSwizzleSet : IRReturn
 // a stack allocation of some memory.
 struct IRVar : IRInst
 {
-    PtrType* getDataType()
+    IRPtrType* getDataType()
     {
-        return (PtrType*) IRInst::getDataType();
+        return cast<IRPtrType>(IRInst::getDataType());
     }
 
     static bool isaImpl(IROp op) { return op == kIROp_Var; }
@@ -323,9 +350,9 @@ struct IRVar : IRInst
 /// blocks nested inside this value.
 struct IRGlobalVar : IRGlobalValueWithCode
 {
-    PtrType* getDataType()
+    IRPtrType* getDataType()
     {
-        return (PtrType*) IRInst::getDataType();
+        return cast<IRPtrType>(IRInst::getDataType());
     }
 };
 
@@ -359,17 +386,6 @@ struct IRWitnessTable : IRGlobalValue
     {
         return IRInstList<IRWitnessTableEntry>(getChildren());
     }
-
-    RefPtr<GenericDecl> genericDecl;
-    DeclRef<Decl> subTypeDeclRef, supTypeDeclRef;
-
-    virtual void dispose() override
-    {
-        IRGlobalValue::dispose();
-        genericDecl = decltype(genericDecl)();
-        subTypeDeclRef = decltype(subTypeDeclRef)();
-        supTypeDeclRef = decltype(supTypeDeclRef)();
-    }
 };
 
 // An instruction that yields an undefined value.
@@ -379,6 +395,23 @@ struct IRWitnessTable : IRGlobalValue
 // used when undefined.
 struct IRUndefined : IRInst
 {
+};
+
+// A global-scope generic parameter (a type parameter, a
+// constraint parameter, etc.)
+struct IRGlobalGenericParam : IRGlobalValue
+{
+    IR_LEAF_ISA(GlobalGenericParam)
+};
+
+// An instruction that binds a global generic parameter
+// to a particular value.
+struct IRBindGlobalGenericParam : IRInst
+{
+    IRGlobalGenericParam* getParam() { return cast<IRGlobalGenericParam>(getOperand(0)); }
+    IRInst* getVal() { return getOperand(0); }
+
+    IR_LEAF_ISA(BindGlobalGenericParam)
 };
 
 // Description of an instruction to be used for global value numbering
@@ -456,49 +489,80 @@ struct IRBuilder
     IRInst* getIntValue(IRType* type, IRIntegerValue value);
     IRInst* getFloatValue(IRType* type, IRFloatingPointValue value);
 
-    IRInst* getDeclRefVal(
-        DeclRefBase const&  declRef);
-    IRInst* getTypeVal(IRType* type); // create an IR value that represents a type
-    IRInst* emitSpecializeInst(
-        IRType*     type,
-        IRInst*    genericVal,
-        IRInst*    specDeclRef);
+    IRBasicType* getBasicType(BaseType baseType);
+    IRBasicType* getVoidType();
+    IRBasicType* getBoolType();
+    IRBasicType* getIntType();
+    IRBasicBlockType*   getBasicBlockType();
+
+
+    IRTypeKind*     getTypeKind();
+    IRGenericKind*  getGenericKind();
+
+    IRPtrType*  getPtrType(IRType* valueType);
+    IROutType*  getOutType(IRType* valueType);
+    IRInOutType*  getInOutType(IRType* valueType);
+    IRPtrTypeBase*  getPtrType(IROp op, IRType* valueType);
+
+    IRArrayTypeBase* getArrayTypeBase(
+        IROp    op,
+        IRType* elementType,
+        IRInst* elementCount);
+
+    IRArrayType* getArrayType(
+        IRType* elementType,
+        IRInst* elementCount);
+
+    IRUnsizedArrayType* getUnsizedArrayType(
+        IRType* elementType);
+
+    IRVectorType* getVectorType(
+        IRType* elementType,
+        IRInst* elementCount);
+
+    IRMatrixType* getMatrixType(
+        IRType* elementType,
+        IRInst* rowCount,
+        IRInst* columnCount);
+
+    IRFuncType* getFuncType(
+        UInt            paramCount,
+        IRType* const*  paramTypes,
+        IRType*         resultType);
+
+    IRConstExprRate* getConstExprRate();
+    IRGroupSharedRate* getGroupSharedRate();
+
+    IRRateQualifiedType* getRateQualifiedType(
+        IRRate* rate,
+        IRType* dataType);
+
+    // Set the data type of an instruction, while preserving
+    // its rate, if any.
+    void setDataType(IRInst* inst, IRType* dataType);
 
     IRInst* emitSpecializeInst(
         IRType*         type,
-        IRInst*        genericVal,
-        DeclRef<Decl>   specDeclRef);
+        IRInst*         genericVal,
+        UInt            argCount,
+        IRInst* const*  args);
 
     IRInst* emitLookupInterfaceMethodInst(
-        IRType*     type,
-        IRInst*    witnessTableVal,
-        IRInst*    interfaceMethodVal);
-
-    IRInst* emitLookupInterfaceMethodInst(
-        IRType*         type,
-        DeclRef<Decl>   witnessTableDeclRef,
-        DeclRef<Decl>   interfaceMethodDeclRef);
-
-    IRInst* emitLookupInterfaceMethodInst(
-        IRType*         type,
-        IRInst*   witnessTableVal,
-        DeclRef<Decl>   interfaceMethodDeclRef);
-
-    IRInst* emitFindWitnessTable(
-        DeclRef<Decl> baseTypeDeclRef,
-        IRType* interfaceType);
+        IRType* type,
+        IRInst* witnessTableVal,
+        IRInst* interfaceMethodVal);
 
     IRInst* emitCallInst(
         IRType*         type,
-        IRInst*        func,
+        IRInst*         func,
         UInt            argCount,
-        IRInst* const* args);
+        IRInst* const*  args);
 
     IRInst* emitIntrinsicInst(
         IRType*         type,
         IROp            op,
         UInt            argCount,
-        IRInst* const* args);
+        IRInst* const*  args);
 
     IRInst* emitConstructorInst(
         IRType*         type,
@@ -536,6 +600,32 @@ struct IRBuilder
         IRWitnessTable* witnessTable,
         IRInst*        requirementKey,
         IRInst*        satisfyingVal);
+
+    // Create an initially empty `struct` type.
+    IRStructType*   createStructType();
+
+    // Create a global "key" to use for indexing into a `struct` type.
+    IRStructKey*    createStructKey();
+
+    // Create a field nested in a struct type, declaring that
+    // the specified field key maps to a field with the specified type.
+    IRStructField*  createStructField(
+        IRStructType*   structType,
+        IRStructKey*    fieldKey,
+        IRType*         fieldType);
+
+    IRGeneric* createGeneric();
+    IRGeneric* emitGeneric();
+
+    // Low-level operation for creating a type.
+    IRType* getType(
+        IROp            op,
+        UInt            operandCount,
+        IRInst* const*  operands);
+    IRType* getType(
+        IROp            op);
+
+
     IRWitnessTable* lookupWitnessTable(Name* mangledName);
     void registerWitnessTable(IRWitnessTable* table);
     IRBlock* createBlock();
@@ -653,6 +743,12 @@ struct IRBuilder
         UInt            caseArgCount,
         IRInst* const* caseArgs);
 
+    IRGlobalGenericParam* emitGlobalGenericParam();
+
+    IRBindGlobalGenericParam* emitBindGlobalGenericParam(
+        IRInst* param,
+        IRInst* val);
+
     template<typename T>
     T* addDecoration(IRInst* value, IRDecorationOp op)
     {
@@ -750,7 +846,7 @@ void specializeGenerics(
 //
 
 void markConstExpr(
-    Session*    session,
+    IRBuilder*  builder,
     IRInst*     irValue);
 
 //

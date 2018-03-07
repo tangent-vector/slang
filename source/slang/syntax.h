@@ -1246,8 +1246,6 @@ namespace Slang
         Decl*   decl);
 
     void insertSubstAtBottom(RefPtr<Substitutions> & substHead, RefPtr<Substitutions> substToInsert);
-    RefPtr<ThisTypeSubstitution> getNewThisTypeSubst(DeclRefBase & declRef);
-    RefPtr<ThisTypeSubstitution> getThisTypeSubst(DeclRefBase & declRef, bool insertSubstEntry);
     void removeSubstitution(DeclRefBase & declRef, RefPtr<Substitutions> subst);
     bool hasGenericSubstitutions(RefPtr<Substitutions> subst);
     RefPtr<GenericSubstitution> getGenericSubstitution(RefPtr<Substitutions> subst);

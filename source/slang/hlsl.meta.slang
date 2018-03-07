@@ -31,7 +31,7 @@ __magic_type(HLSLByteAddressBufferType) struct ByteAddressBuffer
 
 __generic<T>
 __magic_type(HLSLStructuredBufferType)
-__intrinsic_type($(kIROp_structuredBufferType))
+__intrinsic_type($(kIROp_HLSLStructuredBufferType))
 struct StructuredBuffer
 {
     void GetDimensions(
@@ -178,7 +178,7 @@ __magic_type(HLSLRWByteAddressBufferType) struct RWByteAddressBuffer
 
 __generic<T>
 __magic_type(HLSLRWStructuredBufferType)
-__intrinsic_type($(kIROp_readWriteStructuredBufferType))
+__intrinsic_type($(kIROp_HLSLRWStructuredBufferType))
 struct RWStructuredBuffer
 {
     uint DecrementCounter();

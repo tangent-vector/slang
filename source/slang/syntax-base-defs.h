@@ -178,8 +178,11 @@ SYNTAX_CLASS(GenericSubstitution, Substitutions)
 END_SYNTAX_CLASS()
 
 SYNTAX_CLASS(ThisTypeSubstitution, Substitutions)
+    // A decl-ref that shows the "this type" conforms
+    // to a particular interface.
+    SYNTAX_FIELD(DeclRef<Decl>, declRef)
+
     // The actual type that provides the lookup scope for an associated type
-    SYNTAX_FIELD(RefPtr<Val>, sourceType)
     RAW(
     // Apply a set of substitutions to the bindings in this substitution
     virtual RefPtr<Substitutions> SubstituteImpl(SubstitutionSet subst, int* ioDiff) override;
@@ -192,9 +195,7 @@ SYNTAX_CLASS(ThisTypeSubstitution, Substitutions)
     }
     virtual int GetHashCode() const override
     {
-        if (sourceType)
-            return sourceType->GetHashCode();
-        return 0;
+        return declRef.GetHashCode();
     }
     )
 END_SYNTAX_CLASS()
@@ -202,8 +203,21 @@ END_SYNTAX_CLASS()
 SYNTAX_CLASS(GlobalGenericParamSubstitution, Substitutions)
     // the __generic_param decl to be substituted
     DECL_FIELD(GlobalGenericParamDecl*, paramDecl)
+
     // the actual type to substitute in
-    SYNTAX_FIELD(RefPtr<Val>, actualType)
+    SYNTAX_FIELD(RefPtr<Type>, actualType)
+
+    RAW(
+    struct ConstraintArg
+    {
+        RefPtr<Decl>    decl;
+        RefPtr<Val>     val;
+    };
+    )
+
+    // the values that satisfy any constraints on the type parameter
+    SYNTAX_FIELD(List<ConstraintArg>, constraintArgs)
+
     // Any further global type parameter substitutions
     SYNTAX_FIELD(RefPtr<GlobalGenericParamSubstitution>, outer)
 RAW(
@@ -219,17 +233,13 @@ RAW(
     virtual int GetHashCode() const override
     {
         int rs = actualType->GetHashCode();
-        for (auto && v : witnessTables)
+        for (auto && a : constraintArgs)
         {
-            rs = combineHash(rs, v.Key->GetHashCode());
-            rs = combineHash(rs, v.Value->GetHashCode());
+            rs = combineHash(rs, a.val->GetHashCode());
         }
         return rs;
     }
-    typedef List<KeyValuePair<RefPtr<Type>, RefPtr<Val>>> WitnessTableLookupTable;
     )
-    // The witness tables for each interface this actual type implements
-    SYNTAX_FIELD(WitnessTableLookupTable, witnessTables)
 END_SYNTAX_CLASS()
 
 ABSTRACT_SYNTAX_CLASS(SyntaxNode, SyntaxNodeBase)
