@@ -422,6 +422,30 @@ void Type::accept(IValVisitor* visitor, void* extra)
         return this;
     }
 
+    DeclRef<Decl> tryLookUpRequirementWitness(
+        SubtypeWitness* witness,
+        Decl*           requirementKey)
+    {
+        if(auto declaredWitness = dynamic_cast<DeclaredSubtypeWitness*>(witness))
+        {
+            if(auto inheritanceDeclRef = declaredWitness->declRef.As<InheritanceDecl>())
+            {
+                // A conformance that was declared as part of an inheritance clause
+                // will have built up a dictionary of the satisfying declarations
+                // for each of its requirements.
+                DeclRef<Decl> satisfyingDeclRef;
+                if(inheritanceDeclRef.getDecl()->requirementWitnesses.TryGetValue(requirementKey, satisfyingDeclRef))
+                {
+                    return satisfyingDeclRef;
+                }
+            }
+        }
+
+        // TODO: should handle the transitive case here too
+
+        return DeclRef<Decl>();
+    }
+
     RefPtr<Val> DeclRefType::SubstituteImpl(SubstitutionSet subst, int* ioDiff)
     {
         if (!subst) return this;
@@ -484,46 +508,45 @@ void Type::accept(IValVisitor* visitor, void* extra)
         // Make sure to record the difference!
         *ioDiff += diff;
 
-        // It is possible that the original decl-ref was to an associated type,
-        // and then after substitution is applied, it becomes possible to
-        // specialize the reference to the concrete type that is used
-        // for a particular implementation.
+        // IF this type is a reference to an associated type declaration,
+        // and the substitutions provide a "this type" substitution for
+        // the outer interface, then try to replace the type with the
+        // actual value of the associated type for the given implementation.
         //
-        if(auto substAssocTypeDecl = substDeclRef.As<AssocTypeDecl>())
+        if(auto substAssocTypeDecl = substDeclRef.decl->As<AssocTypeDecl>())
         {
-            // We need to figure out whether there is a concrete `ThisTypeSubstitution` we can use.
-            auto thisSubst = substAssocTypeDecl.substitutions.thisTypeSubstitution;
-
-            // In order to make a concrete type replacement, we'd need to find an inheritance
-            // declaration that shows how a concrete type implements the interface that
-            // declared the associated type.
-            //
-            if (auto inheritanceDeclRef = thisSubst->declRef.As<InheritanceDecl>())
+            if(auto thisSubst = substDeclRef.substitutions.thisTypeSubstitution)
             {
-                // TODO: Need to figure out which substiutions on the "key" might
-                // need to be stripped off to make it valid for the `requirementWitnesses` map.
-                DeclRef<Decl> requirementKey = substAssocTypeDecl;
-                DeclRef<Decl> satisfyingVal;
-                if (inheritanceDeclRef.getDecl()->requirementWitnesses.TryGetValue(requirementKey, satisfyingVal))
+                if(auto interfaceDecl = substAssocTypeDecl->ParentDecl->As<InterfaceDecl>())
                 {
-                    // TODO: we need to apply subsitutions to the `satisfyingVal` to
-                    // make it line up with the concrete decl-ref we have.
+                    if(thisSubst->interfaceDecl == interfaceDecl)
+                    {
+                        // We need to look up the declaration that satisfies
+                        // the requirement named by the associated type.
+                        Decl* requirementKey = substAssocTypeDecl;
+                        DeclRef<Decl> satisfyingVal = tryLookUpRequirementWitness(thisSubst->witness, requirementKey);
+                        if(satisfyingVal)
+                        {
+                            // TODO: we need to apply subsitutions to the `satisfyingVal` to
+                            // make it line up with the concrete decl-ref we have.
 
-                    // We have found a concrete declaration to satisfy the requirement,
-                    // and that is what we should use now.
-                    if (auto typeDefDeclRef = satisfyingVal.As<TypeDefDecl>())
-                    {
-                        // TODO: We should return a `NamedType` here, rather than
-                        // unwrapping the `typedef`.
-                        return GetType(typeDefDeclRef);
-                    }
-                    else if (auto aggTypeDeclRef = satisfyingVal.As<AggTypeDecl>())
-                    {
-                        return DeclRefType::Create(getSession(), aggTypeDeclRef);
-                    }
-                    else
-                    {
-                        SLANG_UNIMPLEMENTED_X("unknown assoctype implementation type.");
+                            // We have found a concrete declaration to satisfy the requirement,
+                            // and that is what we should use now.
+                            if (auto typeDefDeclRef = satisfyingVal.As<TypeDefDecl>())
+                            {
+                                // TODO: We should return a `NamedType` here, rather than
+                                // unwrapping the `typedef`.
+                                return GetType(typeDefDeclRef);
+                            }
+                            else if (auto aggTypeDeclRef = satisfyingVal.As<AggTypeDecl>())
+                            {
+                                return DeclRefType::Create(getSession(), aggTypeDeclRef);
+                            }
+                            else
+                            {
+                                SLANG_UNIMPLEMENTED_X("unknown assoctype implementation type.");
+                            }
+                        }
                     }
                 }
             }
@@ -1185,12 +1208,13 @@ void Type::accept(IValVisitor* visitor, void* extra)
         if (!this) return nullptr;
 
         int diff = 0;
-        auto substDeclRef = declRef.SubstituteImpl(subst, &diff);
+        auto substWitness = witness->SubstituteImpl(subst, &diff).As<SubtypeWitness>();
         if (!diff) return this;
 
         (*ioDiff)++;
         auto substSubst = new ThisTypeSubstitution();
-        substSubst->declRef = substDeclRef;
+        substSubst->interfaceDecl = interfaceDecl;
+        substSubst->witness = substWitness;
         return substSubst;
     }
 
@@ -1200,9 +1224,14 @@ void Type::accept(IValVisitor* visitor, void* extra)
             return this == nullptr;
         if (auto thisTypeSubst = dynamic_cast<ThisTypeSubstitution*>(subst))
         {
-            return declRef.Equals(thisTypeSubst->declRef);
+            return witness->EqualsVal(thisTypeSubst->witness);
         }
         return false;
+    }
+
+    int ThisTypeSubstitution::GetHashCode() const
+    {
+        return witness->GetHashCode();
     }
 
     RefPtr<Substitutions> GlobalGenericParamSubstitution::SubstituteImpl(SubstitutionSet subst, int* ioDiff)
@@ -1320,10 +1349,40 @@ void Type::accept(IValVisitor* visitor, void* extra)
 
     void buildMemberDictionary(ContainerDecl* decl);
 
+    InterfaceDecl* findOuterInterfaceDecl(Decl* decl)
+    {
+        Decl* dd = decl;
+        while(dd)
+        {
+            if(auto interfaceDecl = dd->As<InterfaceDecl>())
+                return interfaceDecl;
+
+            dd = dd->ParentDecl;
+        }
+        return nullptr;
+    }
+
     DeclRefBase DeclRefBase::SubstituteImpl(SubstitutionSet subst, int* ioDiff)
     {
         int diff = 0;
         auto substSubst = substituteSubstitutions(substitutions, subst, &diff);
+
+        // If the declaration we name is nested under an interface, *and*
+        // the given substitutions provide a "this type" substitution
+        // mapping from that interface type to a concrete type, then
+        // the new substitutions should also adopt that.
+        if(auto parentInterfaceDecl = findOuterInterfaceDecl(decl))
+        {
+            if(auto thisTypeSubst = subst.thisTypeSubstitution)
+            {
+                if(parentInterfaceDecl == thisTypeSubst->interfaceDecl)
+                {
+                    substSubst.thisTypeSubstitution = subst.thisTypeSubstitution;
+                    diff++;
+                }
+            }
+        }
+
         if (!diff)
             return *this; 
 
@@ -1332,37 +1391,14 @@ void Type::accept(IValVisitor* visitor, void* extra)
         DeclRefBase substDeclRef;
         substDeclRef.decl = decl;
         substDeclRef.substitutions = substSubst;
-       
-        // if this is a AssocTypeDecl, try lookup the actual associated type
-        if (auto assocTypeDecl = substDeclRef.decl->As<AssocTypeDecl>())
-        {
-            SLANG_UNEXPECTED("need to implement this");
-#if 0
-            auto thisSubst = getThisTypeSubst(substDeclRef, false);
-            if (thisSubst)
-            {
-                if (auto declRefType = thisSubst->sourceType.As<DeclRefType>())
-                {
-                    if (auto aggDeclRef = declRefType->declRef.As<StructDecl>())
-                    {
-                        Decl* subTypeDecl = nullptr;
-                        buildMemberDictionary(aggDeclRef.getDecl());
-                        SLANG_ASSERT(aggDeclRef.getDecl()->memberDictionaryIsValid);
-                        aggDeclRef.getDecl()->memberDictionary.TryGetValue(assocTypeDecl->getName(), subTypeDecl);
-                        if (auto typeDefDecl = subTypeDecl->As<TypeDefDecl>())
-                        {
-                            auto t = GetType(DeclRef<TypeDefDecl>(typeDefDecl, aggDeclRef.substitutions));
-                            auto canonicalType = t->GetCanonicalType()->AsDeclRefType();
-                            SLANG_ASSERT(canonicalType);
-                            return canonicalType->declRef;
-                        }
-                        SLANG_ASSERT(subTypeDecl);
-                        return DeclRefBase(subTypeDecl, aggDeclRef.substitutions);
-                    }
-                }
-            }
-#endif
-        }
+
+        // TODO: The old code here used to try to translate a decl-ref
+        // to an associated type in a decl-ref for the concrete type
+        // in a paarticular implementation.
+        //
+        // I have only kept that logic in `DeclRefType::SubstituteImpl`,
+        // but it may turn out it is needed here too.
+
         return substDeclRef;
     }
 

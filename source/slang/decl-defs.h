@@ -108,7 +108,7 @@ SYNTAX_CLASS(InheritanceDecl, TypeConstraintDecl)
     // required by the base type to their concrete
     // implementations in the type that contains
     // this inheritance declaration.
-    Dictionary<DeclRef<Decl>, DeclRef<Decl>> requirementWitnesses;
+    Dictionary<Decl*, DeclRef<Decl>> requirementWitnesses;
     virtual TypeExp& getSup() override
     {
         return base;

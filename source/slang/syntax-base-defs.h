@@ -178,9 +178,12 @@ SYNTAX_CLASS(GenericSubstitution, Substitutions)
 END_SYNTAX_CLASS()
 
 SYNTAX_CLASS(ThisTypeSubstitution, Substitutions)
-    // A decl-ref that shows the "this type" conforms
-    // to a particular interface.
-    SYNTAX_FIELD(DeclRef<Decl>, declRef)
+    // The declaration of the interface that we are specializing
+    FIELD_INIT(InterfaceDecl*, interfaceDecl, nullptr)
+
+    // A qirnwaa that shows that the concrete type used to
+    // specialize the interface conforms to the interface.
+    FIELD(RefPtr<SubtypeWitness>, witness)
 
     // The actual type that provides the lookup scope for an associated type
     RAW(
@@ -193,10 +196,7 @@ SYNTAX_CLASS(ThisTypeSubstitution, Substitutions)
     {
         return Equals(const_cast<Substitutions*>(&subst));
     }
-    virtual int GetHashCode() const override
-    {
-        return declRef.GetHashCode();
-    }
+    virtual int GetHashCode() const override;
     )
 END_SYNTAX_CLASS()
 

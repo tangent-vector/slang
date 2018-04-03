@@ -172,7 +172,7 @@ namespace Slang
             //
             auto type = GetTypeForDeclRef(declRef);
 
-#if 0
+#if 1
             // If we are constructing a reference to a constraint declaration
             // showing that some type conforms to some interface, then we
             // need to ensure that we have a "this type" substitution in place,
@@ -186,6 +186,7 @@ namespace Slang
                 {
                     if (auto interfaceDeclRef = supDeclRefType->declRef.As<InterfaceDecl>())
                     {
+#if 0
                         // Okay, we are trying to reference something "through"
                         // the interface constraint, so we need to figure out
                         // what the "this type" should be:
@@ -209,6 +210,8 @@ namespace Slang
                         // the this-type substitution.
                         interfaceDeclRef.substitutions.thisTypeSubstitution = thisTypeSubst;
                         type = DeclRefType::Create(getSession(), interfaceDeclRef);
+#endif
+                        (void)99;
                     }
                 }
             }
@@ -1928,9 +1931,9 @@ namespace Slang
         }
 
         bool doesSignatureMatchRequirement(
-            DeclRef<CallableDecl>           memberDecl,
-            DeclRef<CallableDecl>   requiredMemberDeclRef,
-            Dictionary<DeclRef<Decl>, DeclRef<Decl>> & requirementDict)
+            DeclRef<CallableDecl>               memberDecl,
+            DeclRef<CallableDecl>               requiredMemberDeclRef,
+            Dictionary<Decl*, DeclRef<Decl>>&   requirementDict)
         {
             // TODO: actually implement matching here. For now we'll
             // just pretend that things are satisfied in order to make progress..
@@ -1939,9 +1942,9 @@ namespace Slang
         }
 
         bool doesGenericSignatureMatchRequirement(
-            DeclRef<GenericDecl> genDecl,
-            DeclRef<GenericDecl> requirementGenDecl,
-            Dictionary<DeclRef<Decl>, DeclRef<Decl>> & requirementDict)
+            DeclRef<GenericDecl>                genDecl,
+            DeclRef<GenericDecl>                requirementGenDecl,
+            Dictionary<Decl*, DeclRef<Decl>>&   requirementDict)
         {
             if (genDecl.getDecl()->Members.Count() != requirementGenDecl.getDecl()->Members.Count())
                 return false;
@@ -1989,11 +1992,11 @@ namespace Slang
         // to satisfy the requirement `requiredMemberDeclRef`
         // from an interface?
         bool doesMemberSatisfyRequirement(
-            DeclRef<Decl>   memberDeclRef,
-            DeclRef<Decl>   requiredMemberDeclRef,
-            Dictionary<DeclRef<Decl>, DeclRef<Decl>> & requirementDictionary)
+            DeclRef<Decl>                       memberDeclRef,
+            DeclRef<Decl>                       requiredMemberDeclRef,
+            Dictionary<Decl*, DeclRef<Decl>>&   requirementDictionary)
         {
-            // At a high level, we want to chack that the
+            // At a high level, we want to check that the
             // `memberDecl` and the `requiredMemberDeclRef`
             // have the same AST node class, and then also
             // check that their signatures match.
@@ -2035,6 +2038,7 @@ namespace Slang
                         else
                             conformance = false;
                     }
+                    requirementDictionary.Add(requiredTypeDeclRef.getDecl(), subStructTypeDeclRef);
                     return conformance;
                 }
                 return false;
@@ -2109,11 +2113,11 @@ namespace Slang
         // `requiredMemberDeclRef` is a required member of
         // the interface.
         RefPtr<Decl> findWitnessForInterfaceRequirement(
-            DeclRef<AggTypeDeclBase>    typeDeclRef,
-            InheritanceDecl*        inheritanceDecl,
-            DeclRef<InterfaceDecl>  interfaceDeclRef,
-            DeclRef<Decl>           requiredMemberDeclRef,
-            Dictionary<DeclRef<Decl>, DeclRef<Decl>> & requirementWitness)
+            DeclRef<AggTypeDeclBase>            typeDeclRef,
+            InheritanceDecl*                    inheritanceDecl,
+            DeclRef<InterfaceDecl>              interfaceDeclRef,
+            DeclRef<Decl>                       requiredMemberDeclRef,
+            Dictionary<Decl*, DeclRef<Decl>>&   requirementWitness)
         {
             // We will look up members with the same name,
             // since only same-name members will be able to
@@ -4911,6 +4915,10 @@ namespace Slang
                 }
                 else
                 {
+                    if(param.substitutions.thisTypeSubstitution)
+                    {
+                        int ff = 99; (void)ff;
+                    }
                     arg = Coerce(GetType(param), arg);
                 }
             }
@@ -5335,6 +5343,11 @@ namespace Slang
                     // matched.
                     return;
                 }
+            }
+
+            if(item.declRef.GetName()->text == "test")
+            {
+                item.declRef.decl = item.declRef.decl;
             }
 
 
@@ -7560,12 +7573,14 @@ namespace Slang
         SubstitutionSet parentSubst)
     {
         SubstitutionSet resultSubst = parentSubst;
+#if 0
         if (auto interfaceDecl = dynamic_cast<InterfaceDecl*>(decl))
         {
             RefPtr<ThisTypeSubstitution> thisTypeSubst = new ThisTypeSubstitution();
             thisTypeSubst->declRef = makeDeclRef(interfaceDecl);
             resultSubst.thisTypeSubstitution = thisTypeSubst;
         }
+#endif
         auto dd = decl->ParentDecl;
         if( auto genericDecl = dynamic_cast<GenericDecl*>(dd) )
         {

@@ -2903,10 +2903,10 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
         // will now navigate that dictionary to fill in the witness table.
         for (auto entry : inheritanceDecl->requirementWitnesses)
         {
-            auto requiredMemberDeclRef = entry.Key;
+            auto requiredMemberDecl = entry.Key;
             auto satisfyingMemberDeclRef = entry.Value;
             
-            auto irRequirement = getSimpleVal(context, emitDeclRef(context, requiredMemberDeclRef));
+            auto irRequirement = getSimpleVal(context, ensureDecl(context, requiredMemberDecl));
             IRInst* irSatisfyingVal = getSimpleVal(context, emitDeclRef(context, satisfyingMemberDeclRef));
 
             context->irBuilder->createWitnessTableEntry(

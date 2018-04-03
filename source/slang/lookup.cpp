@@ -227,13 +227,28 @@ void DoMemberLookupImpl(
 // a "this type" subtitution. This function applies that substition
 // when it is required, and returns the existing `declRef` otherwise.
 DeclRef<Decl> maybeSpecializeInterfaceDeclRef(
+    RefPtr<Type>                subType,
+    RefPtr<Type>                superType,
     DeclRef<Decl>               superTypeDeclRef,   // The decl-ref we are going to perform lookup in
     DeclRef<TypeConstraintDecl> constraintDeclRef)  // The type constraint that told us our type is a subtype
 {
     if (auto superInterfaceDeclRef = superTypeDeclRef.As<InterfaceDecl>())
     {
+        // Create a subtype witness value to note the subtype relationship
+        // that makes this specialization valid.
+        //
+        // Note: this is to ensure that we can specialize the subtype witness
+        // later (e.g., by replacing a subtype witness that represents a generic
+        // constraint paraqmeter with the concrete generic arguments that
+        // are used at a particular call site to the generic).
+        RefPtr<DeclaredSubtypeWitness> subtypeWitness = new DeclaredSubtypeWitness();
+        subtypeWitness->declRef = constraintDeclRef;
+        subtypeWitness->sub = subType;
+        subtypeWitness->sup = superType;
+
         RefPtr<ThisTypeSubstitution> thisTypeSubst = new ThisTypeSubstitution();
-        thisTypeSubst->declRef = constraintDeclRef;
+        thisTypeSubst->interfaceDecl = superInterfaceDeclRef.getDecl();
+        thisTypeSubst->witness = subtypeWitness;
 
         DeclRef<InterfaceDecl> specializedInterfaceDeclRef = superInterfaceDeclRef;
         specializedInterfaceDeclRef.substitutions.thisTypeSubstitution = thisTypeSubst;
@@ -246,6 +261,7 @@ DeclRef<Decl> maybeSpecializeInterfaceDeclRef(
 // Same as the above, but we are specializing a type instead of a decl-ref
 RefPtr<Type> maybeSpecializeInterfaceDeclRef(
     Session*                    session,
+    RefPtr<Type>                subType,
     RefPtr<Type>                superType,          // The type we are going to perform lookup in
     DeclRef<TypeConstraintDecl> constraintDeclRef)  // The type constraint that told us our type is a subtype
 {
@@ -253,7 +269,11 @@ RefPtr<Type> maybeSpecializeInterfaceDeclRef(
     {
         if (auto superInterfaceDeclRef = superDeclRefType->declRef.As<InterfaceDecl>())
         {
-            auto specializedInterfaceDeclRef = maybeSpecializeInterfaceDeclRef(superInterfaceDeclRef, constraintDeclRef);
+            auto specializedInterfaceDeclRef = maybeSpecializeInterfaceDeclRef(
+                subType,
+                superType,
+                superInterfaceDeclRef,
+                constraintDeclRef);
             auto specializedInterfaceType = DeclRefType::Create(session, specializedInterfaceDeclRef);
             return specializedInterfaceType;
         }
@@ -354,19 +374,37 @@ void DoLocalLookupImpl(
     // for interface decls, also lookup in the base interfaces
     if (request.semantics)
     {
-        bool isInterface = containerDeclRef.As<InterfaceDecl>() ? true : false;
+        // TODO:
+        // The logic here is a bit gross, because it tries to work in terms of
+        // decl-refs instead of types (e.g., it asserts that the target type
+        // for an `extension` declaration must be a decl-ref type).
+        //
+        // This code should be converted to do a type-based lookup
+        // through declared bases for *any* aggregate type declaration.
+        // I think that logic is present in the type-bsed lookup path, but
+        // it would be needed here for when doing lookup from inside an
+        // aggregate declaration.
+
         // if we are looking at an extension, find the target decl that we are extending
+        DeclRef<Decl> targetDeclRef = containerDeclRef;
+        RefPtr<DeclRefType> targetDeclRefType;
         if (auto extDeclRef = containerDeclRef.As<ExtensionDecl>())
         {
-            auto targetDeclRefType = extDeclRef.getDecl()->targetType->AsDeclRefType();
+            targetDeclRefType = extDeclRef.getDecl()->targetType->AsDeclRefType();
             SLANG_ASSERT(targetDeclRefType);
             int diff = 0;
-            auto targetDeclRef = targetDeclRefType->declRef.As<ContainerDecl>().SubstituteImpl(containerDeclRef.substitutions, &diff);
-            isInterface = targetDeclRef.As<InterfaceDecl>() ? true : false;
+            targetDeclRef = targetDeclRefType->declRef.As<ContainerDecl>().SubstituteImpl(containerDeclRef.substitutions, &diff);
         }
+
         // if we are looking inside an interface decl, try find in the interfaces it inherits from
+        bool isInterface = containerDeclRef.As<InterfaceDecl>() ? true : false;
         if (isInterface)
         {
+            if(!targetDeclRefType)
+            {
+                targetDeclRefType = DeclRefType::Create(session, targetDeclRef);
+            }
+
             auto baseInterfaces = getMembersOfType<InheritanceDecl>(containerDeclRef);
             for (auto inheritanceDeclRef : baseInterfaces)
             {
@@ -377,7 +415,11 @@ void DoLocalLookupImpl(
                 int diff = 0;
                 auto baseInterfaceDeclRef = baseType->declRef.SubstituteImpl(containerDeclRef.substitutions, &diff);
 
-                baseInterfaceDeclRef = maybeSpecializeInterfaceDeclRef(baseInterfaceDeclRef, inheritanceDeclRef);
+                baseInterfaceDeclRef = maybeSpecializeInterfaceDeclRef(
+                    targetDeclRefType,
+                    baseType,
+                    baseInterfaceDeclRef,
+                    inheritanceDeclRef);
 
                 DoLocalLookupImpl(session, name, baseInterfaceDeclRef.As<ContainerDecl>(), request, result, inBreadcrumbs);
             }
@@ -518,7 +560,7 @@ void lookUpThroughConstraint(
     Session*                    session,
     SemanticsVisitor*           semantics,
     Name*                       name,
-    Type*                       /*subType*/,
+    Type*                       subType,
     DeclRef<TypeConstraintDecl> constraintDeclRef,
     LookupResult&               ioResult,
     BreadcrumbInfo*             inBreadcrumbs,
@@ -537,7 +579,11 @@ void lookUpThroughConstraint(
     // "this type" substitution here, since that needs to
     // be applied to any members we look up.
     //
-    superType = maybeSpecializeInterfaceDeclRef(session, superType, constraintDeclRef);
+    superType = maybeSpecializeInterfaceDeclRef(
+        session,
+        subType,
+        superType,
+        constraintDeclRef);
 
     // We need to track the indirection we took in lookup,
     // so that we can construct an approrpiate AST on the other
