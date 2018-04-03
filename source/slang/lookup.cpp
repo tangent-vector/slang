@@ -258,6 +258,8 @@ RefPtr<Type> maybeSpecializeInterfaceDeclRef(
             return specializedInterfaceType;
         }
     }
+
+    return superType;
 }
 
 
@@ -375,7 +377,7 @@ void DoLocalLookupImpl(
                 int diff = 0;
                 auto baseInterfaceDeclRef = baseType->declRef.SubstituteImpl(containerDeclRef.substitutions, &diff);
 
-                baseInterfaceDeclRef = maybeSpecializeInterfaceDeclRef(baseInterfaceDeclRef);
+                baseInterfaceDeclRef = maybeSpecializeInterfaceDeclRef(baseInterfaceDeclRef, inheritanceDeclRef);
 
                 DoLocalLookupImpl(session, name, baseInterfaceDeclRef.As<ContainerDecl>(), request, result, inBreadcrumbs);
             }
@@ -516,7 +518,7 @@ void lookUpThroughConstraint(
     Session*                    session,
     SemanticsVisitor*           semantics,
     Name*                       name,
-    Type*                       subType,
+    Type*                       /*subType*/,
     DeclRef<TypeConstraintDecl> constraintDeclRef,
     LookupResult&               ioResult,
     BreadcrumbInfo*             inBreadcrumbs,

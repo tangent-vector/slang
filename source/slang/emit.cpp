@@ -4387,26 +4387,22 @@ struct EmitVisitor
     // of the variable is an integer type.
     void maybeEmitGLSLFlatModifier(
         EmitContext*,
-        Type*           valueType)
+        IRType*           valueType)
     {
         auto tt = valueType;
-        if(auto vecType = tt->As<VectorExpressionType>())
-            tt = vecType->elementType;
-        if(auto vecType = tt->As<MatrixExpressionType>())
+        if(auto vecType = as<IRVectorType>(tt))
+            tt = vecType->getElementType();
+        if(auto vecType = as<IRMatrixType>(tt))
             tt = vecType->getElementType();
 
-        auto baseType = tt->As<BasicExpressionType>();
-        if(!baseType)
-            return;
-
-        switch(baseType->baseType)
+        switch(tt->op)
         {
         default:
             break;
 
-        case BaseType::Int:
-        case BaseType::UInt:
-        case BaseType::UInt64:
+        case kIROp_IntType:
+        case kIROp_UIntType:
+        case kIROp_UInt64Type:
             Emit("flat ");
             break;
         }
