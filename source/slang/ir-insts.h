@@ -494,7 +494,8 @@ struct IRBuilder
     IRBasicType* getBoolType();
     IRBasicType* getIntType();
     IRBasicBlockType*   getBasicBlockType();
-
+    IRType* getWitnessTableType() { return nullptr; }
+    IRType* getKeyType() { return nullptr; }
 
     IRTypeKind*     getTypeKind();
     IRGenericKind*  getGenericKind();

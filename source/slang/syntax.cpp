@@ -508,7 +508,7 @@ void Type::accept(IValVisitor* visitor, void* extra)
         // Make sure to record the difference!
         *ioDiff += diff;
 
-        // IF this type is a reference to an associated type declaration,
+        // If this type is a reference to an associated type declaration,
         // and the substitutions provide a "this type" substitution for
         // the outer interface, then try to replace the type with the
         // actual value of the associated type for the given implementation.
@@ -1743,10 +1743,70 @@ void Type::accept(IValVisitor* visitor, void* extra)
 #endif
             }
         }
+
+        // Perform substitution on the constituent elements.
+        int diff = 0;
+        auto substSub = sub->SubstituteImpl(subst, &diff).As<Type>();
+        auto substSup = sup->SubstituteImpl(subst, &diff).As<Type>();
+        auto substDeclRef = declRef.SubstituteImpl(subst, &diff);
+        if (!diff)
+            return this;
+
+        (*ioDiff)++;
+
+        // If we have a reference to a type constraint for an
+        // associated type declaration, then we can replace it
+        // with the concrete conformance witness for a concrete
+        // type implementing the outer interface.
+        //
+        // TODO: It is a bit gross that we use `GenericTypeConstraintDecl` for
+        // associated types, when they aren't really generic type *parameters*,
+        // so we'll need to change this location in the code if we ever clean
+        // up the hierarchy.
+        //
+        if (auto substTypeConstraintDecl = substDeclRef.decl->As<GenericTypeConstraintDecl>())
+        {
+            if (auto substAssocTypeDecl = substTypeConstraintDecl->ParentDecl->As<AssocTypeDecl>())
+            {
+                // At this point we have a constraint decl for an associated type,
+                // and we nee to see if we are dealing with a concrete substitution
+                // for the interface around that associated type.
+
+                if (auto thisSubst = substDeclRef.substitutions.thisTypeSubstitution)
+                {
+                    if (auto interfaceDecl = substAssocTypeDecl->ParentDecl->As<InterfaceDecl>())
+                    {
+                        if (thisSubst->interfaceDecl == interfaceDecl)
+                        {
+                            // We need to look up the declaration that satisfies
+                            // the requirement named by the associated type.
+                            Decl* requirementKey = substTypeConstraintDecl;
+                            DeclRef<Decl> satisfyingVal = tryLookUpRequirementWitness(thisSubst->witness, requirementKey);
+                            if (satisfyingVal)
+                            {
+                                // This appears to be some kind of subtype witness
+                                // declaration, so we can use it.
+
+                                RefPtr<DeclaredSubtypeWitness> substWitness = new DeclaredSubtypeWitness();
+                                substWitness->sub = substSub;
+                                substWitness->sup = substSup;
+                                substWitness->declRef = satisfyingVal;
+                                return substWitness;
+                            }
+                        }
+                    }
+                }
+            }
+
+        }
+
+
+
+
         RefPtr<DeclaredSubtypeWitness> rs = new DeclaredSubtypeWitness();
-        rs->sub = sub->SubstituteImpl(subst, ioDiff).As<Type>();
-        rs->sup = sup->SubstituteImpl(subst, ioDiff).As<Type>();
-        rs->declRef = declRef.SubstituteImpl(subst, ioDiff);
+        rs->sub = substSub;
+        rs->sup = substSup;
+        rs->declRef = substDeclRef;
         return rs;
     }
 

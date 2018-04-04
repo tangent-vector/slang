@@ -5345,12 +5345,6 @@ namespace Slang
                 }
             }
 
-            if(item.declRef.GetName()->text == "test")
-            {
-                item.declRef.decl = item.declRef.decl;
-            }
-
-
             OverloadCandidate candidate;
             candidate.flavor = OverloadCandidate::Flavor::Func;
             candidate.item = item;
