@@ -784,6 +784,15 @@ int main(
         exit(1);
     }
 
+    // TODO: We need a notion of invoking the tool in
+    // different "modes" to split up the steps of
+    // scraping input files, generating output code, etc.
+
+    // HACK: Start "scraping" information from custom
+    // files to describe the AST structures:
+
+    auto scrapedAST = scrapeFile("source/syntax.slang");
+
     // Read each input file and process it according
     // to the type of treatment it requires.
     for (size_t ii = 0; ii < inputPathCount; ++ii)
