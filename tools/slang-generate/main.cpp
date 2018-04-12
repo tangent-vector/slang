@@ -1,5 +1,7 @@
 // main.cpp
 
+#include "scrape.h"
+
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -753,6 +755,8 @@ int main(
     int     argc,
     char**  argv)
 {
+    using namespace slang_generate;
+
     // Parse command-line arguments.
     char** argCursor = argv;
     char** argEnd = argv + argc;

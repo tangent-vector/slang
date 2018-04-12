@@ -9,13 +9,30 @@
 // code generation tasks.
 
 #include "../../source/core/list.h"
+#include "../../source/core/slang-string.h"
 
 namespace slang_generate
 {
-    using namespace Slang;
+    using Slang::List;
+    using Slang::UnownedStringSlice;
+    using Slang::UnownedTerminatedStringSlice;
+
+    struct Name
+    {
+        UnownedTerminatedStringSlice text;
+    };
+
+    struct SourceLoc
+    {
+        char const* path    = nullptr;
+        int         line    = 0;
+        int         column  = 0;
+    };
 
     struct Syntax
-    {};
+    {
+        SourceLoc loc;
+    };
 
     struct Decl : Syntax
     {};
@@ -23,11 +40,40 @@ namespace slang_generate
     struct Stmt : Syntax
     {};
 
+    struct TypeRepr : Syntax
+    {};
+
     struct Expr : Syntax
     {};
 
-    struct Type : Syntax
+    // Expressions
+
+    struct NameExpr : Expr
+    {
+        Name* name;
+    };
+
+    struct LiteralExpr : Expr
+    {
+        UnownedStringSlice text;
+    };
+
+    struct IntegerLiteralExpr : LiteralExpr
     {};
+
+    struct FloatingPointLiteralExpr : LiteralExpr
+    {};
+
+    struct StringLiteralExpr : LiteralExpr
+    {};
+
+    struct CharacterLiteralExpr : LiteralExpr
+    {};
+
+    struct NamedTypeRepr : TypeRepr
+    {
+        Name* name;
+    };
 
     struct Declarator : Syntax
     {};
