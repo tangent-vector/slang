@@ -170,6 +170,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\slang-bytecode.h" />
     <ClInclude Include="..\..\slang.h" />
     <ClInclude Include="bytecode.h" />
     <ClInclude Include="compiler.h" />

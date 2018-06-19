@@ -8,6 +8,9 @@
 
 #include "../../slang.h"
 
+// TODO: commenting this all out for now, so that we don't have to maintain
+// the VM implementation when bringing up the new BC module format.
+#if 0
 namespace Slang
 {
 
@@ -76,7 +79,8 @@ struct VMFunc
 {
     // The parent module that this function belongs to
     VMModule*   module;
-    BCFunc*     bcFunc;
+
+    SlangBCFunc const*  bcFunc;
 
     VMReg*      regs;
     VMConst*    consts;
@@ -94,7 +98,7 @@ struct VMFrame
     VMFrame*    parent;
 
     // The instruction pointer within this frame
-    BCOp*   ip;
+    SlangBCCode* ip;
 
     // Registers are stored after this point.
 };
@@ -103,7 +107,7 @@ struct VM;
 
 struct VMModule
 {
-    BCModule*   bcModule;
+    SlangBCModule*  bcModule;
     VM*         vm;
     void**      symbols;
     VMType*     types;
@@ -246,6 +250,7 @@ struct VMSizeAlign
     UInt align;
 };
 
+#if 0
 VMSizeAlign getVMSymbolSize(BCSymbol* symbol)
 {
     VMSizeAlign result;
@@ -272,6 +277,7 @@ VMSizeAlign getVMSymbolSize(BCSymbol* symbol)
 
     return result;
 }
+#endif
 
 VMType getType(
     VMModule*   vmModule,
@@ -1244,3 +1250,6 @@ SLANG_API void SlangVMThread_resume(
     Slang::resumeThread(
         (Slang::VMThread*)  thread);
 }
+
+#endif
+

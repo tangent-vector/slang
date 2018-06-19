@@ -1,6 +1,14 @@
 #ifndef SLANG_BYTECODE_H
 #define SLANG_BYTECODE_H
 
+#ifndef  SLANG_BC_NO_INTTYPES
+#include <inttypes.h>
+#endif
+
+#ifndef  SLANG_BC_NO_STDDEF
+#include <stddef.h>
+#endif
+
 /** \file slang-bytecode.h
 
 The Slang "bytecode" module format is used to serialize compiled
@@ -9,9 +17,11 @@ code and related metadata.
 
 typedef uint32_t SlangBCOffset;
 
+#define SLANG_BC_MAGIC  0xFF, 'S', 'l', 'a', 'n', 'g', ' ', 'C', 'o', 'd', 'e', 0x00, 0x0D, 0x0A, 0x1A, 0x0A
+
 /** Header for a binary module file.
 */
-struct SlangBCModuleHeader
+struct SlangBCFileHeader
 {
     /* Pre-defined "magic" that must appear at the start of a binary module.
     */
@@ -74,6 +84,9 @@ struct SlangBCSectionTableEntry
     /* Size in bytes of this section's data. */
     uint32_t size;
 
+    /* Required alignment of the section, in bytes */
+    uint32_t alignment;
+
     /* General type of section, from the `SLANG_BC_SECTION_TYPE_*` enumerants. */
     uint16_t type;
 
@@ -124,27 +137,85 @@ struct SlangBCReflectionEntry
     uint32_t offset;
 };
 
+/** Tag values for reflection nodes.
+*/
 enum
 {
-    SLANG_BC_REFLECTION_VAR,
-    SLANG_BC_REFLECTION_STRUCT,
-    SLANG_BC_REFLECTION_FUNC,
-    SLANG_BC_REFLECTION_PARAM,
+    SLANG_BC_REFLECTION_TAG_VAR,
+    SLANG_BC_REFLECTION_TAG_PARAM,
+    SLANG_BC_REFLECTION_TAG_STRUCT,
+    SLANG_BC_REFLECTION_TAG_FUNC,
+    SLANG_BC_REFLECTION_TAG_INTERFACE,
+    SLANG_BC_REFLECTION_TAG_GENERIC,
+
+    SLANG_BC_REFLECTION_TAG_VECTOR_TYPE,
+    SLANG_BC_REFLECTION_TAG_MATRIX_TYPE,
+    SLANG_BC_REFLECTION_TAG_ARRAY_TYPE,
+    SLANG_BC_REFLECTION_TAG_UNBOUNDED_ARRAY_TYPE,
 };
 
 struct SlangBCReflectionNode
 {
-    uint16_t type;
-    uint16_t flags;
+    uint32_t tag;
 
-    /* type-specific data follows */
+    /* remaining data is determined by tag */
 };
 
 struct SlangBCReflectionDecl
 {
-    SlangBCReflectionNode base;
+    uint32_t tag;
     int32_t parent;
 };
 
+/** Opcodes for bytecode functions.
+*/
+enum
+{
+    SLANG_BC_OP_NOP,
+
+};
+
+typedef uint8_t SlangBCCode;
+
+struct SlangBCFunc
+{
+    int32_t typeID;
+
+    uint32_t regCount;
+    uint32_t regsOffset;
+
+    uint32_t blockCount;
+    uint32_t blocksOffset;
+
+    uint32_t constantCount;
+    uint32_t constantsOffset;
+};
+
+struct SlangBCRegister
+{
+    uint32_t op;
+    int32_t typeID;
+    uint32_t previousVarIndexPlusOne;
+};
+
+struct SlangBCConstant
+{
+    uint32_t id;
+};
+
+struct SlangBCBlock
+{
+    uint32_t codeOffset;
+
+    uint32_t paramCount;
+    uint32_t firstParamIndex;
+};
+
+/** A full module of code at the IR level.
+*/
+struct SlangBCModule
+{
+
+};
 
 #endif

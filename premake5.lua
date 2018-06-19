@@ -452,7 +452,7 @@ standardProject "slang"
     -- The `standardProject` operation already added all the code in
     -- `source/slang/*`, but we also want to incldue the umbrella
     -- `slang.h` header in this prject, so we do that manually here.
-    files { "slang.h" }
+    files { "slang.h", "slang-bytecode.h" }
 
     -- The most challenging part of building `slang` is that we need
     -- to invoke the `slang-generate` tool to generate the version
