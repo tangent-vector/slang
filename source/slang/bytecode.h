@@ -32,11 +32,10 @@ typedef SlangBCReflectionSectonHeader   BCReflectionSectionHeader;
 typedef SlangBCReflectionEntry          BCReflectionEntry;
 typedef SlangBCReflectionNode           BCReflectionNode;
 typedef SlangBCCode                     BCOp;
-typedef SlangBCFunc                     BCFunc;
+typedef SlangBCIRNode                   BCFunc;
 typedef SlangBCRegister                 BCReg;
-typedef SlangBCConstant                 BCConst;
+typedef SlangBCUpValue                  BCConst;
 typedef SlangBCBlock                    BCBlock;
-typedef SlangBCModule                   BCModule;
 
 class CompileRequest;
 void generateBytecodeForCompileRequest(

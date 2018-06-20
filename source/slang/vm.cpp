@@ -10,7 +10,6 @@
 
 // TODO: commenting this all out for now, so that we don't have to maintain
 // the VM implementation when bringing up the new BC module format.
-#if 0
 namespace Slang
 {
 
@@ -53,7 +52,7 @@ struct VMPtrTypeImpl : VMTypeImpl
     VMType base;
 };
 
-struct VMReg
+struct VMRegister
 {
     // Type that the register is meant to hold
     VMType  type;
@@ -62,30 +61,72 @@ struct VMReg
     size_t  offset;
 };
 
-struct VMConst
+struct VMUpValue
 {
-    // Type of the constant
+    // Type of the value
     VMType  type;
 
     // Operand address to use
     void*   ptr;
 };
 
-struct VMModule;
+struct VM;
+struct VMFrame;
+
+struct VMModuleFile
+{
+    VM*                     vm;
+    SlangBCIRSectionHeader* bcIR;
+    SlangBCCode*            bcCode;
+
+    SlangBCCode* getBCCode()
+    {
+        return bcCode;
+    }
+
+    SlangBCRegister* getBCRegister(UInt index)
+    {
+        return (SlangBCRegister*)((char*)bcIR
+            + bcIR->registersOffset
+            + index * bcIR->registerSize);
+    }
+
+    SlangBCUpValue* getBCUpValue(UInt index)
+    {
+        return (SlangBCUpValue*)((char*)bcIR
+            + bcIR->upValuesOffset
+            + index * bcIR->upValueSize);
+    }
+
+    SlangBCBlock* getBCBlock(UInt index)
+    {
+        return (SlangBCBlock*)((char*)bcIR
+            + bcIR->blocksOffset
+            + index * bcIR->blockSize);
+    }
+
+};
 
 // Information about a function after it has been
 // loaded into the VM.
 struct VMFunc
 {
-    // The parent module that this function belongs to
-    VMModule*   module;
+    VMModuleFile* moduleFile;
 
-    SlangBCFunc const*  bcFunc;
+    // The parent frame/module that this function belongs to
+    VMFrame*   parent;
 
-    VMReg*      regs;
-    VMConst*    consts;
+    SlangBCIRNode const* bcFunc;
+
+    VMRegister* registers;
+    VMUpValue*  upValues;
 
     size_t      frameSize;
+
+    SlangBCBlock* getBCBlock(UInt index)
+    {
+        return moduleFile->getBCBlock(bcFunc->firstBlockIndex + index);
+    }
 };
 
 struct VMFrame
@@ -105,12 +146,9 @@ struct VMFrame
 
 struct VM;
 
-struct VMModule
+struct VMModule : VMFrame
 {
-    SlangBCModule*  bcModule;
     VM*         vm;
-    void**      symbols;
-    VMType*     types;
 };
 
 UInt decodeUInt(BCOp** ioPtr)
@@ -158,8 +196,8 @@ Int decodeSInt(BCOp** ioPtr)
 void* getRegPtrImpl(VMFrame* frame, UInt id)
 {
     VMFunc* vmFunc = frame->func;
-    VMReg* vmReg = &vmFunc->regs[id];
-    size_t offset = vmReg->offset;
+    VMRegister* vmRegister = &vmFunc->registers[id];
+    size_t offset = vmRegister->offset;
 
     return (void*)((char*)frame + offset);
 }
@@ -177,13 +215,13 @@ void* getOperandPtrImpl(VMFrame* frame, Int id)
     else
     {
         // This ID represents a global value that has
-        // been imported into the current func, and
-        // should be looked up via indirection into
-        // the current module.
+        // been imported into the current node from
+        // its parent frame (or from further up the
+        // chain).
 
         VMFunc* vmFunc = frame->func;
-        VMConst* vmConst = &vmFunc->consts[~id];
-        return vmConst->ptr;
+        VMUpValue* vmUpValue = &vmFunc->upValues[~id];
+        return vmUpValue->ptr;
     }
 }
 
@@ -191,11 +229,11 @@ VMType getOperandTypeImpl(VMFrame* frame, Int id)
 {
     if( id >= 0 )
     {
-        return frame->func->regs[id].type;
+        return frame->func->registers[id].type;
     }
     else
     {
-        return frame->func->consts[~id].type;
+        return frame->func->upValues[~id].type;
     }
 }
 struct VMPtrAndType
@@ -236,8 +274,7 @@ T& decodeOperand(VMFrame* frame, BCOp** ioIP)
 
 VMType decodeType(VMFrame* frame, BCOp** ioIP)
 {
-    UInt id = decodeUInt(ioIP);
-    return frame->func->module->types[id];
+    return decodeOperand<VMType>(frame, ioIP);
 }
 
 VMFunc* loadVMFunc(
@@ -279,55 +316,71 @@ VMSizeAlign getVMSymbolSize(BCSymbol* symbol)
 }
 #endif
 
-VMType getType(
-    VMModule*   vmModule,
-    uint32_t    typeID)
+//void* getGlobalPtr(
+//    VMModule*   vmModule,
+//    uint32_t    globalID)
+//{
+//    return vmModule->symbols[globalID];
+//}
+
+//VMType getType(
+//    VMModule*   vmModule,
+//    uint32_t    typeID)
+//{
+//    VMType type;
+//    type.impl = (VMTypeImpl*)getGlobalPtr(vmModule, typeID);
+//}
+
+//VMType getGlobalType(
+//    VMModule*   vmModule,
+//    uint32_t    globalID)
+//{
+//    return getType(vmModule, vmModule->bcModule->symbols[globalID]->typeID);
+//}
+
+BCReg* getRegister(SlangBCIRSectionHeader* bcIR, UInt index)
 {
-    return vmModule->types[typeID];
+    return (BCReg*)((char*)bcIR
+        + bcIR->registersOffset
+        + index * bcIR->registerSize);
 }
 
-void* getGlobalPtr(
-    VMModule*   vmModule,
-    uint32_t    globalID)
+SlangBCUpValue* getUpValue(SlangBCIRSectionHeader* bcIR, UInt index)
 {
-    return vmModule->symbols[globalID];
-}
-
-VMType getGlobalType(
-    VMModule*   vmModule,
-    uint32_t    globalID)
-{
-    return getType(vmModule, vmModule->bcModule->symbols[globalID]->typeID);
+    return (SlangBCUpValue*)((char*)bcIR
+        + bcIR->upValuesOffset
+        + index * bcIR->upValueSize);
 }
 
 VMFunc* loadVMFunc(
-    BCFunc*     bcFunc,
-    VMModule*   vmModule)
+    SlangBCIRSectionHeader* bcIR,
+    BCFunc*                 bcFunc,
+    VMFrame*                parentFrame)
 {
-    UInt regCount = bcFunc->regCount;
-    UInt constCount = bcFunc->constCount;
+    UInt regCount = bcFunc->registerCount;
+    UInt upValueCount = bcFunc->upValueCount;
     UInt vmFuncSize = sizeof(VMFunc)
-        + regCount * sizeof(VMReg)
-        + constCount * sizeof(VMConst);
+        + regCount * sizeof(VMRegister)
+        + upValueCount * sizeof(VMUpValue);
 
     VMFunc* vmFunc = (VMFunc*) malloc(vmFuncSize);
-    VMReg* vmRegs = (VMReg*) (vmFunc + 1);
-    VMConst* vmConsts = (VMConst*) (vmRegs + regCount);
+    VMRegister* vmRegs = (VMRegister*) (vmFunc + 1);
+    VMUpValue* vmUpValues = (VMUpValue*) (vmRegs + regCount);
 
-    vmFunc->module = vmModule;
+    vmFunc->parent = parentFrame;
     vmFunc->bcFunc = bcFunc;
-    vmFunc->regs = vmRegs;
-    vmFunc->consts = vmConsts;
+    vmFunc->registers = vmRegs;
+    vmFunc->upValues = vmUpValues;
 
     UInt offset = sizeof(VMFrame);
     for( UInt rr = 0; rr < regCount; ++rr )
     {
-        BCReg* bcReg = &bcFunc->regs[rr];
+        BCReg* bcReg = getRegister(bcIR, bcFunc->firstRegisterIndex + rr);
         auto bcTypeID = bcReg->typeID;
 
         // We expect the type to come from the outer module, so
         // that we can allocate space for it as we go.
-        auto vmType = getType(vmModule, bcTypeID);
+        auto vmType = *(VMType*)getOperandPtrImpl(parentFrame, bcTypeID);
 
         auto regSize = vmType.getSize();
         auto regAlign = vmType.getAlignment();
@@ -342,34 +395,12 @@ VMFunc* loadVMFunc(
     }
     vmFunc->frameSize = offset;
 
-    for( UInt cc = 0; cc < constCount; ++cc )
+    for( UInt uu = 0; uu < upValueCount; ++uu )
     {
-        BCConst bcConst = bcFunc->consts[cc];
-        switch( bcConst.flavor )
-        {
-        case kBCConstFlavor_GlobalSymbol:
-            {
-                auto globalID = bcConst.id;
-                vmFunc->consts[cc].ptr = &vmModule->symbols[globalID];
-                vmFunc->consts[cc].type = getGlobalType(vmModule, globalID);
-            }
-            break;
-
-        case kBCConstFlavor_Constant:
-            {
-                auto constID = bcConst.id;
-                auto constInfo = &vmModule->bcModule->constants[constID];
-                vmFunc->consts[cc].ptr = constInfo->ptr;
-            #if 0
-                fprintf(stderr, "CONSANT[%d] : [%p]\n", (int)cc, vmFunc->consts[cc].ptr);
-                fprintf(stderr, "BC [%p] : %d\n", &constInfo->ptr, (int)constInfo->ptr.rawVal);
-            #endif
-                vmFunc->consts[cc].type = getType(vmModule, constInfo->typeID);
-            }
-            break;
-        }
-
-
+        SlangBCUpValue* bcUpValue = getUpValue(bcIR, bcFunc->firstUpValueIndex + uu);
+        auto upValueID = bcUpValue->id;
+        vmFunc->upValues[uu].ptr = getOperandPtrImpl(parentFrame, upValueID);
+        vmFunc->upValues[uu].type = getOperandTypeImpl(parentFrame, upValueID);
     }
 
     return vmFunc;
@@ -379,7 +410,8 @@ VMFrame* createFrame(VMFunc* vmFunc)
 {
     VMFrame* vmFrame = (VMFrame*) malloc(vmFunc->frameSize);
     vmFrame->func = vmFunc;
-    vmFrame->ip = vmFunc->bcFunc->blocks[0].code;
+    vmFrame->ip = vmFunc->moduleFile->getBCCode()
+        + vmFunc->getBCBlock(0)->codeOffset;
     return vmFrame;
 }
 
@@ -392,15 +424,15 @@ void dumpVMFrame(VMFrame* vmFrame)
     // For now this is made easier by having
     // no overlapping register assignments...
     VMFunc* vmFunc = vmFrame->func;
-    BCFunc* bcFunc = vmFunc->bcFunc;
-    UInt regCount = bcFunc->regCount;
+    BCFunc const* bcFunc = vmFunc->bcFunc;
+    UInt regCount = bcFunc->registerCount;
 
     for (UInt rr = 0; rr < regCount; ++rr)
     {
-        VMType regType = getOperandTypeImpl(vmFrame, rr);
-        void* regData = getRegPtrImpl(vmFrame, rr);
-
-        char const* name = bcFunc->regs[rr].name;
+//        VMType regType = getOperandTypeImpl(vmFrame, rr);
+//        void* regData = getRegPtrImpl(vmFrame, rr);
+/*
+        char const* name = bcFunc->registers[rr].name;
 
         // Use the type to print the data...
 
@@ -459,6 +491,7 @@ void dumpVMFrame(VMFrame* vmFrame)
         fprintf(stderr, "%s", getIROpInfo((IROp) bcFunc->regs[rr].op).name);
         fprintf(stderr, "\n");
 
+*/
         // Okay, now we need to use the type
         // stored in the VM register to tell
         // us how to print things.
@@ -552,64 +585,6 @@ VMType getType(
     return type;
 }
 
-VMVal getVal(
-    VMModule*   vmModule,
-    UInt        index)
-{
-    return vmModule->types[index];
-}
-
-VMType loadVMType(
-    VMModule*   vmModule,
-    BCType*     bcType)
-{
-    // Need to load type from BC format to VM
-    IROp op = (IROp) bcType->op;
-    switch(bcType->op)
-    {
-    case kIROp_PtrType:
-        {
-            // TODO: need to do some caching!
-            BCPtrType* bcPtrType = (BCPtrType*) bcType;
-
-            VMPtrTypeImpl vmPtrTypeImpl;
-            vmPtrTypeImpl.op = op;
-            vmPtrTypeImpl.argCount = 1;
-            vmPtrTypeImpl.size = sizeof(void*);
-            vmPtrTypeImpl.alignment = sizeof(void*);
-            vmPtrTypeImpl.base = getType(vmModule, bcPtrType->valueType->id);
-
-            auto vmPtrType = getType(vmModule->vm, &vmPtrTypeImpl);
-            return vmPtrType;
-        }
-        break;
-
-    default:
-        {
-            UInt argCount = bcType->argCount;
-
-            UInt size = sizeof(VMTypeImpl) + argCount * sizeof(VMVal);
-
-            VMTypeImpl* impl = (VMTypeImpl*) alloca(size);
-            memset(impl, 0, size);
-            impl->op = bcType->op;
-            impl->argCount = (uint32_t)argCount;
-            
-            VMVal* args = (VMVal*) (impl + 1);
-            for(UInt aa = 0; aa < argCount; ++aa)
-            {
-                args[aa] = getVal(vmModule, bcType->getArg(aa)->id);
-            }
-
-            return getType(vmModule->vm, impl);
-        }
-
-        UNREACHABLE(SLANG_UNEXPECTED("unimplemented"));
-        UNREACHABLE_RETURN(VMType());
-        break;
-    }
-}
-
 void* allocateImpl(VM* /*vm*/, UInt size, UInt /*align*/)
 {
     void* ptr = malloc(size);
@@ -628,61 +603,12 @@ T* allocate(VM* vm)
     return allocateImpl(vm, sizeof(T), alignof(T));
 }
 
-void* loadVMSymbol(
-    VMModule*   vmModule,
-    BCSymbol*   bcSymbol)
-{
-    // Need to load type from BC format to VM
-
-    auto vm = vmModule->vm;
-
-    switch(bcSymbol->op)
-    {
-    case kIROp_GlobalVar:
-        {
-            auto type = getType(vmModule, bcSymbol->typeID);
-            assert(type.impl->op == kIROp_PtrType);
-
-            VMPtrTypeImpl* ptrTypeImpl = (VMPtrTypeImpl*) type.impl;
-            auto valueType = ptrTypeImpl->base;
-
-            void* varValue = allocate(vm, valueType);
-            void** varPtr = (void**) allocate(vm, type);
-
-
-            *varPtr = varValue;
-
-            return varPtr;
-        }
-        break;
-
-    case kIROp_GlobalConstant:
-        {
-            auto type = getType(vmModule, bcSymbol->typeID);
-            void* valPtr = allocate(vm, type);
-            return valPtr;
-        }
-        break;
-
-    case kIROp_Func:
-        {
-            auto bcFunc = (BCFunc*) bcSymbol;
-            VMFunc* vmFunc = loadVMFunc(bcFunc, vmModule);
-            return vmFunc;
-        }
-        break;
-
-    default:
-        return nullptr;
-    }
-}
-
 VMModule* loadVMModuleInstance(
     VM*         vm,
     void const* bytecode,
     size_t      /*bytecodeSize*/)
 {
-    BCHeader* bcHeader = (BCHeader*) bytecode;
+    BCFileHeader* bcFileHeader = (BCFileHeader*)bytecode;
 
     UInt bcModuleCount = bcHeader->moduleCount;
     if (bcModuleCount == 0)
@@ -1250,6 +1176,4 @@ SLANG_API void SlangVMThread_resume(
     Slang::resumeThread(
         (Slang::VMThread*)  thread);
 }
-
-#endif
 

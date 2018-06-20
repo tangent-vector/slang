@@ -177,18 +177,40 @@ enum
 
 typedef uint8_t SlangBCCode;
 
-struct SlangBCFunc
+struct SlangBCIRSectionHeader
 {
-    int32_t typeID;
+    uint32_t nodeCount;
+    uint32_t nodeSize;
+    uint32_t nodesOffset;
 
-    uint32_t regCount;
-    uint32_t regsOffset;
+    uint32_t registerCount;
+    uint32_t registerSize;
+    uint32_t registersOffset;
 
     uint32_t blockCount;
+    uint32_t blockSize;
     uint32_t blocksOffset;
 
-    uint32_t constantCount;
-    uint32_t constantsOffset;
+    uint32_t upValueCount;
+    uint32_t upValueSize;
+    uint32_t upValuesOffset;
+
+    // TODO: need storage for *true* constants
+};
+
+struct SlangBCIRNode
+{
+    uint32_t op;
+    int32_t typeID;
+
+    uint32_t registerCount;
+    uint32_t firstRegisterIndex;
+
+    uint32_t blockCount;
+    uint32_t firstBlockIndex;
+
+    uint32_t upValueCount;
+    uint32_t firstUpValueIndex;
 };
 
 struct SlangBCRegister
@@ -198,7 +220,7 @@ struct SlangBCRegister
     uint32_t previousVarIndexPlusOne;
 };
 
-struct SlangBCConstant
+struct SlangBCUpValue
 {
     uint32_t id;
 };
@@ -206,16 +228,8 @@ struct SlangBCConstant
 struct SlangBCBlock
 {
     uint32_t codeOffset;
-
     uint32_t paramCount;
     uint32_t firstParamIndex;
-};
-
-/** A full module of code at the IR level.
-*/
-struct SlangBCModule
-{
-
 };
 
 #endif

@@ -14,6 +14,78 @@
 namespace Slang
 {
 
+struct BCWriter;
+
+template<typename T>
+struct BCWriteOffset
+{
+    BCWriter* writer = 0;
+    size_t offset = 0;
+
+    BCWriteOffset(BCWriter* writer, size_t offset)
+        : writer(writer)
+        , offset(offset)
+    {}
+
+    T* getPtr();
+
+    T* operator->() { return getPtr(); }
+
+    T& operator[](int index)
+    {
+        return getPtr()[index];
+    }
+};
+
+struct BCWriter
+{
+    List<uint8_t>* outData;
+    size_t baseOffset;
+
+    BCWriteOffset<char> write(void const* data, size_t size)
+    {
+        size_t startOffset = tell();
+
+        char const* cursor = (char const*)data;
+        for(size_t ii = 0; ii < size; ++ii)
+            outData->Add(*cursor++);
+
+        return BCWriteOffset<char>(this, startOffset);
+    }
+
+    void padToAlignment(int alignment)
+    {
+        while(tell() & (alignment - 1))
+            outData->Add(0);
+    }
+
+    size_t tell()
+    {
+        return outData->Count() - baseOffset;
+    }
+
+    size_t reserveImpl(size_t size, int alignment)
+    {
+        padToAlignment(alignment);
+        size_t startOffset = tell();
+        for(size_t ii = 0; ii < size; ++ii)
+            outData->Add(0);
+        return startOffset;
+    }
+
+    template<typename T>
+    BCWriteOffset<T> reserve(UInt count = 1)
+    {
+        return BCWriteOffset<T>(this, reserveImpl(sizeof(T)*count, SLANG_ALIGN_OF(T)));
+    }
+};
+
+template<typename T>
+T* BCWriteOffset<T>::getPtr()
+{
+    return (T*)(writer->outData->Buffer() + writer->baseOffset + offset);
+}
+
 struct BCSectionBuilder : RefObject
 {
     /// The name of the section, as it will be serialized
@@ -28,8 +100,7 @@ struct BCSectionBuilder : RefObject
     /// Required alignment in bytes.
     uint32_t alignment = 8;
 
-    virtual size_t computeSize() = 0;
-    virtual void writeData(void* dest, size_t size) = 0;
+    virtual void writeData(BCWriter& writer) = 0;
 };
 
 struct BCSimpleSectionBuilder : BCSectionBuilder
@@ -70,47 +141,26 @@ struct BCStringTableBuilder : BCSectionBuilder
         return index;
     }
 
-    size_t computeSize() SLANG_OVERRIDE
+    void writeData(BCWriter& writer) SLANG_OVERRIDE
     {
-        size_t size = 0;
-        size += sizeof(SlangBCStringTableSectionHeader);
-        size += entries.Count() * sizeof(SlangBCStringTableEntry);
-
-        for( auto entry : entries )
-        {
-            size += entry.Length() + 1;
-        }
-    }
-
-    void writeData(void* inDest, size_t size) SLANG_OVERRIDE
-    {
-        char* dest = (char*) inDest;
-
         UInt entryCount = entries.Count();
 
-        size_t offset = 0;
-        offset += sizeof(SlangBCStringTableSectionHeader);
+        auto bcHeader = writer.reserve<SlangBCStringTableSectionHeader>();
+        auto bcEntries = writer.reserve<SlangBCStringTableEntry>(entryCount);
 
-        size_t entryTableOffset = offset;
-        offset += entryCount * sizeof(SlangBCStringTableEntry);
-
-        SlangBCStringTableSectionHeader* bcHeader = (SlangBCStringTableSectionHeader*) dest;
-        bcHeader->entryTableOffset = entryTableOffset;
+        bcHeader->entryTableOffset = bcEntries.offset;
         bcHeader->entryCount = entryCount;
         bcHeader->entrySize = sizeof(SlangBCStringTableEntry);
 
-        SlangBCStringTableEntry* bcEntries = (SlangBCStringTableEntry*) (dest + entryTableOffset);
         for(UInt ii = 0; ii < entryCount; ++ii)
         {
             String text = entries[ii];
             size_t entrySize = text.Length();
 
-            bcEntries[ii].offset = offset;
+            auto bcText = writer.write(text.Buffer(), entrySize + 1);
+
+            bcEntries[ii].offset = bcText.offset;
             bcEntries[ii].size = entrySize;
-
-            memcpy(dest + offset, text.Buffer(), entrySize + 1);
-
-            offset += entrySize + 1;
         }
     }
 };
@@ -120,11 +170,17 @@ struct BCFileBuilder
 {
     List<RefPtr<BCSectionBuilder>> sections;
 
-    RefPtr<BCSectionBuilder> addSection(String const& name)
+    void addSection(String const& name, BCSectionBuilder* section)
     {
-        RefPtr<BCSectionBuilder> section = new BCSectionBuilder();
         section->name = name;
         sections.Add(section);
+    }
+
+    template<typename T>
+    RefPtr<T> addSection(String const& name)
+    {
+        RefPtr<T> section = new T();
+        addSection(name, section);
         return section;
     }
 };
@@ -139,9 +195,9 @@ struct ASTToBCContext
 {
 };
 
-struct ASTToBCVisitor : TypeVisitor<int32_t>
-{
-};
+//struct ASTToBCVisitor : TypeVisitor<int32_t>
+//{
+//};
 
 // IR->BC translation
 
@@ -280,17 +336,6 @@ void encodeOperand(
 {
     auto id = getLocalID(context, operand);
     encodeSInt(context, id);
-}
-
-LocalID getTypeID(
-    IRToBCContext*  context,
-    IRType*         type);
-
-void encodeOperand(
-    IRToBCContext*  context,
-    IRType*         type)
-{
-    encodeUInt(context, getTypeID(context, type));
 }
 
 bool opHasResult(IRInst* inst)
@@ -692,7 +737,7 @@ void generateBytecodeNodeForIRParentRec(
         // Okay, we've counted how many registers we need for each block,
         // and now we can allocate the contiguous array we will use.
         context->registers.SetSize(regCount);
-        bcFunc->regCount = regCount;
+        bcFunc->registerCount = regCount;
 
         // Now we will loop over things again to fill in the information
         // on all these registers.
@@ -822,108 +867,63 @@ void generateBytecodeContainer(
     BCFileBuilder*      fileBuilder,
     CompileRequest*     compileReq)
 {
-    SlangBCOffset offset = 0;
+    BCWriter writer;
+    writer.outData = &compileReq->generatedBytecode;
+    writer.baseOffset = 0;
 
-    SlangBCOffset headerOffset = offset;
-    offset += sizeof(SlangBCFileHeader);
+    auto bcHeader = writer.reserve<BCFileHeader>();
 
-    SlangBCFileHeader header;
     static const uint8_t kMagic[] = { SLANG_BC_MAGIC };
-    memcpy(header.magic, kMagic, sizeof(kMagic));
-    header.majorVersion = 0;
-    header.minorVersion = 0;
+    memcpy(&bcHeader->magic[0], kMagic, sizeof(kMagic));
+    bcHeader->majorVersion = 0;
+    bcHeader->minorVersion = 0;
 
     // We need a section for the string table of section names.
     UInt sectionNameTableSectionIndex = fileBuilder->sections.Count();
-    BCStringTableBuilder sectionNameTableBuilder;
+    RefPtr<BCStringTableBuilder> sectionNameTable = new BCStringTableBuilder();
+    sectionNameTable->name = ".shstrtab";
 
-    UInt rawSectionCount = fileBuilder->sections.Count();
-    UInt totalSectionCount = rawSectionCount + 1;
+    List<RefPtr<BCSectionBuilder>> sections = fileBuilder->sections;
+    sections.Add(sectionNameTable);
 
-    SlangBCOffset sectionTableOffset = offset;
-    offset += totalSectionCount * sizeof(SlangBCSectionTableEntry);
+    UInt sectionCount = sections.Count();
 
-    header.sectionTableOffset = sectionTableOffset;
-    header.sectionTableEntryCount = totalSectionCount;
-    header.sectionTableEntrySize = sizeof(SlangBCSectionTableEntry);
-    header.sectionNameStringTableIndex = sectionNameTableSectionIndex;
+    auto bcSectionTable = writer.reserve<SlangBCSectionTableEntry>(sectionCount);
 
-    List<SlangBCSectionTableEntry> sectionTable;
-    sectionTable.SetSize(totalSectionCount);
+    bcHeader->sectionTableOffset = bcSectionTable.offset;
+    bcHeader->sectionTableEntryCount = sectionCount;
+    bcHeader->sectionTableEntrySize = sizeof(SlangBCSectionTableEntry);
+    bcHeader->sectionNameStringTableIndex = sectionNameTableSectionIndex;
 
-    for(UInt ii = 0; ii < rawSectionCount; ++ii)
+    for(UInt ii = 0; ii < sectionCount; ++ii)
     {
-        auto section = fileBuilder->sections[ii];
-        SlangBCSectionTableEntry& entry = sectionTable[ii];
+        auto section = sections[ii];
+        uint32_t nameIndex = sectionNameTable->addString(section->name);
 
-        uint32_t nameIndex = sectionNameTableBuilder.addString(section->name);
+        writer.padToAlignment(section->alignment);
+        size_t sectionOffset = writer.tell();
 
-        UInt sectionSize = section->data.Count();
+        BCWriter subWriter;
+        subWriter.outData = writer.outData;
+        subWriter.baseOffset = sectionOffset;
+        section->writeData(subWriter);
 
-        entry.nameIndex = nameIndex;
-        entry.offsetInFile = offset;
-        entry.size = sectionSize;
-        entry.type = section->type;
-        entry.flags = section->flags;
+        size_t sectionSize = subWriter.tell();
 
-        offset += sectionSize;
-    }
-
-    // One more section, for the section name table.
-    {
-        SlangBCSectionTableEntry& entry = sectionTable[sectionNameTableSectionIndex];
-
-        uint32_t nameIndex = sectionNameTableBuilder.addString(".shstrtab");
-        UInt sectionSize = sectionNameTableBuilder.computeSize();
-
-        entry.nameIndex = sectionNameTableBuilder.addString(".shstrtab");
-        entry.offsetInFile = offset;
-        entry.size = sectionNameTableBuilder.computeSize();
-    }
-
-        auto nameTableSection = fileBuilder->addSection<BCStringTableBuilder>(".shstrtab");
-
-
-    sectionNameTable
-
-    size_t size = offset;
-
-    compileReq->generatedBytecode.SetSize(size);
-    auto data = compileReq->generatedBytecode.Buffer();
-
-
-    memcpy(data + headerOffset, &header, sizeof(header));
-    memcpy(data + sectionTableOffset, sectionTable.Buffer(), sectionCount * sizeof(SlangBCSectionTableEntry));
-
-
-
-    // TODO: Need to generate BC representation of all the public/exported
-    // declrations in the translation units, so that they can be used to
-    // resolve depenencies downstream.
-
-    // TODO: Need to dump BC representation of compiled kernel codes
-    // for each specified code-generation target.
-
-    List<BytecodeGenerationPtr<BCModule>> bcModulesList;
-
-    UInt bcModuleCount = bcModulesList.Count();
-    header->moduleCount = (uint32_t)bcModuleCount;
-
-    auto bcModules = allocateArray<BCPtr<BCModule>>(context, bcModuleCount);
-    header->modules = bcModules;
-    for(UInt ii = 0; ii < bcModuleCount; ++ii)
-    {
-        bcModules[ii] = bcModulesList[ii];
+        SlangBCSectionTableEntry& bcEntry = bcSectionTable[ii];
+        bcEntry.nameIndex = nameIndex;
+        bcEntry.offsetInFile = sectionOffset;
+        bcEntry.size = sectionSize;
+        bcEntry.type = section->type;
+        bcEntry.flags = section->flags;
     }
 }
-#endif
 
 void generateBytecodeForCompileRequest(
     CompileRequest* compileReq)
 {
-    SharedBytecodeGenerationContext sharedContext;
-
-
+    BCFileBuilder fileBuilderStorage;
+    BCFileBuilder* fileBuilder = &fileBuilderStorage;
 
     // There might be multiple translation units in the compile request,
     // each of which will map to a distinct IR-level module.
@@ -932,9 +932,7 @@ void generateBytecodeForCompileRequest(
         generateBytecodeNodeForIRParentRec(nullptr, translationUnitReq->irModule->getModuleInst());
     }
 
-    generateBytecodeContainer(&context, compileReq);
-
-    compileReq->generatedBytecode = sharedContext.bytecode;
+    generateBytecodeContainer(fileBuilder, compileReq);
 }
 
 // TODO: Need to support IR emit at the whole-module/compile-request
