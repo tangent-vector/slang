@@ -37,6 +37,22 @@ typedef SlangBCRegister                 BCReg;
 typedef SlangBCUpValue                  BCConst;
 typedef SlangBCBlock                    BCBlock;
 
+inline SlangBCSectionTableEntry& getSectionTableEntry(
+    SlangBCFileHeader*  header,
+    UInt                index)
+{
+    return *(SlangBCSectionTableEntry*)((char*)header
+        + header->sectionTableOffset
+        + index*header->sectionTableEntrySize);
+}
+
+inline void* getSectionData(
+    SlangBCFileHeader*              header,
+    SlangBCSectionTableEntry const& entry)
+{
+    return (char*)header + entry.offsetInFile;
+}
+
 class CompileRequest;
 void generateBytecodeForCompileRequest(
     CompileRequest* compileReq);

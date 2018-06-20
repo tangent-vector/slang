@@ -77,34 +77,16 @@ struct VMModuleFile
 {
     VM*                     vm;
     SlangBCIRSectionHeader* bcIR;
-    SlangBCCode*            bcCode;
 
-    SlangBCCode* getBCCode()
+    SlangBCIRNode* getBCNode(UInt index)
     {
-        return bcCode;
-    }
+        auto entry = (SlangBCIRNodeTableEntry*)((char*)bcIR
+            + bcIR->nodeTableOffset
+            + index * bcIR->nodeTableEntrySize);
 
-    SlangBCRegister* getBCRegister(UInt index)
-    {
-        return (SlangBCRegister*)((char*)bcIR
-            + bcIR->registersOffset
-            + index * bcIR->registerSize);
+        return (SlangBCIRNode*)((char*)bcIR
+            + entry->nodeOffset);
     }
-
-    SlangBCUpValue* getBCUpValue(UInt index)
-    {
-        return (SlangBCUpValue*)((char*)bcIR
-            + bcIR->upValuesOffset
-            + index * bcIR->upValueSize);
-    }
-
-    SlangBCBlock* getBCBlock(UInt index)
-    {
-        return (SlangBCBlock*)((char*)bcIR
-            + bcIR->blocksOffset
-            + index * bcIR->blockSize);
-    }
-
 };
 
 // Information about a function after it has been
@@ -603,13 +585,47 @@ T* allocate(VM* vm)
     return allocateImpl(vm, sizeof(T), alignof(T));
 }
 
-VMModule* loadVMModuleInstance(
+VMModuleFile* loadVMModuleInstance(
     VM*         vm,
     void const* bytecode,
     size_t      /*bytecodeSize*/)
 {
     BCFileHeader* bcFileHeader = (BCFileHeader*)bytecode;
 
+    // Need to find section(s) that represent compiled translation units
+
+    UInt sectionCount = bcFileHeader->sectionTableEntryCount;
+    SlangBCIRSectionHeader* bcIR = nullptr;
+    for(UInt ii = 0; ii < sectionCount; ++ii)
+    {
+        auto sectionTableEntry = getSectionTableEntry(bcFileHeader, ii);
+        if(sectionTableEntry.type != SLANG_BC_SECTION_TYPE_IR)
+            continue;
+
+        // Okay, we have an IR section, and we should try to load it.
+
+        bcIR = (SlangBCIRSectionHeader*) getSectionData(bcFileHeader, sectionTableEntry);
+
+        // We are breaking out of our search as soon as we find an IR
+        // section, even if it isn't the only one. Is this reasonable?
+        break;
+    }
+
+    if(!bcIR)
+        return nullptr;
+
+    UInt vmModuleFileSize = sizeof(VMModuleFile);
+//        + symbolCount * sizeof(void*)
+//        + typeCount * sizeof(VMType);
+
+    VMModuleFile* vmModuleFile = (VMModuleFile*)malloc(vmModuleFileSize);
+    memset(vmModuleFile, 0, vmModuleFileSize);
+
+    vmModuleFile->vm = vm;
+    vmModuleFile->bcIR = bcIR;
+    vmModuleFile->bcCode
+
+    /*
     UInt bcModuleCount = bcHeader->moduleCount;
     if (bcModuleCount == 0)
         return nullptr;
@@ -651,6 +667,7 @@ VMModule* loadVMModuleInstance(
     }
 
     return vmModule;
+    */
 }
 
 void* findGlobalSymbolPtr(

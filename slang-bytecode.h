@@ -180,22 +180,15 @@ typedef uint8_t SlangBCCode;
 struct SlangBCIRSectionHeader
 {
     uint32_t nodeCount;
-    uint32_t nodeSize;
-    uint32_t nodesOffset;
+    uint32_t nodeTableOffset;
+    uint32_t nodeTableEntrySize;
 
-    uint32_t registerCount;
-    uint32_t registerSize;
-    uint32_t registersOffset;
+    // TODO: need storage for constant data
+};
 
-    uint32_t blockCount;
-    uint32_t blockSize;
-    uint32_t blocksOffset;
-
-    uint32_t upValueCount;
-    uint32_t upValueSize;
-    uint32_t upValuesOffset;
-
-    // TODO: need storage for *true* constants
+struct SlangBCIRNodeTableEntry
+{
+    uint32_t nodeOffset;
 };
 
 struct SlangBCIRNode
@@ -204,13 +197,16 @@ struct SlangBCIRNode
     int32_t typeID;
 
     uint32_t registerCount;
-    uint32_t firstRegisterIndex;
+    uint32_t registersOffset;
 
     uint32_t blockCount;
-    uint32_t firstBlockIndex;
+    uint32_t blocksOffset;
 
     uint32_t upValueCount;
-    uint32_t firstUpValueIndex;
+    uint32_t upValuesOffset;
+
+    uint32_t nodeCount;
+    uint32_t nodesOffset;
 };
 
 struct SlangBCRegister
