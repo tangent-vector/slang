@@ -1,4 +1,4 @@
-// hello.slang
+// shaders.slang
 
 // This file provides a simple vertex and fragment shader that can be compiled
 // using Slang. This code should also be valid as HLSL, and thus it does not

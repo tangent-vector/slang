@@ -63,14 +63,19 @@ public:
     virtual InputLayout* createInputLayout(const InputElementDesc* inputElements, UInt inputElementCount) override;
     virtual BindingState* createBindingState(const BindingState::Desc& bindingStateDesc) override;
     virtual ShaderProgram* createProgram(const ShaderProgram::Desc& desc) override;
+    virtual GraphicsPipelineState* createGraphicsPipelineState(const GraphicsPipelineState::Desc& desc) override;
     virtual void* map(BufferResource* buffer, MapFlavor flavor) override;
     virtual void unmap(BufferResource* buffer) override;
     virtual void setInputLayout(InputLayout* inputLayout) override;
     virtual void setPrimitiveTopology(PrimitiveTopology topology) override;
     virtual void setBindingState(BindingState* state);
     virtual void setVertexBuffers(UInt startSlot, UInt slotCount, BufferResource*const* buffers, const UInt* strides, const UInt* offsets) override;
+    virtual void setIndexBuffer(BufferResource* buffer, Format indexFormat, UInt offset) override;
+    virtual void setDepthStencilTarget(TextureResource* depthStencilTarget) override;
+    virtual void setGraphicsPipelineState(GraphicsPipelineState* state) override;
     virtual void setShaderProgram(ShaderProgram* inProgram) override;
     virtual void draw(UInt vertexCount, UInt startVertex) override;
+    virtual void drawIndexed(UInt indexCount, UInt startIndex, UInt baseVertex) override;
     virtual void dispatchCompute(int x, int y, int z) override;
     virtual void submitGpuWork() override;
     virtual void waitForGpu() override;
@@ -346,6 +351,10 @@ protected:
     int m_commandListOpenCount = 0;            ///< If >0 the command list should be open
 
     List<BoundVertexBuffer> m_boundVertexBuffers;
+
+    BufferResourceImpl* m_boundIndexBuffer;
+    DXGI_FORMAT m_boundIndexFormat;
+    UINT m_boundIndexOffset;
 
     RefPtr<ShaderProgramImpl> m_boundShaderProgram;
     RefPtr<InputLayoutImpl> m_boundInputLayout;
@@ -2211,6 +2220,20 @@ void D3D12Renderer::setVertexBuffers(UInt startSlot, UInt slotCount, BufferResou
     }
 }
 
+void D3D12Renderer::setIndexBuffer(BufferResource* buffer, Format indexFormat, UInt offset)
+{
+    m_boundIndexBuffer = (BufferResourceImpl*) buffer;
+    m_boundIndexFormat = D3DUtil::getMapFormat(indexFormat);
+    m_boundIndexOffset = offset;
+}
+
+void D3D12Renderer::setDepthStencilTarget(TextureResource* depthStencilTarget)
+{
+}
+
+void D3D12Renderer::setGraphicsPipelineState(GraphicsPipelineState* state)
+{}
+
 void D3D12Renderer::setShaderProgram(ShaderProgram* inProgram)
 {
     m_boundShaderProgram = static_cast<ShaderProgramImpl*>(inProgram);
@@ -2248,15 +2271,31 @@ void D3D12Renderer::draw(UInt vertexCount, UInt startVertex)
             if (buffer)
             {
                 D3D12_VERTEX_BUFFER_VIEW& vertexView = vertexViews[numVertexViews++];
-                vertexView.BufferLocation = buffer->m_resource.getResource()->GetGPUVirtualAddress();
-                vertexView.SizeInBytes = int(buffer->getDesc().sizeInBytes);
+                vertexView.BufferLocation = buffer->m_resource.getResource()->GetGPUVirtualAddress()
+                    + boundVertexBuffer.m_offset;
+                vertexView.SizeInBytes = buffer->getDesc().sizeInBytes - boundVertexBuffer.m_offset;
                 vertexView.StrideInBytes = boundVertexBuffer.m_stride;
             }
         }
         commandList->IASetVertexBuffers(0, numVertexViews, vertexViews);
     }
 
+    // Set up index buffer
+    {
+        D3D12_INDEX_BUFFER_VIEW indexBufferView;
+        indexBufferView.BufferLocation = m_boundIndexBuffer->m_resource.getResource()->GetGPUVirtualAddress()
+            + m_boundIndexOffset;
+        indexBufferView.SizeInBytes = m_boundIndexBuffer->getDesc().sizeInBytes - m_boundIndexOffset;
+        indexBufferView.Format = m_boundIndexFormat;
+
+        commandList->IASetIndexBuffer(&indexBufferView);
+    }
+
     commandList->DrawInstanced(UINT(vertexCount), 1, UINT(startVertex), 0);
+}
+
+void D3D12Renderer::drawIndexed(UInt indexCount, UInt startIndex, UInt baseVertex)
+{
 }
 
 void D3D12Renderer::dispatchCompute(int x, int y, int z)
@@ -2463,5 +2502,9 @@ ShaderProgram* D3D12Renderer::createProgram(const ShaderProgram::Desc& desc)
     return program.detach();
 }
 
+GraphicsPipelineState* D3D12Renderer::createGraphicsPipelineState(const GraphicsPipelineState::Desc& desc)
+{
+    return nullptr;
+}
 
 } // renderer_test

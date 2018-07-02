@@ -1,4 +1,4 @@
-// hello.cpp
+// main.cpp
 
 // This file implements an extremely simple example of loading and
 // executing a Slang shader program.
@@ -72,9 +72,9 @@ ShaderProgram* loadShaderProgram(Renderer* renderer)
     // behavior much.
     int translationUnitIndex = spAddTranslationUnit(slangRequest, SLANG_SOURCE_LANGUAGE_SLANG, nullptr);
 
-    // We will load source code for our translation unit from the file `hello.slang`.
+    // We will load source code for our translation unit from the file `shaders.slang`.
     // There are also variations of this API for adding source code from application-provided buffers.
-    spAddTranslationUnitSourceFile(slangRequest, translationUnitIndex, "hello.slang");
+    spAddTranslationUnitSourceFile(slangRequest, translationUnitIndex, "shaders.slang");
 
     // Next we will specify the entry points we'd like to compile.
     // It is often convenient to put more than one entry point in the same file,

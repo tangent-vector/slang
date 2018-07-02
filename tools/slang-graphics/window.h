@@ -1,6 +1,8 @@
 // window.h
 #pragma once
 
+#include <stdint.h>
+
 namespace slang_graphics {
 
 struct WindowDesc
@@ -30,8 +32,15 @@ bool dispatchEvents(ApplicationContext* context);
 /// Exit the application with a given result code
 void exitApplication(ApplicationContext* context, int resultCode);
 
+/// Log a message to an appropriate logging destination.
+void log(char const* message, ...);
+
 /// Report an error to an appropriate logging destination.
 int reportError(char const* message, ...);
+
+uint64_t getCurrentTime();
+
+uint64_t getTimerFrequency();
 
 /// Run an application given the specified callback and command-line arguments.
 int runApplication(

@@ -56,14 +56,19 @@ public:
     virtual InputLayout* createInputLayout( const InputElementDesc* inputElements, UInt inputElementCount) override;
     virtual BindingState* createBindingState(const BindingState::Desc& desc) override;
     virtual ShaderProgram* createProgram(const ShaderProgram::Desc& desc) override;
+    virtual GraphicsPipelineState* createGraphicsPipelineState(const GraphicsPipelineState::Desc& desc) override;
     virtual void* map(BufferResource* buffer, MapFlavor flavor) override;
     virtual void unmap(BufferResource* buffer) override;
     virtual void setInputLayout(InputLayout* inputLayout) override;
     virtual void setPrimitiveTopology(PrimitiveTopology topology) override;
     virtual void setBindingState(BindingState * state);
     virtual void setVertexBuffers(UInt startSlot, UInt slotCount, BufferResource*const* buffers, const UInt* strides,  const UInt* offsets) override;
+    virtual void setIndexBuffer(BufferResource* buffer, Format indexFormat, UInt offset) override;
+    virtual void setDepthStencilTarget(TextureResource* depthStencilTarget) override;
+    virtual void setGraphicsPipelineState(GraphicsPipelineState* state) override;
     virtual void setShaderProgram(ShaderProgram* inProgram) override;
     virtual void draw(UInt vertexCount, UInt startVertex) override;
+    virtual void drawIndexed(UInt indexCount, UInt startIndex, UInt baseVertex) override;
     virtual void dispatchCompute(int x, int y, int z) override;
     virtual void submitGpuWork() override {}
     virtual void waitForGpu() override {}
@@ -73,9 +78,9 @@ public:
 
     struct BindingDetail
     {
-        ComPtr<ID3D11ShaderResourceView> m_srv;
-        ComPtr<ID3D11UnorderedAccessView> m_uav;
-        ComPtr<ID3D11SamplerState> m_samplerState;
+        ComPtr<ID3D11ShaderResourceView>    m_srv;
+        ComPtr<ID3D11UnorderedAccessView>   m_uav;
+        ComPtr<ID3D11SamplerState>          m_samplerState;
     };
 
     class BindingStateImpl: public BindingState
@@ -127,6 +132,9 @@ public:
         }
         Usage m_initialUsage;
         ComPtr<ID3D11Resource> m_resource;
+
+        ComPtr<ID3D11DepthStencilView>  m_dsv;
+        ComPtr<ID3D11RenderTargetView>  m_rtv;
     };
 
 	class InputLayoutImpl: public InputLayout
@@ -134,6 +142,15 @@ public:
 		public:
 		ComPtr<ID3D11InputLayout> m_layout;
 	};
+
+    class GraphicsPipelineStateImpl : public GraphicsPipelineState
+    {
+    public:
+        ComPtr<ID3D11DepthStencilState> m_depthStencilState;
+        ComPtr<ID3D11RasterizerState>   m_rasterizerState;
+
+        UINT                            m_stencilRef;
+    };
 
         /// Capture a texture to a file
     static HRESULT captureTextureToSurface(ID3D11Device* device, ID3D11DeviceContext* context, ID3D11Texture2D* texture, Surface& surfaceOut);
@@ -147,6 +164,7 @@ public:
 
     List<ComPtr<ID3D11RenderTargetView> > m_renderTargetViews;
     List<ComPtr<ID3D11Texture2D> > m_renderTargetTextures;
+    ComPtr<ID3D11DepthStencilView> m_depthStencilView;
 
     RefPtr<BindingStateImpl> m_currentBindings;
 
@@ -284,9 +302,9 @@ SlangResult D3D11Renderer::initialize(const Desc& desc, void* inWindowHandle)
     {
         const HRESULT hr = D3D11CreateDeviceAndSwapChain_(
             nullptr,                    // adapter (use default)
-            D3D_DRIVER_TYPE_REFERENCE,
-            //D3D_DRIVER_TYPE_HARDWARE,
-			nullptr,                    // software
+//            D3D_DRIVER_TYPE_REFERENCE,
+            D3D_DRIVER_TYPE_HARDWARE,
+            nullptr,                    // software
             deviceFlags,
             &featureLevels[ii],
             totalNumFeatureLevels - ii,
@@ -428,8 +446,10 @@ TextureResource* D3D11Renderer::createTextureResource(Resource::Usage initialUsa
 
     const int effectiveArraySize = srcDesc.calcEffectiveArraySize();
 
-    assert(initData);
-    assert(initData->numSubResources == srcDesc.numMipLevels * effectiveArraySize * srcDesc.size.depth);
+    if(initData)
+    {
+        assert(initData->numSubResources == srcDesc.numMipLevels * effectiveArraySize * srcDesc.size.depth);
+    }
 
     const DXGI_FORMAT format = D3DUtil::getMapFormat(srcDesc.format);
     if (format == DXGI_FORMAT_UNKNOWN)
@@ -441,25 +461,30 @@ TextureResource* D3D11Renderer::createTextureResource(Resource::Usage initialUsa
 
     // Set up the initialize data
     List<D3D11_SUBRESOURCE_DATA> subRes;
-    subRes.SetSize(srcDesc.numMipLevels * effectiveArraySize);
+    D3D11_SUBRESOURCE_DATA* subResourcesPtr = nullptr;
+    if(initData)
     {
-        int subResourceIndex = 0;
-        for (int i = 0; i < effectiveArraySize; i++)
+        subRes.SetSize(srcDesc.numMipLevels * effectiveArraySize);
         {
-            for (int j = 0; j < srcDesc.numMipLevels; j++)
+            int subResourceIndex = 0;
+            for (int i = 0; i < effectiveArraySize; i++)
             {
-                const int mipHeight = TextureResource::calcMipSize(srcDesc.size.height, j);
+                for (int j = 0; j < srcDesc.numMipLevels; j++)
+                {
+                    const int mipHeight = TextureResource::calcMipSize(srcDesc.size.height, j);
 
-                D3D11_SUBRESOURCE_DATA& data = subRes[subResourceIndex];
+                    D3D11_SUBRESOURCE_DATA& data = subRes[subResourceIndex];
 
-                data.pSysMem = initData->subResources[subResourceIndex];
+                    data.pSysMem = initData->subResources[subResourceIndex];
 
-                data.SysMemPitch = UINT(initData->mipRowStrides[j]);
-                data.SysMemSlicePitch = UINT(initData->mipRowStrides[j] * mipHeight);
+                    data.SysMemPitch = UINT(initData->mipRowStrides[j]);
+                    data.SysMemSlicePitch = UINT(initData->mipRowStrides[j] * mipHeight);
 
-                subResourceIndex++;
+                    subResourceIndex++;
+                }
             }
         }
+        subResourcesPtr = subRes.Buffer();
     }
 
     const int accessFlags = _calcResourceAccessFlags(srcDesc.cpuAccessFlags);
@@ -481,7 +506,7 @@ TextureResource* D3D11Renderer::createTextureResource(Resource::Usage initialUsa
             desc.Usage = D3D11_USAGE_DEFAULT;
 
             ComPtr<ID3D11Texture1D> texture1D;
-            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateTexture1D(&desc, subRes.Buffer(), texture1D.writeRef()));
+            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateTexture1D(&desc, subResourcesPtr, texture1D.writeRef()));
 
             texture->m_resource = texture1D;
             break;
@@ -509,7 +534,7 @@ TextureResource* D3D11Renderer::createTextureResource(Resource::Usage initialUsa
             }
 
             ComPtr<ID3D11Texture2D> texture2D;
-            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateTexture2D(&desc, subRes.Buffer(), texture2D.writeRef()));
+            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateTexture2D(&desc, subResourcesPtr, texture2D.writeRef()));
 
             texture->m_resource = texture2D;
             break;
@@ -528,12 +553,20 @@ TextureResource* D3D11Renderer::createTextureResource(Resource::Usage initialUsa
             desc.Usage = D3D11_USAGE_DEFAULT;
 
             ComPtr<ID3D11Texture3D> texture3D;
-            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateTexture3D(&desc, subRes.Buffer(), texture3D.writeRef()));
+            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateTexture3D(&desc, subResourcesPtr, texture3D.writeRef()));
 
             texture->m_resource = texture3D;
             break;
         }
         default: return nullptr;
+    }
+
+    if(srcDesc.bindFlags & Resource::BindFlag::DepthStencil)
+    {
+        SLANG_RETURN_NULL_ON_FAIL(m_device->CreateDepthStencilView(
+            texture->m_resource,
+            nullptr,
+            texture->m_dsv.writeRef()));
     }
 
     return texture.detach();
@@ -762,6 +795,26 @@ void D3D11Renderer::setVertexBuffers(UInt startSlot, UInt slotCount, BufferResou
     m_immediateContext->IASetVertexBuffers((UINT)startSlot, (UINT)slotCount, dxBuffers, &vertexStrides[0], &vertexOffsets[0]);
 }
 
+void D3D11Renderer::setIndexBuffer(BufferResource* buffer, Format indexFormat, UInt offset)
+{
+    DXGI_FORMAT dxFormat = D3DUtil::getMapFormat(indexFormat);
+    m_immediateContext->IASetIndexBuffer(((BufferResourceImpl*)buffer)->m_buffer, dxFormat, offset);
+}
+
+void D3D11Renderer::setDepthStencilTarget(TextureResource* depthStencilTarget)
+{
+    m_depthStencilView = ((TextureResourceImpl*)depthStencilTarget)->m_dsv;
+}
+
+void D3D11Renderer::setGraphicsPipelineState(GraphicsPipelineState* state)
+{
+    auto stateImpl = (GraphicsPipelineStateImpl*)state;
+
+    m_immediateContext->OMSetDepthStencilState(stateImpl->m_depthStencilState, stateImpl->m_stencilRef);
+    m_immediateContext->RSSetState(stateImpl->m_rasterizerState);
+    /// ...
+}
+
 void D3D11Renderer::setShaderProgram(ShaderProgram* programIn)
 {
     auto program = (ShaderProgramImpl*)programIn;
@@ -774,6 +827,12 @@ void D3D11Renderer::draw(UInt vertexCount, UInt startVertex)
 {
     _applyBindingState(false);
     m_immediateContext->Draw((UINT)vertexCount, (UINT)startVertex);
+}
+
+void D3D11Renderer::drawIndexed(UInt indexCount, UInt startIndex, UInt baseVertex)
+{
+    _applyBindingState(false);
+    m_immediateContext->DrawIndexed((UINT)indexCount, (UINT)startIndex, (UInt)baseVertex);
 }
 
 ShaderProgram* D3D11Renderer::createProgram(const ShaderProgram::Desc& desc)
@@ -805,6 +864,134 @@ ShaderProgram* D3D11Renderer::createProgram(const ShaderProgram::Desc& desc)
         shaderProgram->m_pixelShader.swap(pixelShader);
         return shaderProgram;
     }
+}
+
+static D3D11_COMPARISON_FUNC translateComparisonFunc(ComparisonFunc func)
+{
+    switch(func)
+    {
+    default:
+        // TODO: need to report failures
+        return D3D11_COMPARISON_ALWAYS;
+
+#define CASE(FROM, TO) \
+    case ComparisonFunc::FROM: return D3D11_COMPARISON_##TO
+
+    CASE(Never,         NEVER);
+    CASE(Less,          LESS);
+    CASE(Equal,         EQUAL);
+    CASE(LessEqual,     LESS_EQUAL);
+    CASE(Greater,       GREATER);
+    CASE(NotEqual,      NOT_EQUAL);
+    CASE(GreaterEqual,  GREATER_EQUAL);
+    CASE(Always,        ALWAYS);
+#undef CASE
+    }
+}
+
+static D3D11_STENCIL_OP translateStencilOp(StencilOp op)
+{
+    switch(op)
+    {
+    default:
+        // TODO: need to report failures
+        return D3D11_STENCIL_OP_KEEP;
+
+#define CASE(FROM, TO) \
+    case StencilOp::FROM: return D3D11_STENCIL_OP_##TO
+
+    CASE(Keep,              KEEP);
+    CASE(Zero,              ZERO);
+    CASE(Replace,           REPLACE);
+    CASE(IncrementSaturate, INCR_SAT);
+    CASE(DecrementSaturate, DECR_SAT);
+    CASE(Invert,            INVERT);
+    CASE(IncrementWrap,     INCR);
+    CASE(DecrementWrap,     DECR);
+#undef CASE
+
+    }
+}
+
+static D3D11_FILL_MODE translateFillMode(FillMode mode)
+{
+    switch(mode)
+    {
+    default:
+        // TODO: need to report failures
+        return D3D11_FILL_SOLID;
+
+    case FillMode::Solid:       return D3D11_FILL_SOLID;
+    case FillMode::Wireframe:   return D3D11_FILL_WIREFRAME;
+    }
+}
+
+static D3D11_CULL_MODE translateCullMode(CullMode mode)
+{
+    switch(mode)
+    {
+    default:
+        // TODO: need to report failures
+        return D3D11_CULL_NONE;
+
+    case CullMode::None:    return D3D11_CULL_NONE;
+    case CullMode::Back:    return D3D11_CULL_BACK;
+    case CullMode::Front:   return D3D11_CULL_FRONT;
+    }
+}
+
+GraphicsPipelineState* D3D11Renderer::createGraphicsPipelineState(const GraphicsPipelineState::Desc& desc)
+{
+    ComPtr<ID3D11DepthStencilState> depthStencilState;
+    {
+        D3D11_DEPTH_STENCIL_DESC dsDesc;
+        dsDesc.DepthEnable      = desc.depthStencil.depthTestEnable;
+        dsDesc.DepthWriteMask   = desc.depthStencil.depthWriteEnable ? D3D11_DEPTH_WRITE_MASK_ALL : D3D11_DEPTH_WRITE_MASK_ZERO;
+        dsDesc.DepthFunc        = translateComparisonFunc(desc.depthStencil.depthFunc);
+        dsDesc.StencilEnable    = desc.depthStencil.stencilEnable;
+        dsDesc.StencilReadMask  = desc.depthStencil.stencilReadMask;
+        dsDesc.StencilWriteMask = desc.depthStencil.stencilWriteMask;
+
+    #define FACE(DST, SRC) \
+        dsDesc.DST.StencilFailOp      = translateStencilOp(     desc.depthStencil.SRC.stencilFailOp);       \
+        dsDesc.DST.StencilDepthFailOp = translateStencilOp(     desc.depthStencil.SRC.stencilDepthFailOp);  \
+        dsDesc.DST.StencilPassOp      = translateStencilOp(     desc.depthStencil.SRC.stencilPassOp);       \
+        dsDesc.DST.StencilFunc        = translateComparisonFunc(desc.depthStencil.SRC.stencilFunc);         \
+        /* end */
+
+        FACE(FrontFace, frontFace);
+        FACE(BackFace,  backFace);
+
+        SLANG_RETURN_NULL_ON_FAIL(m_device->CreateDepthStencilState(
+            &dsDesc,
+            depthStencilState.writeRef()));
+    }
+
+    ComPtr<ID3D11RasterizerState> rasterizerState;
+    {
+        D3D11_RASTERIZER_DESC rsDesc;
+        rsDesc.FillMode                 = translateFillMode(desc.rasterizer.fillMode);
+        rsDesc.CullMode                 = translateCullMode(desc.rasterizer.cullMode);
+        rsDesc.FrontCounterClockwise    = desc.rasterizer.frontFace == FrontFaceMode::Clockwise;
+        rsDesc.DepthBias                = desc.rasterizer.depthBias;
+        rsDesc.DepthBiasClamp           = desc.rasterizer.depthBiasClamp;
+        rsDesc.SlopeScaledDepthBias     = desc.rasterizer.slopeScaledDepthBias;
+        rsDesc.DepthClipEnable          = desc.rasterizer.depthClipEnable;
+        rsDesc.ScissorEnable            = desc.rasterizer.scissorEnable;
+        rsDesc.MultisampleEnable        = desc.rasterizer.multisampleEnable;
+        rsDesc.AntialiasedLineEnable    = desc.rasterizer.antialiasedLineEnable;
+
+        SLANG_RETURN_NULL_ON_FAIL(m_device->CreateRasterizerState(
+            &rsDesc,
+            rasterizerState.writeRef()));
+
+    }
+
+    GraphicsPipelineStateImpl* state = new GraphicsPipelineStateImpl();
+    state->m_stencilRef = desc.depthStencil.stencilRef;
+    state->m_depthStencilState = depthStencilState;
+    state->m_rasterizerState = rasterizerState;
+    return state;
 }
 
 void D3D11Renderer::dispatchCompute(int x, int y, int z)
@@ -1036,8 +1223,14 @@ void D3D11Renderer::_applyBindingState(bool isCompute)
                     if (isCompute)
                         context->CSSetUnorderedAccessViews(bindingIndex, 1, detail.m_uav.readRef(), nullptr);
                     else
-                        context->OMSetRenderTargetsAndUnorderedAccessViews(m_currentBindings->getDesc().m_numRenderTargets,
-                            m_renderTargetViews.Buffer()->readRef(), nullptr, bindingIndex, 1, detail.m_uav.readRef(), nullptr);
+                        context->OMSetRenderTargetsAndUnorderedAccessViews(
+                            m_currentBindings->getDesc().m_numRenderTargets,
+                            m_renderTargetViews.Buffer()->readRef(),
+                            m_depthStencilView,
+                            bindingIndex,
+                            1,
+                            detail.m_uav.readRef(),
+                            nullptr);
                 }
                 else
                 {

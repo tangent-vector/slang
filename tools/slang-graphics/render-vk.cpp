@@ -45,14 +45,19 @@ public:
     virtual InputLayout* createInputLayout(const InputElementDesc* inputElements, UInt inputElementCount) override;
     virtual BindingState* createBindingState(const BindingState::Desc& bindingStateDesc) override;
     virtual ShaderProgram* createProgram(const ShaderProgram::Desc& desc) override;
+    virtual GraphicsPipelineState* createGraphicsPipelineState(const GraphicsPipelineState::Desc& desc) override;
     virtual void* map(BufferResource* buffer, MapFlavor flavor) override;
     virtual void unmap(BufferResource* buffer) override;
     virtual void setInputLayout(InputLayout* inputLayout) override;
     virtual void setPrimitiveTopology(PrimitiveTopology topology) override;
     virtual void setBindingState(BindingState* state);
     virtual void setVertexBuffers(UInt startSlot, UInt slotCount, BufferResource*const* buffers, const UInt* strides, const UInt* offsets) override;
+    virtual void setIndexBuffer(BufferResource* buffer, Format indexFormat, UInt offset) override;
+    virtual void setDepthStencilTarget(TextureResource* depthStencilTarget) override;
+    virtual void setGraphicsPipelineState(GraphicsPipelineState* state) override;
     virtual void setShaderProgram(ShaderProgram* inProgram) override;
     virtual void draw(UInt vertexCount, UInt startVertex) override;
+    virtual void drawIndexed(UInt indexCount, UInt startIndex, UInt baseVertex) override;
     virtual void dispatchCompute(int x, int y, int z) override;
     virtual void submitGpuWork() override;
     virtual void waitForGpu() override;
@@ -1773,6 +1778,17 @@ void VKRenderer::setVertexBuffers(UInt startSlot, UInt slotCount, BufferResource
     }
 }
 
+void VKRenderer::setIndexBuffer(BufferResource* buffer, Format indexFormat, UInt offset)
+{
+}
+
+void VKRenderer::setDepthStencilTarget(TextureResource* depthStencilTarget)
+{
+}
+
+void VKRenderer::setGraphicsPipelineState(GraphicsPipelineState* state)
+{}
+
 void VKRenderer::setShaderProgram(ShaderProgram* program)
 {
     m_currentProgram = (ShaderProgramImpl*)program;
@@ -1810,6 +1826,10 @@ void VKRenderer::draw(UInt vertexCount, UInt startVertex = 0)
     m_api.vkCmdDraw(commandBuffer, static_cast<uint32_t>(vertexCount), 1, 0, 0);
 
     _endPass();
+}
+
+void VKRenderer::drawIndexed(UInt indexCount, UInt startIndex, UInt baseVertex)
+{
 }
 
 void VKRenderer::dispatchCompute(int x, int y, int z)
@@ -2015,5 +2035,11 @@ ShaderProgram* VKRenderer::createProgram(const ShaderProgram::Desc& desc)
     }
     return impl;
 }
+
+GraphicsPipelineState* VKRenderer::createGraphicsPipelineState(const GraphicsPipelineState::Desc& desc)
+{
+    return nullptr;
+}
+
 
 } // renderer_test

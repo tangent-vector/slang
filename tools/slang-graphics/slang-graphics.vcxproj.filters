@@ -18,6 +18,9 @@
     <ClInclude Include="descriptor-heap-d3d12.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="model.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="render-d3d11.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -37,6 +40,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="surface.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="vector-math.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="vk-api.h">
@@ -66,6 +72,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="descriptor-heap-d3d12.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="model.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="render-d3d11.cpp">

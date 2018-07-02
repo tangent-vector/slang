@@ -11,6 +11,8 @@
 #endif
 #endif
 
+#include <stdint.h>
+
 
 #if _WIN32
 #include <Windows.h>
@@ -70,6 +72,16 @@ struct ApplicationContext
     int resultCode = 0;
 };
 
+static uint64_t gTimerFrequency;
+
+
+static void initApplication(ApplicationContext* context)
+{
+    LARGE_INTEGER timerFrequency;
+    QueryPerformanceFrequency(&timerFrequency);
+    gTimerFrequency = timerFrequency.QuadPart;
+}
+
 /// Run an application given the specified callback and command-line arguments.
 int runApplication(
     ApplicationFunc     func,
@@ -78,6 +90,7 @@ int runApplication(
 {
     ApplicationContext context;
     context.instance = (HINSTANCE) GetModuleHandle(0);
+    initApplication(&context);
     func(&context);
     return context.resultCode;
 }
@@ -90,6 +103,7 @@ int runWindowsApplication(
     ApplicationContext context;
     context.instance = (HINSTANCE) instance;
     context.showCommand = showCommand;
+    initApplication(&context);
     func(&context);
     return context.resultCode;
 }
@@ -216,6 +230,24 @@ void exitApplication(ApplicationContext* context, int resultCode)
     ExitProcess(resultCode);
 }
 
+void log(char const* message, ...)
+{
+    va_list args;
+    va_start(args, message);
+
+    static const int kBufferSize = 1024;
+    char messageBuffer[kBufferSize];
+    vsnprintf(messageBuffer, kBufferSize - 1, message, args);
+    messageBuffer[kBufferSize - 1] = 0;
+
+    va_end(args);
+
+    fputs(messageBuffer, stderr);
+
+    OSString wideMessageBuffer(messageBuffer);
+    OutputDebugStringW(wideMessageBuffer);
+}
+
 int reportError(char const* message, ...)
 {
     va_list args;
@@ -234,6 +266,18 @@ int reportError(char const* message, ...)
     OutputDebugStringW(wideMessageBuffer);
 
     return 1;
+}
+
+uint64_t getCurrentTime()
+{
+    LARGE_INTEGER counter;
+    QueryPerformanceCounter(&counter);
+    return counter.QuadPart;
+}
+
+uint64_t getTimerFrequency()
+{
+    return gTimerFrequency;
 }
 
 #else

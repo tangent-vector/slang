@@ -90,14 +90,19 @@ public:
     virtual InputLayout* createInputLayout(const InputElementDesc* inputElements, UInt inputElementCount) override;
     virtual BindingState* createBindingState(const BindingState::Desc& bindingStateDesc) override;
     virtual ShaderProgram* createProgram(const ShaderProgram::Desc& desc) override;
+    virtual GraphicsPipelineState* createGraphicsPipelineState(const GraphicsPipelineState::Desc& desc) override;
     virtual void* map(BufferResource* buffer, MapFlavor flavor) override;
     virtual void unmap(BufferResource* buffer) override;
     virtual void setInputLayout(InputLayout* inputLayout) override;
     virtual void setPrimitiveTopology(PrimitiveTopology topology) override;
     virtual void setBindingState(BindingState* state);
     virtual void setVertexBuffers(UInt startSlot, UInt slotCount, BufferResource*const* buffers, const UInt* strides, const UInt* offsets) override;
+    virtual void setIndexBuffer(BufferResource* buffer, Format indexFormat, UInt offset) override;
+    virtual void setDepthStencilTarget(TextureResource* depthStencilTarget) override;
+    virtual void setGraphicsPipelineState(GraphicsPipelineState* state) override;
     virtual void setShaderProgram(ShaderProgram* inProgram) override;
     virtual void draw(UInt vertexCount, UInt startVertex) override;
+    virtual void drawIndexed(UInt indexCount, UInt startIndex, UInt baseVertex) override;
     virtual void dispatchCompute(int x, int y, int z) override;
     virtual void submitGpuWork() override {}
     virtual void waitForGpu() override {}
@@ -849,6 +854,17 @@ void GLRenderer::setVertexBuffers(UInt startSlot, UInt slotCount, BufferResource
     }
 }
 
+void GLRenderer::setIndexBuffer(BufferResource* buffer, Format indexFormat, UInt offset)
+{
+}
+
+void GLRenderer::setDepthStencilTarget(TextureResource* depthStencilTarget)
+{
+}
+
+void GLRenderer::setGraphicsPipelineState(GraphicsPipelineState* state)
+{}
+
 void GLRenderer::setShaderProgram(ShaderProgram* programIn)
 {
 	ShaderProgramImpl* program = static_cast<ShaderProgramImpl*>(programIn);
@@ -862,6 +878,10 @@ void GLRenderer::draw(UInt vertexCount, UInt startVertex = 0)
     flushStateForDraw();
 
     glDrawArrays(m_boundPrimitiveTopology, (GLint)startVertex, (GLsizei)vertexCount);
+}
+
+void GLRenderer::drawIndexed(UInt indexCount, UInt startIndex, UInt baseVertex)
+{
 }
 
 void GLRenderer::dispatchCompute(int x, int y, int z)
@@ -1043,6 +1063,11 @@ ShaderProgram* GLRenderer::createProgram(const ShaderProgram::Desc& desc)
     }
 
     return new ShaderProgramImpl(this, programID);
+}
+
+GraphicsPipelineState* GLRenderer::createGraphicsPipelineState(const GraphicsPipelineState::Desc& desc)
+{
+    return nullptr;
 }
 
 

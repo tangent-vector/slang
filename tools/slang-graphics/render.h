@@ -499,6 +499,99 @@ public:
     Desc m_desc;
 };
 
+enum class ComparisonFunc : uint8_t
+{
+    Never           = 0,
+    Less            = 0x01,
+    Equal           = 0x02,
+    LessEqual       = 0x03,
+    Greater         = 0x04,
+    NotEqual        = 0x05,
+    GreaterEqual    = 0x06,
+    Always          = 0x07,
+};
+
+enum class StencilOp : uint8_t
+{
+    Keep,
+    Zero,
+    Replace,
+    IncrementSaturate,
+    DecrementSaturate,
+    Invert,
+    IncrementWrap,
+    DecrementWrap,
+};
+
+enum class FillMode : uint8_t
+{
+    Solid,
+    Wireframe,
+};
+
+enum class CullMode : uint8_t
+{
+    None,
+    Front,
+    Back,
+};
+
+enum class FrontFaceMode : uint8_t
+{
+    CounterClockwise,
+    Clockwise,
+};
+
+class GraphicsPipelineState : public Slang::RefObject
+{
+public:
+    struct DepthStencilOpDesc
+    {
+        StencilOp       stencilFailOp       = StencilOp::Keep;
+        StencilOp       stencilDepthFailOp  = StencilOp::Keep;
+        StencilOp       stencilPassOp       = StencilOp::Keep;
+        ComparisonFunc  stencilFunc         = ComparisonFunc::Always;
+    };
+
+    struct DepthStencilDesc
+    {
+        bool            depthTestEnable     = true;
+        bool            depthWriteEnable    = true;
+        ComparisonFunc  depthFunc           = ComparisonFunc::Less;
+
+        bool                stencilEnable       = false;
+        uint32_t            stencilReadMask     = 0xFFFFFFFF;
+        uint32_t            stencilWriteMask    = 0xFFFFFFFF;
+        DepthStencilOpDesc  frontFace;
+        DepthStencilOpDesc  backFace;
+
+        uint32_t stencilRef = 0;
+    };
+
+    struct RasterizerDesc
+    {
+        FillMode        fillMode                = FillMode::Solid;
+        CullMode        cullMode                = CullMode::Back;
+        FrontFaceMode   frontFace               = FrontFaceMode::CounterClockwise;
+        int32_t         depthBias               = 0;
+        float           depthBiasClamp          = 0.0f;
+        float           slopeScaledDepthBias    = 0.0f;
+        bool            depthClipEnable         = true;
+        bool            scissorEnable           = false;
+        bool            multisampleEnable       = false;
+        bool            antialiasedLineEnable   = false;
+    };
+
+    struct Desc
+    {
+        DepthStencilDesc    depthStencil;
+        RasterizerDesc      rasterizer;
+    };
+
+private:
+    Desc m_desc;
+};
+
 class Renderer: public Slang::RefObject
 {
 public:
@@ -529,19 +622,29 @@ public:
 
     virtual ShaderProgram* createProgram(const ShaderProgram::Desc& desc) = 0;
 
+    virtual GraphicsPipelineState* createGraphicsPipelineState(
+        const GraphicsPipelineState::Desc& desc) = 0;
+
     virtual void* map(BufferResource* buffer, MapFlavor flavor) = 0;
     virtual void unmap(BufferResource* buffer) = 0;
 
     virtual void setInputLayout(InputLayout* inputLayout) = 0;
     virtual void setPrimitiveTopology(PrimitiveTopology topology) = 0;
     virtual void setBindingState(BindingState* state) = 0;
-    virtual void setVertexBuffers(UInt startSlot, UInt slotCount, BufferResource*const* buffers, const UInt* strides, const UInt* offsets) = 0;
 
+    virtual void setVertexBuffers(UInt startSlot, UInt slotCount, BufferResource*const* buffers, const UInt* strides, const UInt* offsets) = 0;
     inline void setVertexBuffer(UInt slot, BufferResource* buffer, UInt stride, UInt offset = 0);
 
+    virtual void setIndexBuffer(BufferResource* buffer, Format indexFormat, UInt offset = 0) = 0;
+
+    virtual void setDepthStencilTarget(TextureResource* depthStencilTarget) = 0;
+
+    virtual void setGraphicsPipelineState(GraphicsPipelineState* state) = 0;
     virtual void setShaderProgram(ShaderProgram* program) = 0;
 
     virtual void draw(UInt vertexCount, UInt startVertex = 0) = 0;
+    virtual void drawIndexed(UInt indexCount, UInt startIndex = 0, UInt baseVertex = 0) = 0;
+
     virtual void dispatchCompute(int x, int y, int z) = 0;
 
         /// Commit any buffered state changes or draw calls.

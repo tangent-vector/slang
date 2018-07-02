@@ -290,7 +290,7 @@ void TextureResource::Desc::init1D(Format formatIn, int widthIn, int numMipMapsI
     this->type = Type::Texture1D;
     this->size.init(widthIn);
 
-    this->format = format;
+    this->format = formatIn;
     this->arraySize = 0;
     this->numMipLevels = numMipMapsIn;
     this->sampleDesc.init();
@@ -303,10 +303,10 @@ void TextureResource::Desc::init2D(Type typeIn, Format formatIn, int widthIn, in
 {
     assert(typeIn == Type::Texture2D || typeIn == Type::TextureCube);
 
-    this->type = type;
+    this->type = typeIn;
     this->size.init(widthIn, heightIn);
 
-    this->format = format;
+    this->format = formatIn;
     this->arraySize = 0;
     this->numMipLevels = numMipMapsIn;
     this->sampleDesc.init();
@@ -320,7 +320,7 @@ void TextureResource::Desc::init3D(Format formatIn, int widthIn, int heightIn, i
     this->type = Type::Texture3D;
     this->size.init(widthIn, heightIn, depthIn);
 
-    this->format = format;
+    this->format = formatIn;
     this->arraySize = 0;
     this->numMipLevels = numMipMapsIn;
     this->sampleDesc.init();
