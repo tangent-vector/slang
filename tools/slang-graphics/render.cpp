@@ -77,7 +77,7 @@ const Resource::DescBase& Resource::getDescBase() const
 }
 
 /* !!!!!!!!!!!!!!!!!!!!!!!!!!! BindingState::Desc !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! */
-
+#if 0
 void BindingState::Desc::addSampler(const SamplerDesc& desc, const RegisterRange& registerRange)
 {
     int descIndex = int(m_samplerDescs.Count());
@@ -143,6 +143,7 @@ int BindingState::Desc::findBindingIndex(Resource::BindFlag::Enum bindFlag, int 
 
     return -1;
 }
+#endif
 
 /* !!!!!!!!!!!!!!!!!!!!!!!!!!! TextureResource::Size !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! */
 

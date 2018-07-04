@@ -288,13 +288,13 @@ example "01-hello-world"
 -- Let's go ahead and set up the projects for our other examples now.
 example "02-model-viewer"
 
-example "03-modules"
+--example "03-modules"
 
-example "04-parameter-blocks"
+--example "04-parameter-blocks"
 
-example "05-generics"
+--example "05-generics"
 
-example "06-associated-types"
+--example "06-associated-types"
 
 
 -- Most of the other projects have more interesting configuration going

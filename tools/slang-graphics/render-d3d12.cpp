@@ -61,19 +61,26 @@ public:
     virtual BufferResource* createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& bufferDesc, const void* initData) override;
     virtual SlangResult captureScreenSurface(Surface& surfaceOut) override;
     virtual InputLayout* createInputLayout(const InputElementDesc* inputElements, UInt inputElementCount) override;
-    virtual BindingState* createBindingState(const BindingState::Desc& bindingStateDesc) override;
+
+//    virtual BindingState* createBindingState(const BindingState::Desc& bindingStateDesc) override;
+    virtual DescriptorSetLayout* createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc) override;
+    virtual PipelineLayout* createPipelineLayout(const PipelineLayout::Desc& desc) override;
+    virtual DescriptorSet* createDescriptorSet(DescriptorSetLayout* layout) override;
+
     virtual ShaderProgram* createProgram(const ShaderProgram::Desc& desc) override;
-    virtual GraphicsPipelineState* createGraphicsPipelineState(const GraphicsPipelineState::Desc& desc) override;
+    virtual PipelineState* createGraphicsPipelineState(const GraphicsPipelineStateDesc& desc) override;
+    virtual PipelineState* createComputePipelineState(const ComputePipelineStateDesc& desc) override;
     virtual void* map(BufferResource* buffer, MapFlavor flavor) override;
     virtual void unmap(BufferResource* buffer) override;
-    virtual void setInputLayout(InputLayout* inputLayout) override;
+//    virtual void setInputLayout(InputLayout* inputLayout) override;
     virtual void setPrimitiveTopology(PrimitiveTopology topology) override;
-    virtual void setBindingState(BindingState* state);
+
+    virtual void setDescriptorSet(PipelineType pipelineType, PipelineLayout* layout, UInt index, DescriptorSet* descriptorSet) override;
+
     virtual void setVertexBuffers(UInt startSlot, UInt slotCount, BufferResource*const* buffers, const UInt* strides, const UInt* offsets) override;
     virtual void setIndexBuffer(BufferResource* buffer, Format indexFormat, UInt offset) override;
-    virtual void setDepthStencilTarget(TextureResource* depthStencilTarget) override;
-    virtual void setGraphicsPipelineState(GraphicsPipelineState* state) override;
-    virtual void setShaderProgram(ShaderProgram* inProgram) override;
+    virtual void setDepthStencilTarget(TextureView* depthStencilView) override;
+    virtual void setPipelineState(PipelineType pipelineType, PipelineState* state) override;
     virtual void draw(UInt vertexCount, UInt startVertex) override;
     virtual void drawIndexed(UInt indexCount, UInt startIndex, UInt baseVertex) override;
     virtual void dispatchCompute(int x, int y, int z) override;
@@ -195,6 +202,7 @@ protected:
         List<char> m_text;                              ///< Holds all strings to keep in scope
     };
 
+#if 0
     struct BindingDetail
     {
         int m_srvIndex = -1;
@@ -221,16 +229,48 @@ protected:
         {}
 
         List<BindingDetail> m_bindingDetails;       ///< These match 1-1 to the bindings in the m_desc
+    };
+#endif
 
-        D3D12DescriptorHeap m_viewHeap;            ///< Cbv, Srv, Uav
-        D3D12DescriptorHeap m_samplerHeap;        ///< Heap for samplers
+    class DescriptorSetLayoutImpl : public DescriptorSetLayout
+    {
+    public:
+        Slang::List<DescriptorSetLayout::SlotRangeDesc> m_ranges;
+        DescriptorSetLayout::Desc m_desc;
     };
 
-    class RenderState: public RefObject
+    class PipelineLayoutImpl : public PipelineLayout
+    {
+    public:
+        ComPtr<ID3D12RootSignature> m_rootSignature;
+    };
+
+    class DescriptorSetImpl : public DescriptorSet
+    {
+    public:
+        virtual void setTexture(UInt range, UInt index, TextureView* texture) override;
+        virtual void setBuffer(UInt range, UInt index, BufferResource* buffer) override;
+    };
+
+
+    // TODO: we need a more serious allocation strategy for shader-visible descriptors
+
+    Result initDescriptorHeaps(ID3D12Device* device)
+    {
+        // Set up descriptor heaps
+        SLANG_RETURN_ON_FAIL(m_viewHeap.init(device, 256, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE));
+        SLANG_RETURN_ON_FAIL(m_samplerHeap.init(device, 16, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE));
+        return SLANG_OK;
+    }
+
+    D3D12DescriptorHeap m_viewHeap;            ///< Cbv, Srv, Uav
+    D3D12DescriptorHeap m_samplerHeap;        ///< Heap for samplers
+
+    class PipelineStateImpl : public PipelineState
     {
         public:
         D3D12_PRIMITIVE_TOPOLOGY_TYPE m_primitiveTopologyType;
-        RefPtr<BindingStateImpl> m_bindingState;
+//        RefPtr<BindingStateImpl> m_bindingState;
         RefPtr<InputLayoutImpl> m_inputLayout;
         RefPtr<ShaderProgramImpl> m_shaderProgram;
 
@@ -245,6 +285,7 @@ protected:
         int m_offset;
     };
 
+#if 0
     struct BindParameters
     {
         enum
@@ -266,6 +307,7 @@ protected:
         D3D12_ROOT_PARAMETER m_parameters[kMaxParameters];
         int m_paramIndex;
     };
+#endif
 
     struct GraphicsSubmitter : public Submitter
     {
@@ -334,15 +376,16 @@ protected:
 
     ID3D12GraphicsCommandList* getCommandList() const { return m_commandList; }
 
-    RenderState* calcRenderState();
+//    RenderState* calcRenderState();
+
         /// From current bindings calculate the root signature and pipeline state
-    Result calcGraphicsPipelineState(ComPtr<ID3D12RootSignature>& sigOut, ComPtr<ID3D12PipelineState>& pipelineStateOut);
-    Result calcComputePipelineState(ComPtr<ID3D12RootSignature>& signatureOut, ComPtr<ID3D12PipelineState>& pipelineStateOut);
+//    Result calcGraphicsPipelineState(ComPtr<ID3D12RootSignature>& sigOut, ComPtr<ID3D12PipelineState>& pipelineStateOut);
+//    Result calcComputePipelineState(ComPtr<ID3D12RootSignature>& signatureOut, ComPtr<ID3D12PipelineState>& pipelineStateOut);
 
-    Result _bindRenderState(RenderState* renderState, ID3D12GraphicsCommandList* commandList, Submitter* submitter);
+    Result _bindRenderState(PipelineStateImpl* pipelineStateImpl, ID3D12GraphicsCommandList* commandList, Submitter* submitter);
 
-    Result _calcBindParameters(BindParameters& params);
-    RenderState* findRenderState(PipelineType pipelineType);
+//    Result _calcBindParameters(BindParameters& params);
+//    RenderState* findRenderState(PipelineType pipelineType);
 
     PFN_D3D12_SERIALIZE_ROOT_SIGNATURE m_D3D12SerializeRootSignature = nullptr;
 
@@ -356,9 +399,12 @@ protected:
     DXGI_FORMAT m_boundIndexFormat;
     UINT m_boundIndexOffset;
 
-    RefPtr<ShaderProgramImpl> m_boundShaderProgram;
-    RefPtr<InputLayoutImpl> m_boundInputLayout;
-    RefPtr<BindingStateImpl> m_boundBindingState;
+    RefPtr<PipelineStateImpl> m_currentPipelineState;
+
+//    RefPtr<ShaderProgramImpl> m_boundShaderProgram;
+//    RefPtr<InputLayoutImpl> m_boundInputLayout;
+
+//    RefPtr<BindingStateImpl> m_boundBindingState;
 
     DXGI_FORMAT m_targetFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
     DXGI_FORMAT m_depthStencilFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
@@ -390,8 +436,8 @@ protected:
 
     D3D12_RECT m_scissorRect = {};
 
-    List<RefPtr<RenderState> > m_renderStates;                ///< Holds list of all render state combinations
-    RenderState* m_currentRenderState = nullptr;            ///< The current combination
+//    List<RefPtr<RenderState> > m_renderStates;                ///< Holds list of all render state combinations
+//    RenderState* m_currentRenderState = nullptr;            ///< The current combination
 
     UINT m_rtvDescriptorSize = 0;
 
@@ -806,6 +852,7 @@ Result D3D12Renderer::captureTextureToSurface(D3D12Resource& resource, Surface& 
     }
 }
 
+#if 0
 Result D3D12Renderer::calcComputePipelineState(ComPtr<ID3D12RootSignature>& signatureOut, ComPtr<ID3D12PipelineState>& pipelineStateOut)
 {
     BindParameters bindParameters;
@@ -841,123 +888,9 @@ Result D3D12Renderer::calcComputePipelineState(ComPtr<ID3D12RootSignature>& sign
 
     return SLANG_OK;
 }
+#endif
 
-Result D3D12Renderer::calcGraphicsPipelineState(ComPtr<ID3D12RootSignature>& signatureOut, ComPtr<ID3D12PipelineState>& pipelineStateOut)
-{
-    BindParameters bindParameters;
-    _calcBindParameters(bindParameters);
-
-    ComPtr<ID3D12RootSignature> rootSignature;
-    ComPtr<ID3D12PipelineState> pipelineState;
-
-    {
-        // Deny unnecessary access to certain pipeline stages
-        D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc;
-        rootSignatureDesc.NumParameters = bindParameters.m_paramIndex;
-        rootSignatureDesc.pParameters = bindParameters.m_parameters;
-        rootSignatureDesc.NumStaticSamplers = 0;
-        rootSignatureDesc.pStaticSamplers = nullptr;
-        rootSignatureDesc.Flags = m_boundInputLayout ? D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT : D3D12_ROOT_SIGNATURE_FLAG_NONE;
-
-        ComPtr<ID3DBlob> signature;
-        ComPtr<ID3DBlob> error;
-        SLANG_RETURN_ON_FAIL(m_D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, signature.writeRef(), error.writeRef()));
-        SLANG_RETURN_ON_FAIL(m_device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(rootSignature.writeRef())));
-    }
-
-    {
-        // Describe and create the graphics pipeline state object (PSO)
-        D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-
-        psoDesc.pRootSignature = rootSignature;
-
-        psoDesc.VS = { m_boundShaderProgram->m_vertexShader.Buffer(), m_boundShaderProgram->m_vertexShader.Count() };
-        psoDesc.PS = { m_boundShaderProgram->m_pixelShader.Buffer(), m_boundShaderProgram->m_pixelShader.Count() };
-
-        {
-            psoDesc.InputLayout = { m_boundInputLayout->m_elements.Buffer(), UINT(m_boundInputLayout->m_elements.Count()) };
-            psoDesc.PrimitiveTopologyType = m_primitiveTopologyType;
-
-            {
-                const int numRenderTargets = m_boundBindingState ? m_boundBindingState->getDesc().m_numRenderTargets : 1;
-
-                psoDesc.DSVFormat = m_depthStencilFormat;
-                psoDesc.NumRenderTargets = numRenderTargets;
-                for (Int i = 0; i < numRenderTargets; i++)
-                {
-                    psoDesc.RTVFormats[i] = m_targetFormat;
-                }
-
-                psoDesc.SampleDesc.Count = 1;
-                psoDesc.SampleDesc.Quality = 0;
-
-                psoDesc.SampleMask = UINT_MAX;
-            }
-
-            {
-                auto& rs = psoDesc.RasterizerState;
-                rs.FillMode = D3D12_FILL_MODE_SOLID;
-                rs.CullMode = D3D12_CULL_MODE_NONE;
-                rs.FrontCounterClockwise = FALSE;
-                rs.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
-                rs.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
-                rs.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
-                rs.DepthClipEnable = TRUE;
-                rs.MultisampleEnable = FALSE;
-                rs.AntialiasedLineEnable = FALSE;
-                rs.ForcedSampleCount = 0;
-                rs.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
-            }
-
-            {
-                D3D12_BLEND_DESC& blend = psoDesc.BlendState;
-
-                blend.AlphaToCoverageEnable = FALSE;
-                blend.IndependentBlendEnable = FALSE;
-                const D3D12_RENDER_TARGET_BLEND_DESC defaultRenderTargetBlendDesc =
-                {
-                    FALSE,FALSE,
-                    D3D12_BLEND_ONE, D3D12_BLEND_ZERO, D3D12_BLEND_OP_ADD,
-                    D3D12_BLEND_ONE, D3D12_BLEND_ZERO, D3D12_BLEND_OP_ADD,
-                    D3D12_LOGIC_OP_NOOP,
-                    D3D12_COLOR_WRITE_ENABLE_ALL,
-                };
-                for (UINT i = 0; i < D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i)
-                {
-                    blend.RenderTarget[i] = defaultRenderTargetBlendDesc;
-                }
-            }
-
-            {
-                auto& ds = psoDesc.DepthStencilState;
-
-                ds.DepthEnable = FALSE;
-                ds.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-                ds.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;
-                //ds.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
-                ds.StencilEnable = FALSE;
-                ds.StencilReadMask = D3D12_DEFAULT_STENCIL_READ_MASK;
-                ds.StencilWriteMask = D3D12_DEFAULT_STENCIL_WRITE_MASK;
-                const D3D12_DEPTH_STENCILOP_DESC defaultStencilOp =
-                {
-                    D3D12_STENCIL_OP_KEEP, D3D12_STENCIL_OP_KEEP, D3D12_STENCIL_OP_KEEP, D3D12_COMPARISON_FUNC_ALWAYS
-                };
-                ds.FrontFace = defaultStencilOp;
-                ds.BackFace = defaultStencilOp;
-            }
-        }
-
-        psoDesc.PrimitiveTopologyType = m_primitiveTopologyType;
-
-        SLANG_RETURN_ON_FAIL(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(pipelineState.writeRef())));
-    }
-
-    signatureOut.swap(rootSignature);
-    pipelineStateOut.swap(pipelineState);
-
-    return SLANG_OK;
-}
-
+#if 0
 D3D12Renderer::RenderState* D3D12Renderer::findRenderState(PipelineType pipelineType)
 {
     switch (pipelineType)
@@ -1181,28 +1114,21 @@ Result D3D12Renderer::_calcBindParameters(BindParameters& params)
     }
     return SLANG_OK;
 }
+#endif
 
-Result D3D12Renderer::_bindRenderState(RenderState* renderState, ID3D12GraphicsCommandList* commandList, Submitter* submitter)
+Result D3D12Renderer::_bindRenderState(PipelineStateImpl* pipelineStateImpl, ID3D12GraphicsCommandList* commandList, Submitter* submitter)
 {
-    BindingStateImpl* bindingState = m_boundBindingState;
+    submitter->setRootSignature(pipelineStateImpl->m_rootSignature);
+    commandList->SetPipelineState(pipelineStateImpl->m_pipelineState);
 
-    submitter->setRootSignature(renderState->m_rootSignature);
-    commandList->SetPipelineState(renderState->m_pipelineState);
-
-    if (bindingState)
+    ID3D12DescriptorHeap* heaps[] =
     {
-        ID3D12DescriptorHeap* heaps[] =
-        {
-            bindingState->m_viewHeap.getHeap(),
-            bindingState->m_samplerHeap.getHeap(),
-        };
-        commandList->SetDescriptorHeaps(SLANG_COUNT_OF(heaps), heaps);
-    }
-    else
-    {
-        commandList->SetDescriptorHeaps(0, nullptr);
-    }
+        m_viewHeap.getHeap(),
+        m_samplerHeap.getHeap(),
+    };
+    commandList->SetDescriptorHeaps(SLANG_COUNT_OF(heaps), heaps);
 
+#if 0
     {
         int index = 0;
 
@@ -1249,6 +1175,7 @@ Result D3D12Renderer::_bindRenderState(RenderState* renderState, ID3D12GraphicsC
             submitter->setRootDescriptorTable(index, bindingState->m_samplerHeap.getGpuStart());
         }
     }
+#endif
 
     return SLANG_OK;
 }
@@ -2173,10 +2100,12 @@ void D3D12Renderer::unmap(BufferResource* bufferIn)
     }
 }
 
+#if 0
 void D3D12Renderer::setInputLayout(InputLayout* inputLayout)
 {
     m_boundInputLayout = static_cast<InputLayoutImpl*>(inputLayout);
 }
+#endif
 
 void D3D12Renderer::setPrimitiveTopology(PrimitiveTopology topology)
 {
@@ -2227,35 +2156,30 @@ void D3D12Renderer::setIndexBuffer(BufferResource* buffer, Format indexFormat, U
     m_boundIndexOffset = offset;
 }
 
-void D3D12Renderer::setDepthStencilTarget(TextureResource* depthStencilTarget)
+void D3D12Renderer::setDepthStencilTarget(TextureView* depthStencilView)
 {
 }
 
-void D3D12Renderer::setGraphicsPipelineState(GraphicsPipelineState* state)
-{}
-
-void D3D12Renderer::setShaderProgram(ShaderProgram* inProgram)
+void D3D12Renderer::setPipelineState(PipelineType pipelineType, PipelineState* state)
 {
-    m_boundShaderProgram = static_cast<ShaderProgramImpl*>(inProgram);
+    m_currentPipelineState = (PipelineStateImpl*)state;
 }
 
 void D3D12Renderer::draw(UInt vertexCount, UInt startVertex)
 {
     ID3D12GraphicsCommandList* commandList = m_commandList;
 
-    RenderState* renderState = calcRenderState();
-    if (!renderState)
+    auto pipelineState = m_currentPipelineState.Ptr();
+    if (!pipelineState || (pipelineState->m_shaderProgram->m_pipelineType != PipelineType::Graphics))
     {
-        assert(!"Couldn't create render state");
+        assert(!"No graphics pipeline state set");
         return;
     }
-
-    BindingStateImpl* bindingState = m_boundBindingState;
 
     // Submit - setting for graphics
     {
         GraphicsSubmitter submitter(commandList);
-        _bindRenderState(renderState, commandList, &submitter);
+        _bindRenderState(pipelineState, commandList, &submitter);
     }
 
     commandList->IASetPrimitiveTopology(m_primitiveTopology);
@@ -2301,17 +2225,18 @@ void D3D12Renderer::drawIndexed(UInt indexCount, UInt startIndex, UInt baseVerte
 void D3D12Renderer::dispatchCompute(int x, int y, int z)
 {
     ID3D12GraphicsCommandList* commandList = m_commandList;
-    RenderState* renderState = calcRenderState();
+    auto pipelineStateImpl = m_currentPipelineState;
 
     // Submit binding for compute
     {
         ComputeSubmitter submitter(commandList);
-        _bindRenderState(renderState, commandList, &submitter);
+        _bindRenderState(pipelineStateImpl, commandList, &submitter);
     }
 
     commandList->Dispatch(x, y, z);
 }
 
+#if 0
 BindingState* D3D12Renderer::createBindingState(const BindingState::Desc& bindingStateDesc)
 {
     RefPtr<BindingStateImpl> bindingState(new BindingStateImpl(bindingStateDesc));
@@ -2479,6 +2404,7 @@ void D3D12Renderer::setBindingState(BindingState* state)
 {
     m_boundBindingState = static_cast<BindingStateImpl*>(state);
 }
+#endif
 
 ShaderProgram* D3D12Renderer::createProgram(const ShaderProgram::Desc& desc)
 {
@@ -2502,9 +2428,310 @@ ShaderProgram* D3D12Renderer::createProgram(const ShaderProgram::Desc& desc)
     return program.detach();
 }
 
-GraphicsPipelineState* D3D12Renderer::createGraphicsPipelineState(const GraphicsPipelineState::Desc& desc)
+DescriptorSetLayout* D3D12Renderer::createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc)
 {
-    return nullptr;
+    // TODO: we could conceivably have each descriptor-set layout
+    // store its data pre-packages as `D3D12_DESCRIPTOR_RANGE`
+    // and `D3D12_ROOT_PARAMETER` values, to streamline subsequent
+    // calls to `createPipelineLayout`.
+
+    RefPtr<DescriptorSetLayoutImpl> descriptorSetLayoutImpl = new DescriptorSetLayoutImpl();
+
+    UInt rangeCount = desc.slotRangeCount;
+    for(UInt rr = 0; rr < rangeCount; ++rr)
+    {
+        descriptorSetLayoutImpl->m_ranges.Add(desc.slotRanges[rr]);
+    }
+
+    descriptorSetLayoutImpl->m_desc.slotRangeCount = rangeCount;
+    descriptorSetLayoutImpl->m_desc.slotRanges = descriptorSetLayoutImpl->m_ranges.Buffer();
+
+    return descriptorSetLayoutImpl.detach();
+}
+
+PipelineLayout* D3D12Renderer::createPipelineLayout(const PipelineLayout::Desc& desc)
+{
+    static const UInt kMaxRanges = 16;
+    static const UInt kMaxRootParameters = 32;
+
+    D3D12_DESCRIPTOR_RANGE ranges[kMaxRanges];
+    D3D12_ROOT_PARAMETER rootParameters[kMaxRootParameters];
+
+    UInt rangeCount = 0;
+    UInt rootParameterCount = 0;
+
+    auto nextParameter = [&]() { return rootParameters[rootParameterCount++]; };
+    auto nextRange = [&]() { return ranges[rangeCount++]; };
+
+    // We will allocate all samplers as a single contiguous table, rather
+    // than multiple tables.
+    //
+    // TODO: we should do the same for the other cases, but we haven't
+    // implemented the necessary descriptor-table allocation logic.
+    //
+    D3D12_DESCRIPTOR_RANGE samplerRanges[kMaxRanges];
+    UInt samplerRangeCount = 0;
+    auto nextSamplerRange = [&]() { return samplerRanges[samplerRangeCount++]; };
+
+    auto descriptorSetCount = desc.descriptorSetCount;
+    for(UInt dd = 0; dd < descriptorSetCount; ++dd)
+    {
+        auto& descriptorSetInfo = desc.descriptorSets[dd];
+        auto descriptorSetLayout = (DescriptorSetLayoutImpl*) descriptorSetInfo.layout;
+
+        auto& desc = descriptorSetLayout->m_desc;
+
+        UInt rangeCount = desc.slotRangeCount;
+        for(UInt rr = 0; rr < rangeCount; ++rr)
+        {
+            auto& rangeInfo = desc.slotRanges[rr];
+
+            UInt bindingCount   = rangeInfo.count;
+            UInt bindingIndex   = descriptorSetInfo.registerOffset + rangeInfo.registerOffset;
+            UInt bindingSpace   = descriptorSetInfo.spaceOffset    + rangeInfo.spaceOffset;
+
+            switch(rangeInfo.type)
+            {
+            case DescriptorSlotType::CombinedImageSampler:
+            case DescriptorSlotType::InputAttachment:
+            default:
+                // ERROR: unsupported slot type.
+                break;
+
+            case DescriptorSlotType::Sampler:
+                {
+                    D3D12_DESCRIPTOR_RANGE& range = nextSamplerRange();
+
+                    range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
+                    range.NumDescriptors = bindingCount;
+                    range.BaseShaderRegister = bindingIndex;
+                    range.RegisterSpace = bindingSpace;
+                    range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+                }
+                break;
+
+            case DescriptorSlotType::SampledImage:
+            case DescriptorSlotType::UniformTexelBuffer:
+                {
+                    D3D12_DESCRIPTOR_RANGE& range = nextRange();
+
+                    range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+                    range.NumDescriptors = bindingCount;
+                    range.BaseShaderRegister = bindingIndex;
+                    range.RegisterSpace = bindingSpace;
+                    range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+                    D3D12_ROOT_PARAMETER& param = nextParameter();
+
+                    param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+                    param.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+                    D3D12_ROOT_DESCRIPTOR_TABLE& table = param.DescriptorTable;
+                    table.NumDescriptorRanges = 1;
+                    table.pDescriptorRanges = &range;
+                }
+                break;
+
+            case DescriptorSlotType::StorageImage:
+            case DescriptorSlotType::StorageTexelBuffer:
+            case DescriptorSlotType::StorageBuffer:
+            case DescriptorSlotType::DynamicStorageBuffer:
+                {
+                    D3D12_DESCRIPTOR_RANGE& range = nextRange();
+
+                    range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+                    range.NumDescriptors = bindingCount;
+                    range.BaseShaderRegister = bindingIndex;
+                    range.RegisterSpace = bindingSpace;
+                    range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+                    D3D12_ROOT_PARAMETER& param = nextParameter();
+
+                    param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+                    param.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+                    D3D12_ROOT_DESCRIPTOR_TABLE& table = param.DescriptorTable;
+                    table.NumDescriptorRanges = 1;
+                    table.pDescriptorRanges = &range;
+                }
+                break;
+
+            case DescriptorSlotType::UniformBuffer:
+            case DescriptorSlotType::DynamicUniformBuffer:
+                {
+                    // TODO: non-dynamic constant buffers should be
+                    // allocated inside of descritpor tables rather
+                    // than as root parameters.
+
+                    for(UInt ii = 0; ii < bindingCount; ++ii)
+                    {
+                        D3D12_ROOT_PARAMETER& param = nextParameter();
+                        param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+                        param.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+                        D3D12_ROOT_DESCRIPTOR& descriptor = param.Descriptor;
+                        descriptor.ShaderRegister   = bindingIndex + ii;
+                        descriptor.RegisterSpace    = bindingSpace;
+                    }
+                }
+                break;
+
+            }
+        }
+    }
+
+    if(samplerRangeCount != 0)
+    {
+        D3D12_ROOT_PARAMETER& param = nextParameter();
+
+        param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        param.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+        D3D12_ROOT_DESCRIPTOR_TABLE& table = param.DescriptorTable;
+        table.NumDescriptorRanges = samplerRangeCount;
+        table.pDescriptorRanges = samplerRanges;
+    }
+
+    D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc = {};
+    rootSignatureDesc.NumParameters = rootParameterCount;
+    rootSignatureDesc.pParameters = rootParameters;
+    rootSignatureDesc.NumStaticSamplers = 0;
+    rootSignatureDesc.pStaticSamplers = nullptr;
+
+    // TODO: only set this flag if needed
+    rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+    ComPtr<ID3DBlob> signature;
+    ComPtr<ID3DBlob> error;
+    SLANG_RETURN_NULL_ON_FAIL(m_D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, signature.writeRef(), error.writeRef()));
+
+    ComPtr<ID3D12RootSignature> rootSignature;
+    SLANG_RETURN_NULL_ON_FAIL(m_device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(rootSignature.writeRef())));
+
+
+    RefPtr<PipelineLayoutImpl> pipelineLayoutImpl = new PipelineLayoutImpl();
+    pipelineLayoutImpl->m_rootSignature = rootSignature;
+    return pipelineLayoutImpl.detach();
+}
+
+DescriptorSet* D3D12Renderer::createDescriptorSet(DescriptorSetLayout* layout)
+{
+    RefPtr<DescriptorSetImpl> descriptorSetImpl = new DescriptorSetImpl();
+    return descriptorSetImpl.detach();
+}
+
+PipelineState* D3D12Renderer::createGraphicsPipelineState(const GraphicsPipelineStateDesc& desc)
+{
+    auto pipelineLayoutImpl = (PipelineLayoutImpl*) desc.pipelineLayout;
+    auto programImpl = (ShaderProgramImpl*) desc.program;
+    auto inputLayoutImpl = (InputLayoutImpl*) desc.inputLayout;
+
+    // Describe and create the graphics pipeline state object (PSO)
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+
+    psoDesc.pRootSignature = pipelineLayoutImpl->m_rootSignature;
+
+    psoDesc.VS = { programImpl->m_vertexShader.Buffer(), programImpl->m_vertexShader.Count() };
+    psoDesc.PS = { programImpl->m_pixelShader .Buffer(), programImpl->m_pixelShader .Count() };
+
+    psoDesc.InputLayout = { inputLayoutImpl->m_elements.Buffer(), UINT(inputLayoutImpl->m_elements.Count()) };
+    psoDesc.PrimitiveTopologyType = m_primitiveTopologyType;
+
+    {
+        const int numRenderTargets = desc.renderTargetCount;
+
+        psoDesc.DSVFormat = m_depthStencilFormat;
+        psoDesc.NumRenderTargets = numRenderTargets;
+        for (Int i = 0; i < numRenderTargets; i++)
+        {
+            psoDesc.RTVFormats[i] = m_targetFormat;
+        }
+
+        psoDesc.SampleDesc.Count = 1;
+        psoDesc.SampleDesc.Quality = 0;
+
+        psoDesc.SampleMask = UINT_MAX;
+    }
+
+    {
+        auto& rs = psoDesc.RasterizerState;
+        rs.FillMode = D3D12_FILL_MODE_SOLID;
+        rs.CullMode = D3D12_CULL_MODE_NONE;
+        rs.FrontCounterClockwise = FALSE;
+        rs.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
+        rs.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
+        rs.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
+        rs.DepthClipEnable = TRUE;
+        rs.MultisampleEnable = FALSE;
+        rs.AntialiasedLineEnable = FALSE;
+        rs.ForcedSampleCount = 0;
+        rs.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+    }
+
+    {
+        D3D12_BLEND_DESC& blend = psoDesc.BlendState;
+
+        blend.AlphaToCoverageEnable = FALSE;
+        blend.IndependentBlendEnable = FALSE;
+        const D3D12_RENDER_TARGET_BLEND_DESC defaultRenderTargetBlendDesc =
+        {
+            FALSE,FALSE,
+            D3D12_BLEND_ONE, D3D12_BLEND_ZERO, D3D12_BLEND_OP_ADD,
+            D3D12_BLEND_ONE, D3D12_BLEND_ZERO, D3D12_BLEND_OP_ADD,
+            D3D12_LOGIC_OP_NOOP,
+            D3D12_COLOR_WRITE_ENABLE_ALL,
+        };
+        for (UINT i = 0; i < D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i)
+        {
+            blend.RenderTarget[i] = defaultRenderTargetBlendDesc;
+        }
+    }
+
+    {
+        auto& ds = psoDesc.DepthStencilState;
+
+        ds.DepthEnable = FALSE;
+        ds.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+        ds.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+        //ds.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+        ds.StencilEnable = FALSE;
+        ds.StencilReadMask = D3D12_DEFAULT_STENCIL_READ_MASK;
+        ds.StencilWriteMask = D3D12_DEFAULT_STENCIL_WRITE_MASK;
+        const D3D12_DEPTH_STENCILOP_DESC defaultStencilOp =
+        {
+            D3D12_STENCIL_OP_KEEP, D3D12_STENCIL_OP_KEEP, D3D12_STENCIL_OP_KEEP, D3D12_COMPARISON_FUNC_ALWAYS
+        };
+        ds.FrontFace = defaultStencilOp;
+        ds.BackFace = defaultStencilOp;
+    }
+
+    psoDesc.PrimitiveTopologyType = m_primitiveTopologyType;
+
+    ComPtr<ID3D12PipelineState> pipelineState;
+    SLANG_RETURN_NULL_ON_FAIL(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(pipelineState.writeRef())));
+
+    RefPtr<PipelineStateImpl> pipelineStateImpl = new PipelineStateImpl();
+    pipelineStateImpl->m_pipelineState = pipelineState;
+    return pipelineStateImpl.detach();
+}
+
+
+PipelineState* D3D12Renderer::createComputePipelineState(const ComputePipelineStateDesc& desc)
+{
+    auto pipelineLayoutImpl = (PipelineLayoutImpl*) desc.pipelineLayout;
+    auto programImpl = (ShaderProgramImpl*) desc.program;
+
+    // Describe and create the compute pipeline state object
+    D3D12_COMPUTE_PIPELINE_STATE_DESC computeDesc = {};
+    computeDesc.pRootSignature = pipelineLayoutImpl->m_rootSignature;
+    computeDesc.CS = { programImpl->m_computeShader.Buffer(), programImpl->m_computeShader.Count() };
+
+    ComPtr<ID3D12PipelineState> pipelineState;
+    SLANG_RETURN_NULL_ON_FAIL(m_device->CreateComputePipelineState(&computeDesc, IID_PPV_ARGS(pipelineState.writeRef())));
+
+    RefPtr<PipelineStateImpl> pipelineStateImpl = new PipelineStateImpl();
+    pipelineStateImpl->m_pipelineState = pipelineState;
+    return pipelineStateImpl.detach();
 }
 
 } // renderer_test

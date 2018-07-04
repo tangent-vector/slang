@@ -413,6 +413,97 @@ class TextureResource: public Resource
     Desc m_desc;
 };
 
+enum class DescriptorSlotType
+{
+    Unknown,
+
+    Sampler,
+    CombinedImageSampler,
+    SampledImage,
+    StorageImage,
+    UniformTexelBuffer,
+    StorageTexelBuffer,
+    UniformBuffer,
+    StorageBuffer,
+    DynamicUniformBuffer,
+    DynamicStorageBuffer,
+    InputAttachment,
+};
+
+class DescriptorSetLayout : public Slang::RefObject
+{
+public:
+    struct SlotRangeDesc
+    {
+        DescriptorSlotType  type            = DescriptorSlotType::Unknown;
+        UInt                count           = 1;
+        UInt                registerOffset  = 0;
+        UInt                spaceOffset     = 0;
+
+        SlotRangeDesc()
+        {}
+
+        SlotRangeDesc(
+            DescriptorSlotType  type,
+            UInt                count = 1,
+            UInt                registerOffset = 0,
+            UInt                spaceOffset = 0)
+            : type(type)
+            , count(count)
+            , registerOffset(registerOffset)
+            , spaceOffset(spaceOffset)
+        {}
+    };
+
+    struct Desc
+    {
+        UInt                    slotRangeCount  = 0;
+        SlotRangeDesc const*    slotRanges      = nullptr;
+    };
+};
+
+class PipelineLayout : public Slang::RefObject
+{
+public:
+    struct DescriptorSetDesc
+    {
+        DescriptorSetLayout*    layout          = nullptr;
+        UInt                    registerOffset  = 0;
+        UInt                    spaceOffset     = 0;
+
+        DescriptorSetDesc()
+        {}
+
+        DescriptorSetDesc(
+            DescriptorSetLayout*    layout,
+            UInt                    registerOffset  = 0,
+            UInt                    spaceOffset     = 0)
+            : layout(layout)
+            , registerOffset(registerOffset)
+            , spaceOffset(spaceOffset)
+        {}
+    };
+
+    struct Desc
+    {
+        UInt                        descriptorSetCount  = 0;
+        DescriptorSetDesc const*    descriptorSets      = nullptr;
+    };
+};
+
+class TextureView : public Slang::RefObject
+{
+};
+
+class DescriptorSet : public Slang::RefObject
+{
+public:
+    virtual void setTexture(UInt range, UInt index, TextureView* texture) = 0;
+    virtual void setBuffer(UInt range, UInt index, BufferResource* buffer) = 0;
+};
+
+
+#if 0
 enum class BindingType
 {
     Unknown,
@@ -498,6 +589,7 @@ public:
 
     Desc m_desc;
 };
+#endif
 
 enum class ComparisonFunc : uint8_t
 {
@@ -542,54 +634,64 @@ enum class FrontFaceMode : uint8_t
     Clockwise,
 };
 
-class GraphicsPipelineState : public Slang::RefObject
+struct DepthStencilOpDesc
+{
+    StencilOp       stencilFailOp       = StencilOp::Keep;
+    StencilOp       stencilDepthFailOp  = StencilOp::Keep;
+    StencilOp       stencilPassOp       = StencilOp::Keep;
+    ComparisonFunc  stencilFunc         = ComparisonFunc::Always;
+};
+
+struct DepthStencilDesc
+{
+    bool            depthTestEnable     = true;
+    bool            depthWriteEnable    = true;
+    ComparisonFunc  depthFunc           = ComparisonFunc::Less;
+
+    bool                stencilEnable       = false;
+    uint32_t            stencilReadMask     = 0xFFFFFFFF;
+    uint32_t            stencilWriteMask    = 0xFFFFFFFF;
+    DepthStencilOpDesc  frontFace;
+    DepthStencilOpDesc  backFace;
+
+    uint32_t stencilRef = 0;
+};
+
+struct RasterizerDesc
+{
+    FillMode        fillMode                = FillMode::Solid;
+    CullMode        cullMode                = CullMode::Back;
+    FrontFaceMode   frontFace               = FrontFaceMode::CounterClockwise;
+    int32_t         depthBias               = 0;
+    float           depthBiasClamp          = 0.0f;
+    float           slopeScaledDepthBias    = 0.0f;
+    bool            depthClipEnable         = true;
+    bool            scissorEnable           = false;
+    bool            multisampleEnable       = false;
+    bool            antialiasedLineEnable   = false;
+};
+
+struct GraphicsPipelineStateDesc
+{
+    ShaderProgram*      program;
+    PipelineLayout*     pipelineLayout;
+    InputLayout*        inputLayout;
+    UInt                framebufferWidth;
+    UInt                framebufferHeight;
+    UInt                renderTargetCount;
+    DepthStencilDesc    depthStencil;
+    RasterizerDesc      rasterizer;
+};
+
+struct ComputePipelineStateDesc
+{
+    ShaderProgram*  program;
+    PipelineLayout* pipelineLayout;
+};
+
+class PipelineState : public Slang::RefObject
 {
 public:
-    struct DepthStencilOpDesc
-    {
-        StencilOp       stencilFailOp       = StencilOp::Keep;
-        StencilOp       stencilDepthFailOp  = StencilOp::Keep;
-        StencilOp       stencilPassOp       = StencilOp::Keep;
-        ComparisonFunc  stencilFunc         = ComparisonFunc::Always;
-    };
-
-    struct DepthStencilDesc
-    {
-        bool            depthTestEnable     = true;
-        bool            depthWriteEnable    = true;
-        ComparisonFunc  depthFunc           = ComparisonFunc::Less;
-
-        bool                stencilEnable       = false;
-        uint32_t            stencilReadMask     = 0xFFFFFFFF;
-        uint32_t            stencilWriteMask    = 0xFFFFFFFF;
-        DepthStencilOpDesc  frontFace;
-        DepthStencilOpDesc  backFace;
-
-        uint32_t stencilRef = 0;
-    };
-
-    struct RasterizerDesc
-    {
-        FillMode        fillMode                = FillMode::Solid;
-        CullMode        cullMode                = CullMode::Back;
-        FrontFaceMode   frontFace               = FrontFaceMode::CounterClockwise;
-        int32_t         depthBias               = 0;
-        float           depthBiasClamp          = 0.0f;
-        float           slopeScaledDepthBias    = 0.0f;
-        bool            depthClipEnable         = true;
-        bool            scissorEnable           = false;
-        bool            multisampleEnable       = false;
-        bool            antialiasedLineEnable   = false;
-    };
-
-    struct Desc
-    {
-        DepthStencilDesc    depthStencil;
-        RasterizerDesc      rasterizer;
-    };
-
-private:
-    Desc m_desc;
 };
 
 class Renderer: public Slang::RefObject
@@ -618,29 +720,34 @@ public:
     virtual SlangResult captureScreenSurface(Surface& surfaceOut) = 0;
 
     virtual InputLayout* createInputLayout(const InputElementDesc* inputElements, UInt inputElementCount) = 0;
-    virtual BindingState* createBindingState(const BindingState::Desc& desc) { return nullptr; }
+
+//    virtual BindingState* createBindingState(const BindingState::Desc& desc) { return nullptr; }
+    virtual DescriptorSetLayout* createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc) = 0;
+    virtual PipelineLayout* createPipelineLayout(const PipelineLayout::Desc& desc) = 0;
+    virtual DescriptorSet* createDescriptorSet(DescriptorSetLayout* layout) = 0;
 
     virtual ShaderProgram* createProgram(const ShaderProgram::Desc& desc) = 0;
 
-    virtual GraphicsPipelineState* createGraphicsPipelineState(
-        const GraphicsPipelineState::Desc& desc) = 0;
+    virtual PipelineState* createGraphicsPipelineState(
+        const GraphicsPipelineStateDesc& desc) = 0;
+    virtual PipelineState* createComputePipelineState(
+        const ComputePipelineStateDesc& desc) = 0;
 
     virtual void* map(BufferResource* buffer, MapFlavor flavor) = 0;
     virtual void unmap(BufferResource* buffer) = 0;
 
-    virtual void setInputLayout(InputLayout* inputLayout) = 0;
     virtual void setPrimitiveTopology(PrimitiveTopology topology) = 0;
-    virtual void setBindingState(BindingState* state) = 0;
+
+    virtual void setDescriptorSet(PipelineType pipelineType, PipelineLayout* layout, UInt index, DescriptorSet* descriptorSet) = 0;
 
     virtual void setVertexBuffers(UInt startSlot, UInt slotCount, BufferResource*const* buffers, const UInt* strides, const UInt* offsets) = 0;
     inline void setVertexBuffer(UInt slot, BufferResource* buffer, UInt stride, UInt offset = 0);
 
     virtual void setIndexBuffer(BufferResource* buffer, Format indexFormat, UInt offset = 0) = 0;
 
-    virtual void setDepthStencilTarget(TextureResource* depthStencilTarget) = 0;
+    virtual void setDepthStencilTarget(TextureView* depthStencilView) = 0;
 
-    virtual void setGraphicsPipelineState(GraphicsPipelineState* state) = 0;
-    virtual void setShaderProgram(ShaderProgram* program) = 0;
+    virtual void setPipelineState(PipelineType pipelineType, PipelineState* state) = 0;
 
     virtual void draw(UInt vertexCount, UInt startVertex = 0) = 0;
     virtual void drawIndexed(UInt indexCount, UInt startIndex = 0, UInt baseVertex = 0) = 0;

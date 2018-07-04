@@ -179,11 +179,12 @@ static BindingState::SamplerDesc _calcSamplerDesc(const InputSamplerDesc& srcDes
     return RegisterRange::makeInvalid();
 }
 
-/* static */Result ShaderRendererUtil::createBindingStateDesc(ShaderInputLayoutEntry* srcEntries, int numEntries, Renderer* renderer, BindingState::Desc& descOut)
+/* static */Result ShaderRendererUtil::createBindingState(ShaderInputLayoutEntry* srcEntries, int numEntries, Renderer* renderer, BindingStateImpl** outBindingState)
 {
     const int textureBindFlags = Resource::BindFlag::NonPixelShaderResource | Resource::BindFlag::PixelShaderResource;
 
-    descOut.clear();
+    List<DescriptorSetLayout::SlotRangeDesc> slotRangeDescs;
+
     for (int i = 0; i < numEntries; i++)
     {
         const ShaderInputLayoutEntry& srcEntry = srcEntries[i];
@@ -194,6 +195,9 @@ static BindingState::SamplerDesc _calcSamplerDesc(const InputSamplerDesc& srcDes
             assert(!"Couldn't find a binding");
             return SLANG_FAIL;
         }
+
+        DescriptorSetLayout::SlotRangeDesc slotRangeDesc;
+
 
         switch (srcEntry.type)
         {
@@ -226,7 +230,7 @@ static BindingState::SamplerDesc _calcSamplerDesc(const InputSamplerDesc& srcDes
             }
             case ShaderInputType::Sampler:
             {
-                descOut.addSampler(_calcSamplerDesc(srcEntry.samplerDesc), registerSet);
+                slotRangeDesc.type = DescriptorSlotType::Sampler;
                 break;
             }
             default:
@@ -237,10 +241,69 @@ static BindingState::SamplerDesc _calcSamplerDesc(const InputSamplerDesc& srcDes
         }
     }
 
+    DescriptorSetLayout::Desc descriptorSetLayoutDesc;
+    descriptorSetLayoutDesc.slotRangeCount = slotRangeDescs.Count();
+    descriptorSetLayoutDesc.slotRanges = slotRangeDescs.Buffer();
+
+    DescriptorSetLayout* descriptorSetLayout = renderer->createDescriptorSetLayout(descriptorSetLayoutDesc);
+    if(!descriptorSetLayout) return SLANG_FAIL;
+
+    DescriptorSet* descriptorSet = renderer->createDescriptorSet(descriptorSetLayout);
+    if(!descriptorSet) return SLANG_FAIL;
+
+    for (int i = 0; i < numEntries; i++)
+    {
+        const ShaderInputLayoutEntry& srcEntry = srcEntries[i];
+
+        switch (srcEntry.type)
+        {
+            case ShaderInputType::Buffer:
+            {
+                const InputBufferDesc& srcBuffer = srcEntry.bufferDesc;
+
+                const size_t bufferSize = srcEntry.bufferData.Count() * sizeof(uint32_t);
+
+                RefPtr<BufferResource> bufferResource;
+                SLANG_RETURN_ON_FAIL(createBufferResource(srcEntry.bufferDesc, srcEntry.isOutput, bufferSize, srcEntry.bufferData.Buffer(), renderer, bufferResource));
+
+                descriptorSet->setBuffer(i, 0, bufferResource);
+                break;
+            }
+            case ShaderInputType::CombinedTextureSampler:
+            {
+                RefPtr<TextureResource> texture;
+                SLANG_RETURN_ON_FAIL(generateTextureResource(srcEntry.textureDesc, textureBindFlags, renderer, texture));
+                descOut.addCombinedTextureSampler(texture, _calcSamplerDesc(srcEntry.samplerDesc), registerSet);
+                break;
+            }
+            case ShaderInputType::Texture:
+            {
+                RefPtr<TextureResource> texture;
+                SLANG_RETURN_ON_FAIL(generateTextureResource(srcEntry.textureDesc, textureBindFlags, renderer, texture));
+
+                descriptorSet->setTexture(i, 0, textureView);
+                break;
+            }
+            case ShaderInputType::Sampler:
+            {
+                    renderer->createSampler();
+
+                slotRangeDesc.type = DescriptorSlotType::Sampler;
+                break;
+            }
+            default:
+            {
+                assert(!"Unhandled type");
+                return SLANG_FAIL;
+            }
+        }
+    }
+
+
     return SLANG_OK;
 }
 
-/* static */Result ShaderRendererUtil::createBindingStateDesc(const ShaderInputLayout& layout, Renderer* renderer, BindingState::Desc& descOut)
+/* static */Result ShaderRendererUtil::createBindingState(const ShaderInputLayout& layout, Renderer* renderer, BindingStateImpl** outBindingState)
 {
     SLANG_RETURN_ON_FAIL(createBindingStateDesc(layout.entries.Buffer(), int(layout.entries.Count()), renderer, descOut));
     descOut.m_numRenderTargets = layout.numRenderTargets;

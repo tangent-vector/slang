@@ -88,19 +88,25 @@ public:
     virtual BufferResource* createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& descIn, const void* initData) override;
     virtual SlangResult captureScreenSurface(Surface& surfaceOut) override;
     virtual InputLayout* createInputLayout(const InputElementDesc* inputElements, UInt inputElementCount) override;
-    virtual BindingState* createBindingState(const BindingState::Desc& bindingStateDesc) override;
+
+//    virtual BindingState* createBindingState(const BindingState::Desc& bindingStateDesc) override;
+    virtual DescriptorSetLayout* createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc) override;
+    virtual PipelineLayout* createPipelineLayout(const PipelineLayout::Desc& desc) override;
+    virtual DescriptorSet* createDescriptorSet(DescriptorSetLayout* layout) override;
+
     virtual ShaderProgram* createProgram(const ShaderProgram::Desc& desc) override;
-    virtual GraphicsPipelineState* createGraphicsPipelineState(const GraphicsPipelineState::Desc& desc) override;
+    virtual PipelineState* createGraphicsPipelineState(const GraphicsPipelineStateDesc& desc) override;
+    virtual PipelineState* createComputePipelineState(const ComputePipelineStateDesc& desc) override;
     virtual void* map(BufferResource* buffer, MapFlavor flavor) override;
     virtual void unmap(BufferResource* buffer) override;
-    virtual void setInputLayout(InputLayout* inputLayout) override;
     virtual void setPrimitiveTopology(PrimitiveTopology topology) override;
-    virtual void setBindingState(BindingState* state);
+
+    virtual void setDescriptorSet(PipelineType pipelineType, PipelineLayout* layout, UInt index, DescriptorSet* descriptorSet) override;
+
     virtual void setVertexBuffers(UInt startSlot, UInt slotCount, BufferResource*const* buffers, const UInt* strides, const UInt* offsets) override;
     virtual void setIndexBuffer(BufferResource* buffer, Format indexFormat, UInt offset) override;
-    virtual void setDepthStencilTarget(TextureResource* depthStencilTarget) override;
-    virtual void setGraphicsPipelineState(GraphicsPipelineState* state) override;
-    virtual void setShaderProgram(ShaderProgram* inProgram) override;
+    virtual void setDepthStencilTarget(TextureView* depthStencilView) override;
+    virtual void setPipelineState(PipelineType pipelineType, PipelineState* state) override;
     virtual void draw(UInt vertexCount, UInt startVertex) override;
     virtual void drawIndexed(UInt indexCount, UInt startIndex, UInt baseVertex) override;
     virtual void dispatchCompute(int x, int y, int z) override;
@@ -189,6 +195,7 @@ public:
         GLuint m_handle;
     };
 
+#if 0
     struct BindingDetail
     {
         GLuint m_samplerHandle = 0;
@@ -217,6 +224,8 @@ public:
 		GLRenderer* m_renderer;
         List<BindingDetail> m_bindingDetails;
     };
+#endif
+
 
 	class ShaderProgramImpl : public ShaderProgram
 	{
@@ -238,6 +247,13 @@ public:
 		GLRenderer* m_renderer;
 	};
 
+    class PipelineStateImpl : public PipelineState
+    {
+    public:
+        RefPtr<ShaderProgramImpl>   m_program;
+        RefPtr<InputLayoutImpl>     m_inputLayout;
+    };
+
     enum class GlPixelFormat
     {
         Unknown,
@@ -252,7 +268,7 @@ public:
         GLenum formatType;              // such as GL_UNSIGNED_BYTE
     };
 
-	void destroyBindingEntries(const BindingState::Desc& desc, const BindingDetail* details);
+//	void destroyBindingEntries(const BindingState::Desc& desc, const BindingDetail* details);
 
     void bindBufferImpl(int target, UInt startSlot, UInt slotCount, BufferResource*const* buffers, const UInt* offsets);
     void flushStateForDraw();
@@ -271,8 +287,9 @@ public:
     HGLRC   m_glContext;
     float   m_clearColor[4] = { 0, 0, 0, 0 };
 
-	RefPtr<ShaderProgramImpl> m_boundShaderProgram;
-    RefPtr<InputLayoutImpl> m_boundInputLayout;
+    RefPtr<PipelineStateImpl> m_currentPipelineState;
+//	RefPtr<ShaderProgramImpl> m_boundShaderProgram;
+//    RefPtr<InputLayoutImpl> m_boundInputLayout;
 
     GLenum m_boundPrimitiveTopology = GL_TRIANGLES;
     GLuint  m_boundVertexStreamBuffers[kMaxVertexStreams];
@@ -370,7 +387,7 @@ void GLRenderer::bindBufferImpl(int target, UInt startSlot, UInt slotCount, Buff
 
 void GLRenderer::flushStateForDraw()
 {
-    auto layout = m_boundInputLayout.Ptr();
+    auto layout = m_currentPipelineState->m_inputLayout.Ptr();
     auto attrCount = layout->m_attributeCount;
     for (UInt ii = 0; ii < attrCount; ++ii)
     {
@@ -507,6 +524,7 @@ GLuint GLRenderer::loadShader(GLenum stage, const char* source)
     return shaderID;
 }
 
+#if 0
 void GLRenderer::destroyBindingEntries(const BindingState::Desc& desc, const BindingDetail* details)
 {
     const auto& bindings = desc.m_bindings;
@@ -522,6 +540,7 @@ void GLRenderer::destroyBindingEntries(const BindingState::Desc& desc, const Bin
         }
 	}
 }
+#endif
 
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!! Renderer interface !!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -820,11 +839,6 @@ void GLRenderer::unmap(BufferResource* bufferIn)
     glUnmapBuffer(buffer->m_target);
 }
 
-void GLRenderer::setInputLayout(InputLayout* inputLayout)
-{
-    m_boundInputLayout = static_cast<InputLayoutImpl*>(inputLayout);
-}
-
 void GLRenderer::setPrimitiveTopology(PrimitiveTopology topology)
 {
     GLenum glTopology = 0;
@@ -858,19 +872,20 @@ void GLRenderer::setIndexBuffer(BufferResource* buffer, Format indexFormat, UInt
 {
 }
 
-void GLRenderer::setDepthStencilTarget(TextureResource* depthStencilTarget)
+void GLRenderer::setDepthStencilTarget(TextureView* depthStencilView)
 {
 }
 
-void GLRenderer::setGraphicsPipelineState(GraphicsPipelineState* state)
-{}
-
-void GLRenderer::setShaderProgram(ShaderProgram* programIn)
+void GLRenderer::setPipelineState(PipelineType pipelineType, PipelineState* state)
 {
-	ShaderProgramImpl* program = static_cast<ShaderProgramImpl*>(programIn);
-	m_boundShaderProgram = program;
+    auto pipelineStateImpl = (PipelineStateImpl*) state;
+
+    m_currentPipelineState = pipelineStateImpl;
+
+    auto program = pipelineStateImpl->m_program;
     GLuint programID = program ? program->m_id : 0;
-	glUseProgram(programID);
+    glUseProgram(programID);
+    glUseProgram(pipelineStateImpl->m_program->m_id);
 }
 
 void GLRenderer::draw(UInt vertexCount, UInt startVertex = 0)
@@ -889,6 +904,7 @@ void GLRenderer::dispatchCompute(int x, int y, int z)
     glDispatchCompute(x, y, z);
 }
 
+#if 0
 BindingState* GLRenderer::createBindingState(const BindingState::Desc& bindingStateDesc)
 {
     RefPtr<BindingStateImpl> bindingState(new BindingStateImpl(bindingStateDesc, this));
@@ -1010,6 +1026,7 @@ void GLRenderer::setBindingState(BindingState* stateIn)
         }
     }
 }
+#endif
 
 ShaderProgram* GLRenderer::createProgram(const ShaderProgram::Desc& desc)
 {
@@ -1065,9 +1082,24 @@ ShaderProgram* GLRenderer::createProgram(const ShaderProgram::Desc& desc)
     return new ShaderProgramImpl(this, programID);
 }
 
-GraphicsPipelineState* GLRenderer::createGraphicsPipelineState(const GraphicsPipelineState::Desc& desc)
+PipelineState* GLRenderer::createGraphicsPipelineState(const GraphicsPipelineStateDesc& desc)
 {
-    return nullptr;
+    auto programImpl        = (ShaderProgramImpl*)  desc.program;
+    auto inputLayoutImpl    = (InputLayoutImpl*)    desc.inputLayout;
+
+    RefPtr<PipelineStateImpl> pipelineStateImpl = new PipelineStateImpl();
+    pipelineStateImpl->m_program = programImpl;
+    pipelineStateImpl->m_inputLayout = inputLayoutImpl;
+    return pipelineStateImpl.detach();
+}
+
+PipelineState* GLRenderer::createComputePipelineState(const ComputePipelineStateDesc& desc)
+{
+    auto programImpl = (ShaderProgramImpl*) desc.program;
+
+    RefPtr<PipelineStateImpl> pipelineStateImpl = new PipelineStateImpl();
+    pipelineStateImpl->m_program = programImpl;
+    return pipelineStateImpl.detach();
 }
 
 

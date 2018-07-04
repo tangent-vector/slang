@@ -45,7 +45,7 @@ struct Vertex
     float uv[2];
 };
 
-static const Vertex kVertexData[] = 
+static const Vertex kVertexData[] =
 {
     { { 0,  0, 0.5 }, {1, 0, 0} , {0, 0} },
     { { 0,  1, 0.5 }, {0, 0, 1} , {1, 0} },
@@ -61,15 +61,15 @@ class RenderTestApp
 
 		// At initialization time, we are going to load and compile our Slang shader
 		// code, and then create the API objects we need for rendering.
-	Result initialize(Renderer* renderer, ShaderCompiler* shaderCompiler);	
+	Result initialize(Renderer* renderer, ShaderCompiler* shaderCompiler);
 	void runCompute();
 	void renderFrame();
 	void finalize();
 
-	BindingState* getBindingState() const { return m_bindingState; }
+//	BindingState* getBindingState() const { return m_bindingState; }
 
     Result writeBindingOutput(const char* fileName);
-    
+
     Result writeScreen(const char* filename);
 
 	protected:
@@ -85,7 +85,7 @@ class RenderTestApp
 	RefPtr<InputLayout>     m_inputLayout;
 	RefPtr<BufferResource>  m_vertexBuffer;
 	RefPtr<ShaderProgram>   m_shaderProgram;
-	RefPtr<BindingState>    m_bindingState;
+//	RefPtr<BindingState>    m_bindingState;
 
 	ShaderInputLayout m_shaderInputLayout;              ///< The binding layout
     int m_numAddedConstantBuffers;                      ///< Constant buffers can be added to the binding directly. Will be added at the end.
@@ -122,7 +122,7 @@ SlangResult RenderTestApp::initialize(Renderer* renderer, ShaderCompiler* shader
 
         //! Hack -> if bindings are specified, just set up the constant buffer binding
         // Should probably be more sophisticated than this - with 'dynamic' constant buffer/s binding always being specified
-        // in the test file 
+        // in the test file
 
         if ((gOptions.shaderType == Options::ShaderProgramType::Graphics || gOptions.shaderType == Options::ShaderProgramType::GraphicsCompute)
             && bindingStateDesc.findBindingIndex(Resource::BindFlag::ConstantBuffer, 0) < 0)
@@ -220,7 +220,7 @@ void RenderTestApp::renderFrame()
     {
         const ProjectionStyle projectionStyle = RendererUtil::getProjectionStyle(m_renderer->getRendererType());
         RendererUtil::getIdentityProjection(projectionStyle, (float*)mappedData);
-        
+
 		m_renderer->unmap(m_constantBuffer);
     }
 
@@ -524,11 +524,11 @@ SlangResult innerMain(int argc, char** argv)
 					else
                     {
 						Result res = app.writeScreen(gOptions.outputPath);
-                        
+
                         if (SLANG_FAILED(res))
                         {
                             fprintf(stderr, "ERROR: failed to write screen capture to file\n");
-                            return res;   
+                            return res;
                         }
                     }
 					return SLANG_OK;

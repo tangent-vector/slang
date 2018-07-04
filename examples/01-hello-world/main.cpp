@@ -33,6 +33,8 @@
 #include "slang-graphics/window.h"
 using namespace slang_graphics;
 
+#include <vector>
+
 // We will start with a function that will invoke the Slang compiler
 // to generate target-specific code from a shader file, and then
 // use that to initialize an API shader program.
@@ -212,10 +214,12 @@ ApplicationContext* gAppContext;
 Window* gWindow;
 Renderer* gRenderer;
 BufferResource* gConstantBuffer;
-InputLayout* gInputLayout;
+
+PipelineLayout* gPipelineLayout;
+PipelineState*  gPipelineState;
+DescriptorSet*  gDescriptorSet;
+
 BufferResource* gVertexBuffer;
-ShaderProgram* gShaderProgram;
-BindingState* gBindingState;
 
 SlangResult initialize()
 {
@@ -268,10 +272,10 @@ SlangResult initialize()
         { "POSITION", 0, Format::RGB_Float32, offsetof(Vertex, position) },
         { "COLOR",    0, Format::RGB_Float32, offsetof(Vertex, color) },
     };
-    gInputLayout = gRenderer->createInputLayout(
+    InputLayout* inputLayout = gRenderer->createInputLayout(
         &inputElements[0],
         2);
-    if(!gInputLayout) return SLANG_FAIL;
+    if(!inputLayout) return SLANG_FAIL;
 
     // Vertex Buffer
 
@@ -287,14 +291,67 @@ SlangResult initialize()
 
     // Shaders (VS, PS, ...)
 
-    gShaderProgram = loadShaderProgram(gRenderer);
-    if(!gShaderProgram) return SLANG_FAIL;
+    ShaderProgram* shaderProgram = loadShaderProgram(gRenderer);
+    if(!shaderProgram) return SLANG_FAIL;
 
     // Resource binding state
 
-    BindingState::Desc bindingStateDesc;
-    bindingStateDesc.addBufferResource(gConstantBuffer, BindingState::RegisterRange::makeSingle(0));
-    gBindingState = gRenderer->createBindingState(bindingStateDesc);
+    DescriptorSetLayout* descriptorSetLayout = nullptr;
+    {
+        DescriptorSetLayout::SlotRangeDesc slotRanges[] =
+        {
+            DescriptorSetLayout::SlotRangeDesc(DescriptorSlotType::UniformBuffer),
+        };
+
+        DescriptorSetLayout::Desc descriptorSetLayoutDesc;
+        descriptorSetLayoutDesc.slotRangeCount = 1;
+        descriptorSetLayoutDesc.slotRanges = &slotRanges[0];
+
+        descriptorSetLayout = gRenderer->createDescriptorSetLayout(descriptorSetLayoutDesc);
+        if(!descriptorSetLayout) return FAILURE;
+    }
+
+    {
+        PipelineLayout::DescriptorSetDesc descriptorSets[] =
+        {
+            PipelineLayout::DescriptorSetDesc( descriptorSetLayout ),
+        };
+
+        PipelineLayout::Desc pipelineLayoutDesc;
+        pipelineLayoutDesc.descriptorSetCount = 1;
+        pipelineLayoutDesc.descriptorSets = &descriptorSets[0];
+
+        PipelineLayout* pipelineLayout = gRenderer->createPipelineLayout(pipelineLayoutDesc);
+        if(!pipelineLayout) return FAILURE;
+
+        gPipelineLayout = pipelineLayout;
+    }
+
+    // Descriptor Set
+    {
+        DescriptorSet* descriptorSet = gRenderer->createDescriptorSet(descriptorSetLayout);
+        if(!descriptorSet) return FAILURE;
+
+        descriptorSet->setBuffer(0, 0, gConstantBuffer);
+
+        gDescriptorSet = descriptorSet;
+    }
+
+    // Pipeline State Object (PSO)
+    {
+        GraphicsPipelineStateDesc desc;
+
+        desc.pipelineLayout = gPipelineLayout;
+        desc.inputLayout = inputLayout;
+        desc.program = shaderProgram;
+
+        // ...
+
+        PipelineState* pipelineState = gRenderer->createGraphicsPipelineState(desc);
+        if(!pipelineState) return FAILURE;
+
+        gPipelineState = pipelineState;
+    }
 
     // Once we've initialized all the graphics API objects,
     // it is time to show our application window and start rendering.
@@ -329,20 +386,15 @@ void renderFrame()
         gRenderer->unmap(gConstantBuffer);
     }
 
-    // Input Assembler (IA)
+    gRenderer->setPipelineState(PipelineType::Graphics, gPipelineState);
 
-    gRenderer->setInputLayout(gInputLayout);
     gRenderer->setPrimitiveTopology(PrimitiveTopology::TriangleList);
 
     UInt vertexStride = sizeof(Vertex);
     UInt vertexBufferOffset = 0;
     gRenderer->setVertexBuffers(0, 1, &gVertexBuffer, &vertexStride, &vertexBufferOffset);
 
-    // Vertex Shader (VS)
-    // Pixel Shader (PS)
-
-    gRenderer->setShaderProgram(gShaderProgram);
-    gRenderer->setBindingState(gBindingState);
+    gRenderer->setDescriptorSet(PipelineType::Graphics, gPipelineLayout, 0, gDescriptorSet);
 
     //
 
