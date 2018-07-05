@@ -1,4 +1,4 @@
-﻿// render-d3d12.cpp
+// render-d3d12.cpp
 #define _CRT_SECURE_NO_WARNINGS
 
 #include "render-d3d12.h"
@@ -59,6 +59,11 @@ public:
     virtual void presentFrame() override;
     virtual TextureResource* createTextureResource(Resource::Usage initialUsage, const TextureResource::Desc& desc, const TextureResource::Data* initData) override;
     virtual BufferResource* createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& bufferDesc, const void* initData) override;
+    virtual SamplerState* createSamplerState(SamplerState::Desc const& desc) override;
+
+    virtual ResourceView* createTextureView(TextureResource* texture, ResourceView::Desc const& desc) override;
+    virtual ResourceView* createBufferView(BufferResource* texture, ResourceView::Desc const& desc) override;
+
     virtual SlangResult captureScreenSurface(Surface& surfaceOut) override;
     virtual InputLayout* createInputLayout(const InputElementDesc* inputElements, UInt inputElementCount) override;
 
@@ -79,7 +84,7 @@ public:
 
     virtual void setVertexBuffers(UInt startSlot, UInt slotCount, BufferResource*const* buffers, const UInt* strides, const UInt* offsets) override;
     virtual void setIndexBuffer(BufferResource* buffer, Format indexFormat, UInt offset) override;
-    virtual void setDepthStencilTarget(TextureView* depthStencilView) override;
+    virtual void setDepthStencilTarget(ResourceView* depthStencilView) override;
     virtual void setPipelineState(PipelineType pipelineType, PipelineState* state) override;
     virtual void draw(UInt vertexCount, UInt startVertex) override;
     virtual void drawIndexed(UInt indexCount, UInt startIndex, UInt baseVertex) override;
@@ -248,8 +253,14 @@ protected:
     class DescriptorSetImpl : public DescriptorSet
     {
     public:
-        virtual void setTexture(UInt range, UInt index, TextureView* texture) override;
-        virtual void setBuffer(UInt range, UInt index, BufferResource* buffer) override;
+        virtual void setConstantBuffer(UInt range, UInt index, BufferResource* buffer) override;
+        virtual void setResource(UInt range, UInt index, ResourceView* view) override;
+        virtual void setSampler(UInt range, UInt index, SamplerState* sampler) override;
+        virtual void setCombinedTextureSampler(
+            UInt range,
+            UInt index,
+            ResourceView*   textureView,
+            SamplerState*   sampler) override;
     };
 
 
@@ -2156,7 +2167,7 @@ void D3D12Renderer::setIndexBuffer(BufferResource* buffer, Format indexFormat, U
     m_boundIndexOffset = offset;
 }
 
-void D3D12Renderer::setDepthStencilTarget(TextureView* depthStencilView)
+void D3D12Renderer::setDepthStencilTarget(ResourceView* depthStencilView)
 {
 }
 

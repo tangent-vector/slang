@@ -332,7 +332,7 @@ SlangResult initialize()
         DescriptorSet* descriptorSet = gRenderer->createDescriptorSet(descriptorSetLayout);
         if(!descriptorSet) return FAILURE;
 
-        descriptorSet->setBuffer(0, 0, gConstantBuffer);
+        descriptorSet->setConstantBuffer(0, 0, gConstantBuffer);
 
         gDescriptorSet = descriptorSet;
     }

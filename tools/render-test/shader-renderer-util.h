@@ -6,12 +6,37 @@
 
 namespace renderer_test {
 
+using namespace Slang;
+
 struct BindingStateImpl : public Slang::RefObject
 {
-    struct RegisterRange {};
+        /// A register set consists of one or more contiguous indices.
+        /// To be valid index >= 0 and size >= 1
+    struct RegisterRange
+    {
+            /// True if contains valid contents
+        bool isValid() const { return size > 0; }
+            /// True if valid single value
+        bool isSingle() const { return size == 1; }
+            /// Get as a single index (must be at least one index)
+        int getSingleIndex() const { return (size == 1) ? index : -1; }
+            /// Return the first index
+        int getFirstIndex() const { return (size > 0) ? index : -1; }
+            /// True if contains register index
+        bool hasRegister(int registerIndex) const { return registerIndex >= index && registerIndex < index + size; }
+
+        static RegisterRange makeInvalid() { return RegisterRange{ -1, 0 }; }
+        static RegisterRange makeSingle(int index) { return RegisterRange{ int16_t(index), 1 }; }
+        static RegisterRange makeRange(int index, int size) { return RegisterRange{ int16_t(index), uint16_t(size) }; }
+
+        int16_t index;              ///< The base index
+        uint16_t size;              ///< The amount of register indices
+    };
+
 
     RefPtr<PipelineLayout>  pipelineLayout;
     RefPtr<DescriptorSet>   descriptorSet;
+    int m_numRenderTargets = 1;
 };
 
 /// Utility class containing functions that construct items on the renderer using the ShaderInputLayout representation

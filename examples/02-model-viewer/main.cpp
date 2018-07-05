@@ -123,12 +123,12 @@ enum Status
 ApplicationContext* gAppContext;
 Window* gWindow;
 Renderer* gRenderer;
-InputLayout* gInputLayout;
 BufferResource* gConstantBuffer;
-TextureResource* gDepthBuffer;
-ShaderProgram* gShaderProgram;
-BindingState* gBindingState;
-GraphicsPipelineState*  gPSO;
+ResourceView* gDepthTarget;
+
+PipelineLayout* gPipelineLayout;
+PipelineState*  gPipelineState;
+DescriptorSet*  gDescriptorSet;
 
 std::vector<Model*> gModels;
 
@@ -197,40 +197,92 @@ int initialize()
         {"NORMAL",   0, Format::RGB_Float32, offsetof(Model::Vertex, normal) },
         {"UV",       0, Format::RG_Float32,  offsetof(Model::Vertex, uv) },
     };
-    gInputLayout = gRenderer->createInputLayout(
+    InputLayout* inputLayout = gRenderer->createInputLayout(
         &inputElements[0],
         3);
-    if(!gInputLayout) return FAILURE;
+    if(!inputLayout) return FAILURE;
 
     // Depth-Stencil Test (DS)
     {
         TextureResource::Desc depthBufferDesc;
         depthBufferDesc.init2D(Resource::Type::Texture2D, Format::D_Float32, gWindowWidth, gWindowHeight, 1);
         depthBufferDesc.setDefaults(Resource::Usage::DepthWrite);
-        gDepthBuffer = gRenderer->createTextureResource(
+
+        TextureResource* depthTexture = gRenderer->createTextureResource(
             Resource::Usage::DepthWrite,
             depthBufferDesc);
+        if(!depthTexture) return FAILURE;
+
+        ResourceView::Desc textureViewDesc;
+        textureViewDesc.usage = Resource::Usage::DepthWrite;
+        TextureView* depthTarget = gRenderer->createTextureView(depthTexture, textureViewDesc);
+        if (!depthTarget) return FAILURE;
     }
 
     // Shaders (VS, PS, ...)
 
-    gShaderProgram = loadShaderProgram(gRenderer);
-    if(!gShaderProgram) return FAILURE;
+    ShaderProgram* shaderProgram = loadShaderProgram(gRenderer);
+    if(!shaderProgram) return FAILURE;
 
-    // Fixed function state
-    {
-        GraphicsPipelineState::Desc psoDesc;
-
-        // Fill in what we need
-
-        gPSO = gRenderer->createGraphicsPipelineState(psoDesc);
-    }
 
     // Resource binding state
 
-    BindingState::Desc bindingStateDesc;
-    bindingStateDesc.addBufferResource(gConstantBuffer, BindingState::RegisterRange::makeSingle(0));
-    gBindingState = gRenderer->createBindingState(bindingStateDesc);
+    DescriptorSetLayout* descriptorSetLayout = nullptr;
+    {
+        DescriptorSetLayout::SlotRangeDesc slotRanges[] =
+        {
+            DescriptorSetLayout::SlotRangeDesc(DescriptorSlotType::UniformBuffer),
+        };
+
+        DescriptorSetLayout::Desc descriptorSetLayoutDesc;
+        descriptorSetLayoutDesc.slotRangeCount = 1;
+        descriptorSetLayoutDesc.slotRanges = &slotRanges[0];
+
+        descriptorSetLayout = gRenderer->createDescriptorSetLayout(descriptorSetLayoutDesc);
+        if (!descriptorSetLayout) return FAILURE;
+    }
+
+    {
+        PipelineLayout::DescriptorSetDesc descriptorSets[] =
+        {
+            PipelineLayout::DescriptorSetDesc(descriptorSetLayout),
+        };
+
+        PipelineLayout::Desc pipelineLayoutDesc;
+        pipelineLayoutDesc.descriptorSetCount = 1;
+        pipelineLayoutDesc.descriptorSets = &descriptorSets[0];
+
+        PipelineLayout* pipelineLayout = gRenderer->createPipelineLayout(pipelineLayoutDesc);
+        if (!pipelineLayout) return FAILURE;
+
+        gPipelineLayout = pipelineLayout;
+    }
+
+    // Descriptor Set
+    {
+        DescriptorSet* descriptorSet = gRenderer->createDescriptorSet(descriptorSetLayout);
+        if (!descriptorSet) return FAILURE;
+
+        descriptorSet->setBuffer(0, 0, gConstantBuffer);
+
+        gDescriptorSet = descriptorSet;
+    }
+
+    // Pipeline State Object (PSO)
+    {
+        GraphicsPipelineStateDesc desc;
+
+        desc.pipelineLayout = gPipelineLayout;
+        desc.inputLayout = inputLayout;
+        desc.program = shaderProgram;
+
+        // ...
+
+        PipelineState* pipelineState = gRenderer->createGraphicsPipelineState(desc);
+        if (!pipelineState) return FAILURE;
+
+        gPipelineState = pipelineState;
+    }
 
     // Load model(s)
 

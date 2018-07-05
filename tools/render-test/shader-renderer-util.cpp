@@ -125,16 +125,27 @@ using namespace Slang;
     return SLANG_OK;
 }
 
-static BindingState::SamplerDesc _calcSamplerDesc(const InputSamplerDesc& srcDesc)
+static SamplerState::Desc _calcSamplerDesc(const InputSamplerDesc& srcDesc)
 {
-    BindingState::SamplerDesc dstDesc;
-    dstDesc.isCompareSampler = srcDesc.isCompareSampler;
+    SamplerState::Desc dstDesc;
+    if (srcDesc.isCompareSampler)
+    {
+        dstDesc.reductionOp = TextureReductionOp::Comparison;
+        dstDesc.comparisonFunc = ComparisonFunc::Less;
+    }
     return dstDesc;
 }
 
-/* static */BindingState::RegisterRange ShaderRendererUtil::calcRegisterRange(Renderer* renderer, const ShaderInputLayoutEntry& entry)
+static SamplerState* _createSamplerState(
+    Renderer*               renderer,
+    const InputSamplerDesc& srcDesc)
 {
-    typedef BindingState::RegisterRange RegisterRange;
+    return renderer->createSamplerState(_calcSamplerDesc(srcDesc));
+}
+
+/* static */BindingStateImpl::RegisterRange ShaderRendererUtil::calcRegisterRange(Renderer* renderer, const ShaderInputLayoutEntry& entry)
+{
+    typedef BindingStateImpl::RegisterRange RegisterRange;
 
     BindingStyle bindingStyle = RendererUtil::getBindingStyle(renderer->getRendererType());
 
@@ -189,7 +200,7 @@ static BindingState::SamplerDesc _calcSamplerDesc(const InputSamplerDesc& srcDes
     {
         const ShaderInputLayoutEntry& srcEntry = srcEntries[i];
 
-        const BindingState::RegisterRange registerSet = calcRegisterRange(renderer, srcEntry);
+        const BindingStateImpl::RegisterRange registerSet = calcRegisterRange(renderer, srcEntry);
         if (!registerSet.isValid())
         {
             assert(!"Couldn't find a binding");
@@ -198,46 +209,51 @@ static BindingState::SamplerDesc _calcSamplerDesc(const InputSamplerDesc& srcDes
 
         DescriptorSetLayout::SlotRangeDesc slotRangeDesc;
 
-
         switch (srcEntry.type)
         {
             case ShaderInputType::Buffer:
-            {
-                const InputBufferDesc& srcBuffer = srcEntry.bufferDesc;
+                {
+                    const InputBufferDesc& srcBuffer = srcEntry.bufferDesc;
 
-                const size_t bufferSize = srcEntry.bufferData.Count() * sizeof(uint32_t);
+                    switch (srcBuffer.type)
+                    {
+                    case InputBufferType::ConstantBuffer:
+                        slotRangeDesc.type = DescriptorSlotType::UniformBuffer;
+                        break;
 
-                RefPtr<BufferResource> bufferResource;
-                SLANG_RETURN_ON_FAIL(createBufferResource(srcEntry.bufferDesc, srcEntry.isOutput, bufferSize, srcEntry.bufferData.Buffer(), renderer, bufferResource));
-
-                descOut.addBufferResource(bufferResource, registerSet);
+                    case InputBufferType::StorageBuffer:
+                        slotRangeDesc.type = DescriptorSlotType::StorageBuffer;
+                        break;
+                    }
+                }
                 break;
-            }
+
             case ShaderInputType::CombinedTextureSampler:
-            {
-                RefPtr<TextureResource> texture;
-                SLANG_RETURN_ON_FAIL(generateTextureResource(srcEntry.textureDesc, textureBindFlags, renderer, texture));
-                descOut.addCombinedTextureSampler(texture, _calcSamplerDesc(srcEntry.samplerDesc), registerSet);
+                {
+                    slotRangeDesc.type = DescriptorSlotType::CombinedImageSampler;
+                }
                 break;
-            }
-            case ShaderInputType::Texture:
-            {
-                RefPtr<TextureResource> texture;
-                SLANG_RETURN_ON_FAIL(generateTextureResource(srcEntry.textureDesc, textureBindFlags, renderer, texture));
 
-                descOut.addTextureResource(texture, registerSet);
+            case ShaderInputType::Texture:
+                {
+                    if (srcEntry.textureDesc.isRWTexture)
+                    {
+                        slotRangeDesc.type = DescriptorSlotType::StorageImage;
+                    }
+                    else
+                    {
+                        slotRangeDesc.type = DescriptorSlotType::SampledImage;
+                    }
+                }
                 break;
-            }
+
             case ShaderInputType::Sampler:
-            {
                 slotRangeDesc.type = DescriptorSlotType::Sampler;
                 break;
-            }
+
             default:
-            {
                 assert(!"Unhandled type");
                 return SLANG_FAIL;
-            }
         }
     }
 
@@ -258,44 +274,64 @@ static BindingState::SamplerDesc _calcSamplerDesc(const InputSamplerDesc& srcDes
         switch (srcEntry.type)
         {
             case ShaderInputType::Buffer:
-            {
-                const InputBufferDesc& srcBuffer = srcEntry.bufferDesc;
+                {
+                    const InputBufferDesc& srcBuffer = srcEntry.bufferDesc;
 
-                const size_t bufferSize = srcEntry.bufferData.Count() * sizeof(uint32_t);
+                    const size_t bufferSize = srcEntry.bufferData.Count() * sizeof(uint32_t);
 
-                RefPtr<BufferResource> bufferResource;
-                SLANG_RETURN_ON_FAIL(createBufferResource(srcEntry.bufferDesc, srcEntry.isOutput, bufferSize, srcEntry.bufferData.Buffer(), renderer, bufferResource));
+                    RefPtr<BufferResource> bufferResource;
+                    SLANG_RETURN_ON_FAIL(createBufferResource(srcEntry.bufferDesc, srcEntry.isOutput, bufferSize, srcEntry.bufferData.Buffer(), renderer, bufferResource));
 
-                descriptorSet->setBuffer(i, 0, bufferResource);
+                    ResourceView::Desc viewDesc;
+                    viewDesc.usage = Resource::Usage::PixelShaderResource;
+                    auto bufferView = renderer->createBufferView(
+                        bufferResource,
+                        viewDesc);
+
+                    descriptorSet->setResource(i, 0, bufferView);
+                }
                 break;
-            }
+
             case ShaderInputType::CombinedTextureSampler:
-            {
-                RefPtr<TextureResource> texture;
-                SLANG_RETURN_ON_FAIL(generateTextureResource(srcEntry.textureDesc, textureBindFlags, renderer, texture));
-                descOut.addCombinedTextureSampler(texture, _calcSamplerDesc(srcEntry.samplerDesc), registerSet);
+                {
+                    RefPtr<TextureResource> texture;
+                    SLANG_RETURN_ON_FAIL(generateTextureResource(srcEntry.textureDesc, textureBindFlags, renderer, texture));
+
+                    auto sampler = _createSamplerState(renderer, srcEntry.samplerDesc);
+
+                    ResourceView::Desc viewDesc;
+                    viewDesc.usage = Resource::Usage::PixelShaderResource;
+                    auto textureView = renderer->createTextureView(
+                        texture,
+                        viewDesc);
+
+                    descriptorSet->setCombinedTextureSampler(i, 0, textureView, sampler);
+                }
                 break;
-            }
+
             case ShaderInputType::Texture:
-            {
-                RefPtr<TextureResource> texture;
-                SLANG_RETURN_ON_FAIL(generateTextureResource(srcEntry.textureDesc, textureBindFlags, renderer, texture));
+                {
+                    RefPtr<TextureResource> texture;
+                    SLANG_RETURN_ON_FAIL(generateTextureResource(srcEntry.textureDesc, textureBindFlags, renderer, texture));
 
-                descriptorSet->setTexture(i, 0, textureView);
+                    ResourceView::Desc viewDesc;
+                    viewDesc.usage = Resource::Usage::PixelShaderResource;
+                    auto textureView = renderer->createTextureView(
+                        texture,
+                        viewDesc);
+
+                    descriptorSet->setResource(i, 0, textureView);
+                }
                 break;
-            }
+
             case ShaderInputType::Sampler:
-            {
-                    renderer->createSampler();
-
-                slotRangeDesc.type = DescriptorSlotType::Sampler;
+                auto sampler = _createSamplerState(renderer, srcEntry.samplerDesc);
+                descriptorSet->setSampler(i, 0, sampler);
                 break;
-            }
+
             default:
-            {
                 assert(!"Unhandled type");
                 return SLANG_FAIL;
-            }
         }
     }
 
@@ -305,8 +341,8 @@ static BindingState::SamplerDesc _calcSamplerDesc(const InputSamplerDesc& srcDes
 
 /* static */Result ShaderRendererUtil::createBindingState(const ShaderInputLayout& layout, Renderer* renderer, BindingStateImpl** outBindingState)
 {
-    SLANG_RETURN_ON_FAIL(createBindingStateDesc(layout.entries.Buffer(), int(layout.entries.Count()), renderer, descOut));
-    descOut.m_numRenderTargets = layout.numRenderTargets;
+    SLANG_RETURN_ON_FAIL(createBindingState(layout.entries.Buffer(), int(layout.entries.Count()), renderer, descOut));
+    (*outBindingState)->m_numRenderTargets = layout.numRenderTargets;
     return SLANG_OK;
 }
 

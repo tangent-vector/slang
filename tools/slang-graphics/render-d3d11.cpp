@@ -1,4 +1,4 @@
-﻿// render-d3d11.cpp
+// render-d3d11.cpp
 
 #define _CRT_SECURE_NO_WARNINGS
 
@@ -58,6 +58,11 @@ public:
     virtual void presentFrame() override;
     virtual TextureResource* createTextureResource(Resource::Usage initialUsage, const TextureResource::Desc& desc, const TextureResource::Data* initData) override;
     virtual BufferResource* createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& bufferDesc, const void* initData) override;
+    virtual SamplerState* createSamplerState(SamplerState::Desc const& desc) override;
+
+    virtual ResourceView* createTextureView(TextureResource* texture, ResourceView::Desc const& desc) override;
+    virtual ResourceView* createBufferView(BufferResource* texture, ResourceView::Desc const& desc) override;
+
     virtual SlangResult captureScreenSurface(Surface& surfaceOut) override;
     virtual InputLayout* createInputLayout( const InputElementDesc* inputElements, UInt inputElementCount) override;
 
@@ -77,7 +82,7 @@ public:
 
     virtual void setVertexBuffers(UInt startSlot, UInt slotCount, BufferResource*const* buffers, const UInt* strides,  const UInt* offsets) override;
     virtual void setIndexBuffer(BufferResource* buffer, Format indexFormat, UInt offset) override;
-    virtual void setDepthStencilTarget(TextureView* depthStencilView) override;
+    virtual void setDepthStencilTarget(ResourceView* depthStencilView) override;
     virtual void setPipelineState(PipelineType pipelineType, PipelineState* state) override;
     virtual void draw(UInt vertexCount, UInt startVertex) override;
     virtual void drawIndexed(UInt indexCount, UInt startIndex, UInt baseVertex) override;
@@ -117,6 +122,8 @@ public:
         UnorderedAccessView,
         Sampler,
 
+        CombinedTextureSampler,
+
         CountOf,
     };
 
@@ -127,6 +134,7 @@ public:
         {
             D3D11DescriptorSlotType type;
             UInt                    arrayIndex;
+            UInt                    pairedSamplerArrayIndex;
         };
         List<RangeInfo> m_ranges;
 
@@ -156,8 +164,14 @@ public:
     class DescriptorSetImpl : public DescriptorSet
     {
     public:
-        virtual void setTexture(UInt range, UInt index, TextureView* texture) override;
-        virtual void setBuffer(UInt range, UInt index, BufferResource* buffer) override;
+        virtual void setConstantBuffer(UInt range, UInt index, BufferResource* buffer) override;
+        virtual void setResource(UInt range, UInt index, ResourceView* view) override;
+        virtual void setSampler(UInt range, UInt index, SamplerState* sampler) override;
+        virtual void setCombinedTextureSampler(
+            UInt range,
+            UInt index,
+            ResourceView*   textureView,
+            SamplerState*   sampler) override;
 
         RefPtr<DescriptorSetLayoutImpl>         m_layout;
 
@@ -206,20 +220,51 @@ public:
 
     };
 
-    class TextureViewImpl : public TextureView
+    class SamplerStateImpl : public SamplerState
     {
     public:
+        ComPtr<ID3D11SamplerState> m_sampler;
+    };
 
-        // TODO: we should be able to store just one pointer,
-        // and cast as appropriate based on the type of view.
 
+    class ResourceViewImpl : public ResourceView
+    {
+    public:
+        enum class Type
+        {
+            SRV,
+            UAV,
+            DSV,
+            RTV,
+        };
+        Type m_type;
+    };
+
+    class ShaderResourceViewImpl : public ResourceViewImpl
+    {
+    public:
         ComPtr<ID3D11ShaderResourceView>    m_srv;
+    };
+
+    class UnorderedAccessViewImpl : public ResourceViewImpl
+    {
+    public:
         ComPtr<ID3D11UnorderedAccessView>   m_uav;
+    };
+
+    class DepthStencilViewImpl : public ResourceViewImpl
+    {
+    public:
         ComPtr<ID3D11DepthStencilView>      m_dsv;
+    };
+
+    class RenderTargetViewImpl : public ResourceViewImpl
+    {
+    public:
         ComPtr<ID3D11RenderTargetView>      m_rtv;
     };
 
-	class InputLayoutImpl: public InputLayout
+    class InputLayoutImpl: public InputLayout
 	{
 		public:
 		ComPtr<ID3D11InputLayout> m_layout;
@@ -756,6 +801,216 @@ BufferResource* D3D11Renderer::createBufferResource(Resource::Usage initialUsage
     return buffer.detach();
 }
 
+D3D11_FILTER_TYPE translateFilterMode(TextureFilteringMode mode)
+{
+    switch (mode)
+    {
+    default:
+        return D3D11_FILTER_TYPE(0);
+
+#define CASE(SRC, DST) \
+    case TextureFilteringMode::SRC: return D3D11_FILTER_TYPE_##DST
+
+        CASE(Point, POINT);
+        CASE(Linear, LINEAR);
+
+#undef CASE
+    }
+}
+
+D3D11_FILTER_REDUCTION_TYPE translateFilterReduction(TextureReductionOp op)
+{
+    switch (op)
+    {
+    default:
+        return D3D11_FILTER_REDUCTION_TYPE(0);
+
+#define CASE(SRC, DST) \
+    case TextureReductionOp::SRC: return D3D11_FILTER_REDUCTION_TYPE_##DST
+
+        CASE(Average, STANDARD);
+        CASE(Comparison, COMPARISON);
+        CASE(Minimum, MINIMUM);
+        CASE(Maximum, MAXIMUM);
+
+#undef CASE
+    }
+}
+
+D3D11_TEXTURE_ADDRESS_MODE translateAddressingMode(TextureAddressingMode mode)
+{
+    switch (mode)
+    {
+    default:
+        return D3D11_TEXTURE_ADDRESS_MODE(0);
+
+#define CASE(SRC, DST) \
+    case TextureAddressingMode::SRC: return D3D11_TEXTURE_ADDRESS_##DST
+
+    CASE(Wrap,          WRAP);
+    CASE(ClampToEdge,   CLAMP);
+    CASE(ClampToBorder, BORDER);
+    CASE(MirrorRepeat,  MIRROR);
+    CASE(MirrorOnce,    MIRROR_ONCE);
+
+#undef CASE
+    }
+}
+
+static D3D11_COMPARISON_FUNC translateComparisonFunc(ComparisonFunc func)
+{
+    switch (func)
+    {
+    default:
+        // TODO: need to report failures
+        return D3D11_COMPARISON_ALWAYS;
+
+#define CASE(FROM, TO) \
+    case ComparisonFunc::FROM: return D3D11_COMPARISON_##TO
+
+        CASE(Never, NEVER);
+        CASE(Less, LESS);
+        CASE(Equal, EQUAL);
+        CASE(LessEqual, LESS_EQUAL);
+        CASE(Greater, GREATER);
+        CASE(NotEqual, NOT_EQUAL);
+        CASE(GreaterEqual, GREATER_EQUAL);
+        CASE(Always, ALWAYS);
+#undef CASE
+    }
+}
+
+SamplerState* D3D11Renderer::createSamplerState(SamplerState::Desc const& desc)
+{
+    D3D11_FILTER_REDUCTION_TYPE dxReduction = translateFilterReduction(desc.reductionOp);
+    D3D11_FILTER dxFilter;
+    if (desc.maxAnisotropy > 1)
+    {
+        dxFilter = D3D11_ENCODE_ANISOTROPIC_FILTER(dxReduction);
+    }
+    else
+    {
+        D3D11_FILTER_TYPE dxMin = translateFilterMode(desc.minFilter);
+        D3D11_FILTER_TYPE dxMag = translateFilterMode(desc.magFilter);
+        D3D11_FILTER_TYPE dxMip = translateFilterMode(desc.mipFilter);
+
+        dxFilter = D3D11_ENCODE_BASIC_FILTER(dxMin, dxMag, dxMip, dxReduction);
+    }
+
+    D3D11_SAMPLER_DESC dxDesc = {};
+    dxDesc.Filter = dxFilter;
+    dxDesc.AddressU = translateAddressingMode(desc.addressU);
+    dxDesc.AddressV = translateAddressingMode(desc.addressV);
+    dxDesc.AddressW = translateAddressingMode(desc.addressW);
+    dxDesc.MipLODBias = desc.mipLODBias;
+    dxDesc.MaxAnisotropy = desc.maxAnisotropy;
+    dxDesc.ComparisonFunc = translateComparisonFunc(desc.comparisonFunc);
+    for (int ii = 0; ii < 4; ++ii)
+        dxDesc.BorderColor[ii] = desc.borderColor[ii];
+    dxDesc.MinLOD = desc.minLOD;
+    dxDesc.MaxLOD = desc.maxLOD;
+
+    ComPtr<ID3D11SamplerState> sampler;
+    SLANG_RETURN_NULL_ON_FAIL(m_device->CreateSamplerState(
+        &dxDesc,
+        sampler.writeRef()));
+
+    RefPtr<SamplerStateImpl> samplerImpl = new SamplerStateImpl();
+    samplerImpl->m_sampler = sampler;
+    return samplerImpl.detach();
+}
+
+ResourceView* D3D11Renderer::createTextureView(TextureResource* texture, ResourceView::Desc const& desc)
+{
+    auto resourceImpl = (TextureResourceImpl*) texture;
+
+    switch (desc.usage)
+    {
+    default:
+        return nullptr;
+
+    case Resource::Usage::RenderTarget:
+        {
+            ComPtr<ID3D11RenderTargetView> rtv;
+            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateRenderTargetView(resourceImpl->m_resource, nullptr, rtv.writeRef()));
+
+            RefPtr<RenderTargetViewImpl> viewImpl = new RenderTargetViewImpl();
+            viewImpl->m_rtv = rtv;
+            return viewImpl.detach();
+        }
+        break;
+
+    case Resource::Usage::DepthRead:
+    case Resource::Usage::DepthWrite:
+        {
+            ComPtr<ID3D11DepthStencilView> dsv;
+            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateDepthStencilView(resourceImpl->m_resource, nullptr, dsv.writeRef()));
+
+            RefPtr<DepthStencilViewImpl> viewImpl = new DepthStencilViewImpl();
+            viewImpl->m_dsv = dsv;
+            return viewImpl.detach();
+        }
+        break;
+
+    case Resource::Usage::UnorderedAccess:
+        {
+            ComPtr<ID3D11UnorderedAccessView> uav;
+            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateUnorderedAccessView(resourceImpl->m_resource, nullptr, uav.writeRef()));
+
+            RefPtr<UnorderedAccessViewImpl> viewImpl = new UnorderedAccessViewImpl();
+            viewImpl->m_uav = uav;
+            return viewImpl.detach();
+        }
+        break;
+
+    case Resource::Usage::PixelShaderResource:
+    case Resource::Usage::NonPixelShaderResource:
+        {
+            ComPtr<ID3D11ShaderResourceView> srv;
+            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateShaderResourceView(resourceImpl->m_resource, nullptr, srv.writeRef()));
+
+            RefPtr<ShaderResourceViewImpl> viewImpl = new ShaderResourceViewImpl();
+            viewImpl->m_srv = srv;
+            return viewImpl.detach();
+        }
+        break;
+    }
+}
+
+ResourceView* D3D11Renderer::createBufferView(BufferResource* buffer, ResourceView::Desc const& desc)
+{
+    auto resourceImpl = (BufferResourceImpl*) buffer;
+
+    switch (desc.usage)
+    {
+    default:
+        return nullptr;
+
+    case Resource::Usage::UnorderedAccess:
+        {
+            ComPtr<ID3D11UnorderedAccessView> uav;
+            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateUnorderedAccessView(resourceImpl->m_buffer, nullptr, uav.writeRef()));
+
+            RefPtr<UnorderedAccessViewImpl> viewImpl = new UnorderedAccessViewImpl();
+            viewImpl->m_uav = uav;
+            return viewImpl.detach();
+        }
+        break;
+
+    case Resource::Usage::PixelShaderResource:
+    case Resource::Usage::NonPixelShaderResource:
+        {
+            ComPtr<ID3D11ShaderResourceView> srv;
+            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateShaderResourceView(resourceImpl->m_buffer, nullptr, srv.writeRef()));
+
+            RefPtr<ShaderResourceViewImpl> viewImpl = new ShaderResourceViewImpl();
+            viewImpl->m_srv = srv;
+            return viewImpl.detach();
+        }
+        break;
+    }
+}
+
 InputLayout* D3D11Renderer::createInputLayout(const InputElementDesc* inputElementsIn, UInt inputElementCount)
 {
     D3D11_INPUT_ELEMENT_DESC inputElements[16] = {};
@@ -911,9 +1166,9 @@ void D3D11Renderer::setIndexBuffer(BufferResource* buffer, Format indexFormat, U
     m_immediateContext->IASetIndexBuffer(((BufferResourceImpl*)buffer)->m_buffer, dxFormat, offset);
 }
 
-void D3D11Renderer::setDepthStencilTarget(TextureView* depthStencilView)
+void D3D11Renderer::setDepthStencilTarget(ResourceView* depthStencilView)
 {
-    m_dsvBinding = ((TextureViewImpl*) depthStencilView)->m_dsv;
+    m_dsvBinding = ((DepthStencilViewImpl*) depthStencilView)->m_dsv;
     m_targetBindingsDirty[int(PipelineType::Graphics)] = true;
 }
 
@@ -1019,29 +1274,6 @@ ShaderProgram* D3D11Renderer::createProgram(const ShaderProgram::Desc& desc)
         shaderProgram->m_vertexShader.swap(vertexShader);
         shaderProgram->m_pixelShader.swap(pixelShader);
         return shaderProgram;
-    }
-}
-
-static D3D11_COMPARISON_FUNC translateComparisonFunc(ComparisonFunc func)
-{
-    switch(func)
-    {
-    default:
-        // TODO: need to report failures
-        return D3D11_COMPARISON_ALWAYS;
-
-#define CASE(FROM, TO) \
-    case ComparisonFunc::FROM: return D3D11_COMPARISON_##TO
-
-    CASE(Never,         NEVER);
-    CASE(Less,          LESS);
-    CASE(Equal,         EQUAL);
-    CASE(LessEqual,     LESS_EQUAL);
-    CASE(Greater,       GREATER);
-    CASE(NotEqual,      NOT_EQUAL);
-    CASE(GreaterEqual,  GREATER_EQUAL);
-    CASE(Always,        ALWAYS);
-#undef CASE
     }
 }
 
@@ -1519,31 +1751,79 @@ void D3D11Renderer::_flushComputeState()
             uavCount,
             m_uavBindings[pipelineType][0].readRef(),
             nullptr);
-    }}
-
-void D3D11Renderer::DescriptorSetImpl::setTexture(UInt range, UInt index, TextureView* view)
-{
-    auto viewImpl = (TextureViewImpl*) view;
+    }
 }
 
-void D3D11Renderer::DescriptorSetImpl::setBuffer(UInt range, UInt index, BufferResource* buffer)
+void D3D11Renderer::DescriptorSetImpl::setConstantBuffer(UInt range, UInt index, BufferResource* buffer)
 {
     auto bufferImpl = (BufferResourceImpl*) buffer;
     auto& rangeInfo = m_layout->m_ranges[range];
 
-    switch(rangeInfo.type)
+    assert(rangeInfo.type == D3D11DescriptorSlotType::ConstantBuffer);
+
+    m_cbs[rangeInfo.arrayIndex + index] = bufferImpl->m_buffer;
+}
+
+void D3D11Renderer::DescriptorSetImpl::setResource(UInt range, UInt index, ResourceView* view)
+{
+    auto viewImpl = (ResourceViewImpl*)view;
+    auto& rangeInfo = m_layout->m_ranges[range];
+
+    switch (rangeInfo.type)
     {
-    default:
+    case D3D11DescriptorSlotType::ShaderResourceView:
+        {
+            assert(viewImpl->m_type == ResourceViewImpl::Type::SRV);
+            auto srvImpl = (ShaderResourceViewImpl*)viewImpl;
+            m_srvs[rangeInfo.arrayIndex + index] = srvImpl->m_srv;
+        }
         break;
 
-    case D3D11DescriptorSlotType::ConstantBuffer:
+    case D3D11DescriptorSlotType::UnorderedAccessView:
         {
-            m_cbs[rangeInfo.arrayIndex + index] = bufferImpl->m_buffer;
+            assert(viewImpl->m_type == ResourceViewImpl::Type::UAV);
+            auto uavImpl = (UnorderedAccessViewImpl*)viewImpl;
+            m_uavs[rangeInfo.arrayIndex + index] = uavImpl->m_uav;
         }
+        break;
+
+    default:
+        assert(!"invalid to bind a resource view to this descriptor range");
         break;
     }
 }
 
+void D3D11Renderer::DescriptorSetImpl::setSampler(UInt range, UInt index, SamplerState* sampler)
+{
+    auto samplerImpl = (SamplerStateImpl*) sampler;
+    auto& rangeInfo = m_layout->m_ranges[range];
+
+    assert(rangeInfo.type == D3D11DescriptorSlotType::Sampler);
+
+    m_samplers[rangeInfo.arrayIndex + index] = samplerImpl->m_sampler;
+}
+
+void D3D11Renderer::DescriptorSetImpl::setCombinedTextureSampler(
+    UInt            range,
+    UInt            index,
+    ResourceView*   textureView,
+    SamplerState*   sampler)
+{
+    auto viewImpl = (ResourceViewImpl*) textureView;
+    auto samplerImpl = (SamplerStateImpl*)sampler;
+
+    auto& rangeInfo = m_layout->m_ranges[range];
+    assert(rangeInfo.type == D3D11DescriptorSlotType::CombinedSamplerTexture);
+
+    assert(viewImpl->m_type == ResourceViewImpl::Type::SRV);
+    auto srvImpl = (ShaderResourceViewImpl*)viewImpl;
+    m_srvs[rangeInfo.arrayIndex + index] = srvImpl->m_srv;
+
+    m_samplers[rangeInfo.arrayIndex + index] = samplerImpl->m_sampler;
+
+    // TODO: need a place to bind the matching sampler...
+    m_srvs[rangeInfo.pairedSamplerArrayIndex + index] = srvImpl->m_srv;
+}
 
 void D3D11Renderer::setDescriptorSet(PipelineType pipelineType, PipelineLayout* layout, UInt index, DescriptorSet* descriptorSet)
 {

@@ -1,4 +1,4 @@
-﻿// render.h
+// render.h
 #pragma once
 
 #include "window.h"
@@ -413,6 +413,62 @@ class TextureResource: public Resource
     Desc m_desc;
 };
 
+enum class ComparisonFunc : uint8_t
+{
+    Never           = 0,
+    Less            = 0x01,
+    Equal           = 0x02,
+    LessEqual       = 0x03,
+    Greater         = 0x04,
+    NotEqual        = 0x05,
+    GreaterEqual    = 0x06,
+    Always          = 0x07,
+};
+
+enum class TextureFilteringMode
+{
+    Point,
+    Linear,
+};
+
+enum class TextureAddressingMode
+{
+    Wrap,
+    ClampToEdge,
+    ClampToBorder,
+    MirrorRepeat,
+    MirrorOnce,
+};
+
+enum class TextureReductionOp
+{
+    Average,
+    Comparison,
+    Minimum,
+    Maximum,
+};
+
+class SamplerState : public Slang::RefObject
+{
+public:
+    struct Desc
+    {
+        TextureFilteringMode    minFilter       = TextureFilteringMode::Linear;
+        TextureFilteringMode    magFilter       = TextureFilteringMode::Linear;
+        TextureFilteringMode    mipFilter       = TextureFilteringMode::Linear;
+        TextureReductionOp      reductionOp     = TextureReductionOp::Average;
+        TextureAddressingMode   addressU        = TextureAddressingMode::Wrap;
+        TextureAddressingMode   addressV        = TextureAddressingMode::Wrap;
+        TextureAddressingMode   addressW        = TextureAddressingMode::Wrap;
+        float                   mipLODBias      = 0.0f;
+        uint32_t                maxAnisotropy   = 1;
+        ComparisonFunc          comparisonFunc  = ComparisonFunc::Never;
+        float                   borderColor[4]  = { 1.0f, 1.0f, 1.0f, 1.0f };
+        float                   minLOD          = -FLT_MAX;
+        float                   maxLOD          = FLT_MAX;
+    };
+};
+
 enum class DescriptorSlotType
 {
     Unknown,
@@ -491,15 +547,26 @@ public:
     };
 };
 
-class TextureView : public Slang::RefObject
+class ResourceView : public Slang::RefObject
 {
+public:
+    struct Desc
+    {
+        Resource::Usage usage;
+    };
 };
 
 class DescriptorSet : public Slang::RefObject
 {
 public:
-    virtual void setTexture(UInt range, UInt index, TextureView* texture) = 0;
-    virtual void setBuffer(UInt range, UInt index, BufferResource* buffer) = 0;
+    virtual void setConstantBuffer(UInt range, UInt index, BufferResource* buffer) = 0;
+    virtual void setResource(UInt range, UInt index, ResourceView* view) = 0;
+    virtual void setSampler(UInt range, UInt index, SamplerState* sampler) = 0;
+    virtual void setCombinedTextureSampler(
+        UInt range,
+        UInt index,
+        ResourceView*   textureView,
+        SamplerState*   sampler) = 0;
 };
 
 
@@ -590,18 +657,6 @@ public:
     Desc m_desc;
 };
 #endif
-
-enum class ComparisonFunc : uint8_t
-{
-    Never           = 0,
-    Less            = 0x01,
-    Equal           = 0x02,
-    LessEqual       = 0x03,
-    Greater         = 0x04,
-    NotEqual        = 0x05,
-    GreaterEqual    = 0x06,
-    Always          = 0x07,
-};
 
 enum class StencilOp : uint8_t
 {
@@ -716,6 +771,11 @@ public:
         /// Create a buffer resource
     virtual BufferResource* createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& desc, const void* initData = nullptr) { return nullptr; }
 
+    virtual SamplerState* createSamplerState(SamplerState::Desc const& desc) = 0;
+
+    virtual ResourceView* createTextureView(TextureResource* texture, ResourceView::Desc const& desc) = 0;
+    virtual ResourceView* createBufferView(BufferResource* texture, ResourceView::Desc const& desc) = 0;
+
         /// Captures the back buffer and stores the result in surfaceOut. If the surface contains data - it will either be overwritten (if same size and format), or freed and a re-allocated.
     virtual SlangResult captureScreenSurface(Surface& surfaceOut) = 0;
 
@@ -745,7 +805,7 @@ public:
 
     virtual void setIndexBuffer(BufferResource* buffer, Format indexFormat, UInt offset = 0) = 0;
 
-    virtual void setDepthStencilTarget(TextureView* depthStencilView) = 0;
+    virtual void setDepthStencilTarget(ResourceView* depthStencilView) = 0;
 
     virtual void setPipelineState(PipelineType pipelineType, PipelineState* state) = 0;
 

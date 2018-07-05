@@ -86,6 +86,11 @@ public:
     virtual void presentFrame() override;
     virtual TextureResource* createTextureResource(Resource::Usage initialUsage, const TextureResource::Desc& desc, const TextureResource::Data* initData) override;
     virtual BufferResource* createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& descIn, const void* initData) override;
+    virtual SamplerState* createSamplerState(SamplerState::Desc const& desc) override;
+
+    virtual ResourceView* createTextureView(TextureResource* texture, ResourceView::Desc const& desc) override;
+    virtual ResourceView* createBufferView(BufferResource* texture, ResourceView::Desc const& desc) override;
+
     virtual SlangResult captureScreenSurface(Surface& surfaceOut) override;
     virtual InputLayout* createInputLayout(const InputElementDesc* inputElements, UInt inputElementCount) override;
 
@@ -105,7 +110,7 @@ public:
 
     virtual void setVertexBuffers(UInt startSlot, UInt slotCount, BufferResource*const* buffers, const UInt* strides, const UInt* offsets) override;
     virtual void setIndexBuffer(BufferResource* buffer, Format indexFormat, UInt offset) override;
-    virtual void setDepthStencilTarget(TextureView* depthStencilView) override;
+    virtual void setDepthStencilTarget(ResourceView* depthStencilView) override;
     virtual void setPipelineState(PipelineType pipelineType, PipelineState* state) override;
     virtual void draw(UInt vertexCount, UInt startVertex) override;
     virtual void drawIndexed(UInt indexCount, UInt startIndex, UInt baseVertex) override;
@@ -872,7 +877,7 @@ void GLRenderer::setIndexBuffer(BufferResource* buffer, Format indexFormat, UInt
 {
 }
 
-void GLRenderer::setDepthStencilTarget(TextureView* depthStencilView)
+void GLRenderer::setDepthStencilTarget(ResourceView* depthStencilView)
 {
 }
 

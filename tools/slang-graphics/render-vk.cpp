@@ -47,6 +47,11 @@ public:
     virtual void presentFrame() override;
     virtual TextureResource* createTextureResource(Resource::Usage initialUsage, const TextureResource::Desc& desc, const TextureResource::Data* initData) override;
     virtual BufferResource* createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& bufferDesc, const void* initData) override;
+    virtual SamplerState* createSamplerState(SamplerState::Desc const& desc) override;
+
+    virtual ResourceView* createTextureView(TextureResource* texture, ResourceView::Desc const& desc) override;
+    virtual ResourceView* createBufferView(BufferResource* texture, ResourceView::Desc const& desc) override;
+
     virtual SlangResult captureScreenSurface(Surface& surface) override;
     virtual InputLayout* createInputLayout(const InputElementDesc* inputElements, UInt inputElementCount) override;
 
@@ -66,7 +71,7 @@ public:
 
     virtual void setVertexBuffers(UInt startSlot, UInt slotCount, BufferResource*const* buffers, const UInt* strides, const UInt* offsets) override;
     virtual void setIndexBuffer(BufferResource* buffer, Format indexFormat, UInt offset) override;
-    virtual void setDepthStencilTarget(TextureView* depthStencilView) override;
+    virtual void setDepthStencilTarget(ResourceView* depthStencilView) override;
     virtual void setPipelineState(PipelineType pipelineType, PipelineState* state) override;
     virtual void draw(UInt vertexCount, UInt startVertex) override;
     virtual void drawIndexed(UInt indexCount, UInt startIndex, UInt baseVertex) override;
@@ -172,13 +177,42 @@ public:
         const VulkanApi* m_api;
     };
 
-    class TextureViewImpl : public TextureView
+    class ResourceViewImpl : public ResourceView
     {
     public:
-        VkImageView m_view;
+        enum class ViewType
+        {
+            Texture,
+            TexelBuffer,
+            PlainBuffer,
+        };
+        ViewType            m_type;
     };
 
-	class ShaderProgramImpl: public ShaderProgram
+    class TextureResourceViewImpl : public ResourceView
+    {
+    public:
+        RefPtr<TextureResourceImpl> m_texture;
+        VkImageView                 m_view;
+        VkImageLayout               m_layout;
+    };
+
+    class TexelBufferResourceViewImpl : public ResourceView
+    {
+    public:
+        RefPtr<BufferResourceImpl>  m_buffer;
+        VkBufferView m_view;
+    };
+
+    class PlainBufferResourceViewImpl : public ResourceView
+    {
+    public:
+        RefPtr<BufferResourceImpl>  m_buffer;
+        VkDeviceSize                offset;
+        VkDeviceSize                size;
+    };
+
+    class ShaderProgramImpl: public ShaderProgram
     {
 		public:
 
@@ -259,8 +293,14 @@ public:
         {
         }
 
-        virtual void setTexture(UInt range, UInt index, TextureView* texture) override;
-        virtual void setBuffer(UInt range, UInt index, BufferResource* buffer) override;
+        virtual void setConstantBuffer(UInt range, UInt index, BufferResource* buffer) override;
+        virtual void setResource(UInt range, UInt index, ResourceView* view) override;
+        virtual void setSampler(UInt range, UInt index, SamplerState* sampler) override;
+        virtual void setCombinedTextureSampler(
+            UInt range,
+            UInt index,
+            ResourceView*   textureView,
+            SamplerState*   sampler) override;
 
         RefPtr<VKRenderer>                  m_renderer;
         RefPtr<DescriptorSetLayoutImpl>     m_layout;
@@ -1610,7 +1650,7 @@ void VKRenderer::setIndexBuffer(BufferResource* buffer, Format indexFormat, UInt
 {
 }
 
-void VKRenderer::setDepthStencilTarget(TextureView* depthStencilView)
+void VKRenderer::setDepthStencilTarget(ResourceView* depthStencilView)
 {
 }
 
@@ -1973,28 +2013,9 @@ DescriptorSet* VKRenderer::createDescriptorSet(DescriptorSetLayout* layout)
     return descriptorSetImpl.detach();
 }
 
-void VKRenderer::DescriptorSetImpl::setTexture(UInt range, UInt index, TextureView* view)
+void VKRenderer::DescriptorSetImpl::setConstantBuffer(UInt range, UInt index, BufferResource* buffer)
 {
-    auto viewImpl = (TextureViewImpl*) view;
-
-    VkDescriptorImageInfo imageInfo = {};
-    imageInfo.imageView = viewImpl->m_view;
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    VkWriteDescriptorSet writeInfo = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
-    writeInfo.dstSet = m_descriptorSet;
-    writeInfo.dstBinding = range;
-    writeInfo.dstArrayElement = index;
-    writeInfo.descriptorCount = 1;
-    writeInfo.descriptorType = m_layout->m_ranges[range].descriptorType;
-    writeInfo.pImageInfo = &imageInfo;
-
-    m_renderer->m_api.vkUpdateDescriptorSets(m_renderer->m_device, 1, &writeInfo, 0, nullptr);
-}
-
-void VKRenderer::DescriptorSetImpl::setBuffer(UInt range, UInt index, BufferResource* buffer)
-{
-    auto bufferImpl = (BufferResourceImpl*) buffer;
+    auto bufferImpl = (BufferResourceImpl*)buffer;
 
     VkDescriptorBufferInfo bufferInfo = {};
     bufferInfo.buffer = bufferImpl->m_buffer.m_buffer;
@@ -2010,6 +2031,83 @@ void VKRenderer::DescriptorSetImpl::setBuffer(UInt range, UInt index, BufferReso
     writeInfo.pBufferInfo = &bufferInfo;
 
     m_renderer->m_api.vkUpdateDescriptorSets(m_renderer->m_device, 1, &writeInfo, 0, nullptr);
+}
+
+void VKRenderer::DescriptorSetImpl::setResource(UInt range, UInt index, ResourceView* view)
+{
+    auto viewImpl = (ResourceViewImpl*)view;
+    switch (viewImpl->m_type)
+    {
+    case ResourceViewImpl::ViewType::Texture:
+        {
+            auto textureViewImpl = (TextureResourceViewImpl*)viewImpl;
+            VkDescriptorImageInfo imageInfo = {};
+            imageInfo.imageView = textureViewImpl->m_view;
+            imageInfo.imageLayout = textureViewImpl->m_layout;
+            //            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+            VkWriteDescriptorSet writeInfo = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+            writeInfo.dstSet = m_descriptorSet;
+            writeInfo.dstBinding = range;
+            writeInfo.dstArrayElement = index;
+            writeInfo.descriptorCount = 1;
+            writeInfo.descriptorType = m_layout->m_ranges[range].descriptorType;
+            writeInfo.pImageInfo = &imageInfo;
+
+            m_renderer->m_api.vkUpdateDescriptorSets(m_renderer->m_device, 1, &writeInfo, 0, nullptr);
+        }
+        break;
+
+    case ResourceViewImpl::ViewType::TexelBuffer:
+        {
+            auto bufferViewImpl = (TexelBufferResourceViewImpl*)viewImpl;
+
+            VkWriteDescriptorSet writeInfo = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+            writeInfo.dstSet = m_descriptorSet;
+            writeInfo.dstBinding = range;
+            writeInfo.dstArrayElement = index;
+            writeInfo.descriptorCount = 1;
+            writeInfo.descriptorType = m_layout->m_ranges[range].descriptorType;
+            writeInfo.pTexelBufferView = &bufferViewImpl->m_view;
+
+            m_renderer->m_api.vkUpdateDescriptorSets(m_renderer->m_device, 1, &writeInfo, 0, nullptr);
+        }
+        break;
+
+    case ResourceViewImpl::ViewType::PlainBuffer:
+        {
+            auto bufferViewImpl = (PlainBufferResourceViewImpl*) viewImpl;
+
+            VkDescriptorBufferInfo bufferInfo = {};
+            bufferInfo.buffer = bufferViewImpl->m_buffer->m_buffer.m_buffer;
+            bufferInfo.offset = bufferViewImpl->offset;
+            bufferInfo.range = bufferViewImpl->size;
+
+            VkWriteDescriptorSet writeInfo = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+            writeInfo.dstSet = m_descriptorSet;
+            writeInfo.dstBinding = range;
+            writeInfo.dstArrayElement = index;
+            writeInfo.descriptorCount = 1;
+            writeInfo.descriptorType = m_layout->m_ranges[range].descriptorType;
+            writeInfo.pBufferInfo = &bufferInfo;
+
+            m_renderer->m_api.vkUpdateDescriptorSets(m_renderer->m_device, 1, &writeInfo, 0, nullptr);
+        }
+        break;
+
+    }
+}
+
+void VKRenderer::DescriptorSetImpl::setSampler(UInt range, UInt index, SamplerState* sampler)
+{
+}
+
+void VKRenderer::DescriptorSetImpl::setCombinedTextureSampler(
+    UInt range,
+    UInt index,
+    ResourceView*   textureView,
+    SamplerState*   sampler)
+{
 }
 
 void VKRenderer::setDescriptorSet(PipelineType pipelineType, PipelineLayout* layout, UInt index, DescriptorSet* descriptorSet)
