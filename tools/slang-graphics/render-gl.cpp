@@ -89,7 +89,7 @@ public:
     virtual SamplerState* createSamplerState(SamplerState::Desc const& desc) override;
 
     virtual ResourceView* createTextureView(TextureResource* texture, ResourceView::Desc const& desc) override;
-    virtual ResourceView* createBufferView(BufferResource* texture, ResourceView::Desc const& desc) override;
+    virtual ResourceView* createBufferView(BufferResource* buffer, ResourceView::Desc const& desc) override;
 
     virtual SlangResult captureScreenSurface(Surface& surfaceOut) override;
     virtual InputLayout* createInputLayout(const InputElementDesc* inputElements, UInt inputElementCount) override;
@@ -123,6 +123,7 @@ public:
     enum
     {
         kMaxVertexStreams = 16,
+        kMaxDescriptorSetCount = 8,
     };
 
     struct VertexAttributeFormat
@@ -200,6 +201,28 @@ public:
         GLuint m_handle;
     };
 
+    class SamplerStateImpl : public SamplerState
+    {
+    public:
+        GLuint m_samplerID;
+    };
+
+    class ResourceViewImpl : public ResourceView
+    {
+    };
+
+    class TextureViewImpl : public ResourceViewImpl
+    {
+    public:
+        GLuint m_textureID;
+    };
+
+    class BufferViewImpl : public ResourceViewImpl
+    {
+    public:
+        GLuint m_bufferID;
+    };
+
 #if 0
     struct BindingDetail
     {
@@ -231,6 +254,53 @@ public:
     };
 #endif
 
+    enum class GLDescriptorSlotType
+    {
+        ConstantBuffer,
+        CombinedTextureSampler,
+
+        CountOf,
+    };
+
+    class DescriptorSetLayoutImpl : public DescriptorSetLayout
+    {
+    public:
+        struct RangeInfo
+        {
+            GLDescriptorSlotType    type;
+            UInt                    arrayIndex;
+        };
+        List<RangeInfo> m_ranges;
+    };
+
+    class PipelineLayoutImpl : public PipelineLayout
+    {
+    public:
+        struct DescriptorSetInfo
+        {
+            RefPtr<DescriptorSetLayoutImpl> layout;
+            UInt                            baseArrayIndex[int(GLDescriptorSlotType::CountOf)];
+        };
+
+        List<DescriptorSetInfo> m_sets;
+    };
+
+    class DescriptorSetImpl : public DescriptorSet
+    {
+    public:
+        virtual void setConstantBuffer(UInt range, UInt index, BufferResource* buffer) override;
+        virtual void setResource(UInt range, UInt index, ResourceView* view) override;
+        virtual void setSampler(UInt range, UInt index, SamplerState* sampler) override;
+        virtual void setCombinedTextureSampler(
+            UInt range,
+            UInt index,
+            ResourceView*   textureView,
+            SamplerState*   sampler) override;
+
+        List<RefPtr<BufferResourceImpl>>    m_constantBuffers;
+        List<RefPtr<TextureViewImpl>>       m_textures;
+        List<RefPtr<SamplerStateImpl>>      m_samplers;
+    };
 
 	class ShaderProgramImpl : public ShaderProgram
 	{
@@ -295,6 +365,8 @@ public:
     RefPtr<PipelineStateImpl> m_currentPipelineState;
 //	RefPtr<ShaderProgramImpl> m_boundShaderProgram;
 //    RefPtr<InputLayoutImpl> m_boundInputLayout;
+
+    RefPtr<DescriptorSetImpl>   m_boundDescriptorSets[kMaxDescriptorSetCount];
 
     GLenum m_boundPrimitiveTopology = GL_TRIANGLES;
     GLuint  m_boundVertexStreamBuffers[kMaxVertexStreams];
@@ -797,6 +869,38 @@ BufferResource* GLRenderer::createBufferResource(Resource::Usage initialUsage, c
 	return new BufferResourceImpl(initialUsage, desc, this, bufferID, target);
 }
 
+SamplerState* GLRenderer::createSamplerState(SamplerState::Desc const& desc)
+{
+    GLuint samplerID;
+    glCreateSamplers(1, &samplerID);
+
+    RefPtr<SamplerStateImpl> samplerImpl = new SamplerStateImpl();
+    samplerImpl->m_samplerID = samplerID;
+    return samplerImpl.detach();
+}
+
+ResourceView* GLRenderer::createTextureView(TextureResource* texture, ResourceView::Desc const& desc)
+{
+    auto resourceImpl = (TextureResourceImpl*) texture;
+
+    // TODO: actually do something?
+
+    RefPtr<TextureViewImpl> viewImpl = new TextureViewImpl();
+    viewImpl->m_textureID = resourceImpl->m_handle;
+    return viewImpl;
+}
+
+ResourceView* GLRenderer::createBufferView(BufferResource* buffer, ResourceView::Desc const& desc)
+{
+    auto resourceImpl = (BufferResourceImpl*) buffer;
+
+    // TODO: actually do something?
+
+    RefPtr<BufferViewImpl> viewImpl = new BufferViewImpl();
+    viewImpl->m_bufferID = resourceImpl->m_handle;
+    return viewImpl;
+}
+
 InputLayout* GLRenderer::createInputLayout(const InputElementDesc* inputElements, UInt inputElementCount)
 {
     InputLayoutImpl* inputLayout = new InputLayoutImpl;
@@ -1032,6 +1136,52 @@ void GLRenderer::setBindingState(BindingState* stateIn)
     }
 }
 #endif
+
+void GLRenderer::DescriptorSetImpl::setConstantBuffer(UInt range, UInt index, BufferResource* buffer)
+{
+    // TODO: assign to tempoary array in the descriptor set
+}
+
+void GLRenderer::DescriptorSetImpl::setResource(UInt range, UInt index, ResourceView* view)
+{
+    // TODO: assign to tempoary array in the descriptor set
+}
+
+void GLRenderer::DescriptorSetImpl::setSampler(UInt range, UInt index, SamplerState* sampler)
+{}
+
+void GLRenderer::DescriptorSetImpl::setCombinedTextureSampler(
+    UInt range,
+    UInt index,
+    ResourceView*   textureView,
+    SamplerState*   sampler)
+{
+    // TODO: assign to tempoary array in the descriptor set
+}
+
+void GLRenderer::setDescriptorSet(PipelineType pipelineType, PipelineLayout* layout, UInt index, DescriptorSet* descriptorSet)
+{
+    auto descriptorSetImpl = (DescriptorSetImpl*)descriptorSet;
+    m_boundDescriptorSets[index] = descriptorSetImpl;
+}
+
+DescriptorSetLayout* GLRenderer::createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc)
+{
+    RefPtr<DescriptorSetLayoutImpl> layoutImpl = new DescriptorSetLayoutImpl();
+    return layoutImpl.detach();
+}
+
+PipelineLayout* GLRenderer::createPipelineLayout(const PipelineLayout::Desc& desc)
+{
+    RefPtr<PipelineLayoutImpl> layoutImpl = new PipelineLayoutImpl();
+    return layoutImpl.detach();
+}
+
+DescriptorSet* GLRenderer::createDescriptorSet(DescriptorSetLayout* layout)
+{
+    RefPtr<DescriptorSetImpl> descriptorSetImpl = new DescriptorSetImpl();
+    return descriptorSetImpl.detach();
+}
 
 ShaderProgram* GLRenderer::createProgram(const ShaderProgram::Desc& desc)
 {

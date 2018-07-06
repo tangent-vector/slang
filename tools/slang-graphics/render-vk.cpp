@@ -177,6 +177,12 @@ public:
         const VulkanApi* m_api;
     };
 
+    class SamplerStateImpl : public SamplerState
+    {
+    public:
+        VkSampler m_sampler;
+    };
+
     class ResourceViewImpl : public ResourceView
     {
     public:
@@ -1486,6 +1492,197 @@ BufferResource* VKRenderer::createBufferResource(Resource::Usage initialUsage, c
     }
 
     return buffer.detach();
+}
+
+
+VkFilter translateFilterMode(TextureFilteringMode mode)
+{
+    switch (mode)
+    {
+    default:
+        return VkFilter(0);
+
+#define CASE(SRC, DST) \
+    case TextureFilteringMode::SRC: return VK_FILTER_##DST
+
+        CASE(Point, NEAREST);
+        CASE(Linear, LINEAR);
+
+#undef CASE
+    }
+}
+
+VkSamplerMipmapMode translateMipFilterMode(TextureFilteringMode mode)
+{
+    switch (mode)
+    {
+    default:
+        return VkSamplerMipmapMode(0);
+
+#define CASE(SRC, DST) \
+    case TextureFilteringMode::SRC: return VK_SAMPLER_MIPMAP_MODE_##DST
+
+        CASE(Point, NEAREST);
+        CASE(Linear, LINEAR);
+
+#undef CASE
+    }
+}
+
+VkSamplerAddressMode translateAddressingMode(TextureAddressingMode mode)
+{
+    switch (mode)
+    {
+    default:
+        return VkSamplerAddressMode(0);
+
+#define CASE(SRC, DST) \
+    case TextureAddressingMode::SRC: return VK_SAMPLER_ADDRESS_MODE_##DST
+
+    CASE(Wrap,          REPEAT);
+    CASE(ClampToEdge,   CLAMP_TO_EDGE);
+    CASE(ClampToBorder, CLAMP_TO_BORDER);
+    CASE(MirrorRepeat,  MIRRORED_REPEAT);
+    CASE(MirrorOnce,    MIRROR_CLAMP_TO_EDGE);
+
+#undef CASE
+    }
+}
+
+static VkCompareOp translateComparisonFunc(ComparisonFunc func)
+{
+    switch (func)
+    {
+    default:
+        // TODO: need to report failures
+        return VK_COMPARE_OP_ALWAYS;
+
+#define CASE(FROM, TO) \
+    case ComparisonFunc::FROM: return VK_COMPARE_OP_##TO
+
+        CASE(Never, NEVER);
+        CASE(Less, LESS);
+        CASE(Equal, EQUAL);
+        CASE(LessEqual, LESS_OR_EQUAL);
+        CASE(Greater, GREATER);
+        CASE(NotEqual, NOT_EQUAL);
+        CASE(GreaterEqual, GREATER_OR_EQUAL);
+        CASE(Always, ALWAYS);
+#undef CASE
+    }
+}
+
+SamplerState* VKRenderer::createSamplerState(SamplerState::Desc const& desc)
+{
+    VkSamplerCreateInfo samplerInfo = { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
+
+    samplerInfo.magFilter = translateFilterMode(desc.minFilter);
+    samplerInfo.minFilter = translateFilterMode(desc.magFilter);
+
+    samplerInfo.addressModeU = translateAddressingMode(desc.addressU);
+    samplerInfo.addressModeV = translateAddressingMode(desc.addressV);
+    samplerInfo.addressModeW = translateAddressingMode(desc.addressW);
+
+    samplerInfo.anisotropyEnable = desc.maxAnisotropy > 1;
+    samplerInfo.maxAnisotropy = (float) desc.maxAnisotropy;
+
+    // TODO: support translation of border color...
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+    samplerInfo.compareEnable = desc.reductionOp == TextureReductionOp::Comparison;
+    samplerInfo.compareOp = translateComparisonFunc(desc.comparisonFunc);
+    samplerInfo.mipmapMode = translateMipFilterMode(desc.mipFilter);
+
+    VkSampler sampler;
+    SLANG_VK_RETURN_NULL_ON_FAIL(m_api.vkCreateSampler(m_device, &samplerInfo, nullptr, &sampler));
+
+    RefPtr<SamplerStateImpl> samplerImpl = new SamplerStateImpl();
+    samplerImpl->m_sampler = sampler;
+    return samplerImpl.detach();
+}
+
+ResourceView* VKRenderer::createTextureView(TextureResource* texture, ResourceView::Desc const& desc)
+{
+    auto resouceImpl = (TextureResourceImpl*) texture;
+
+    switch(desc.type)
+    {
+    default:
+        return nullptr;
+
+    }
+}
+
+ResourceView* VKRenderer::createBufferView(BufferResource* buffer, ResourceView::Desc const& desc)
+{
+    auto resourceImpl = (BufferResourceImpl*) buffer;
+
+    // TODO: These should come from the `ResourceView::Desc`
+    VkDeviceSize offset = 0;
+    VkDeviceSize size = resourceImpl->getDesc().sizeInBytes;
+
+    // There are two different cases we need to think about for buffers.
+    //
+    // One is when we have a "uniform texel buffer" or "storage texel buffer,"
+    // in which case we need to construct a `VkBufferView` to represent the
+    // formatting that is applied to the buffer. This case would correspond
+    // to a `textureBuffer` or `imageBuffer` in GLSL, and more or less to
+    // `Buffer<..>` or `RWBuffer<...>` in HLSL.
+    //
+    // The other case is a `storage buffer` which is the catch-all for any
+    // non-formatted R/W access to a buffer. In GLSL this is a `buffer { ... }`
+    // declaration, while in HLSL it covers a bunch of different `RW*Buffer`
+    // cases. In these cases we do *not* need a `VkBufferView`, but in
+    // order to be compatible with other APIs that require views for any
+    // potentially writable access, we will have to create one anyway.
+    //
+    // We will distinguish the two cases by looking at whether the view
+    // is being requested with a format or not.
+    //
+
+    switch(desc.type)
+    {
+    default:
+        return nullptr;
+
+    case ResourceView::Type::UnorderedAccess:
+        // Is this a formatted view?
+        //
+        if(desc.format == Format::Unknown)
+        {
+            // Buffer usage that doesn't involve formatting doesn't
+            // require a view in Vulkan.
+            RefPtr<PlainBufferResourceViewImpl> viewImpl = new PlainBufferResourceViewImpl();
+            viewImpl->m_buffer = resourceImpl;
+            viewImpl->offset = 0;
+            viewImpl->size = size;
+            return viewImpl.detach();
+        }
+        //
+        // If the view is formatted, then we need to handle
+        // it just like we would for a "sampled" buffer:
+        //
+        // FALLTHROUGH
+    case ResourceView::Type::ShaderResource:
+        {
+            VkBufferViewCreateInfo info = { VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO };
+
+            info.format = VulkanUtil::getVkFormat(desc.format);
+            info.buffer = resourceImpl->m_buffer.m_buffer;
+            info.offset = offset;
+            info.range = size;
+
+            VkBufferView view;
+            SLANG_VK_RETURN_NULL_ON_FAIL(m_api.vkCreateBufferView(m_device, &info, nullptr, &view));
+
+            RefPtr<TexelBufferResourceViewImpl> viewImpl = new TexelBufferResourceViewImpl();
+            viewImpl->m_buffer = resourceImpl;
+            viewImpl->m_view = view;
+            return viewImpl.detach();
+        }
+        break;
+    }
 }
 
 InputLayout* VKRenderer::createInputLayout(const InputElementDesc* elements, UInt numElements)

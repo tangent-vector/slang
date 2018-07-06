@@ -550,9 +550,20 @@ public:
 class ResourceView : public Slang::RefObject
 {
 public:
+    enum class Type
+    {
+        Unknown,
+
+        RenderTarget,
+        DepthStencil,
+        ShaderResource,
+        UnorderedAccess,
+    };
+
     struct Desc
     {
-        Resource::Usage usage;
+        Type    type;
+        Format  format;
     };
 };
 

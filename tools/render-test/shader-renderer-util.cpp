@@ -6,6 +6,15 @@ namespace renderer_test {
 
 using namespace Slang;
 
+void BindingStateImpl::apply(Renderer* renderer, PipelineType pipelineType)
+{
+    renderer->setDescriptorSet(
+        pipelineType,
+        pipelineLayout,
+        0,
+        descriptorSet);
+}
+
 /* static */Result ShaderRendererUtil::generateTextureResource(const InputTextureDesc& inputDesc, int bindFlags, Renderer* renderer, RefPtr<TextureResource>& textureOut)
 {
     TextureData texData;
@@ -190,11 +199,19 @@ static SamplerState* _createSamplerState(
     return RegisterRange::makeInvalid();
 }
 
-/* static */Result ShaderRendererUtil::createBindingState(ShaderInputLayoutEntry* srcEntries, int numEntries, Renderer* renderer, BindingStateImpl** outBindingState)
+/*static*/ Result ShaderRendererUtil::_createBindingState(ShaderInputLayoutEntry* srcEntries, int numEntries, Renderer* renderer, BufferResource* addedConstantBuffer, BindingStateImpl** outBindingState)
 {
     const int textureBindFlags = Resource::BindFlag::NonPixelShaderResource | Resource::BindFlag::PixelShaderResource;
 
     List<DescriptorSetLayout::SlotRangeDesc> slotRangeDescs;
+
+    if(addedConstantBuffer)
+    {
+        DescriptorSetLayout::SlotRangeDesc slotRangeDesc;
+        slotRangeDesc.type = DescriptorSlotType::UniformBuffer;
+
+        slotRangeDescs.Add(slotRangeDesc);
+    }
 
     for (int i = 0; i < numEntries; i++)
     {
@@ -255,6 +272,7 @@ static SamplerState* _createSamplerState(
                 assert(!"Unhandled type");
                 return SLANG_FAIL;
         }
+        slotRangeDescs.Add(slotRangeDesc);
     }
 
     DescriptorSetLayout::Desc descriptorSetLayoutDesc;
@@ -276,19 +294,29 @@ static SamplerState* _createSamplerState(
             case ShaderInputType::Buffer:
                 {
                     const InputBufferDesc& srcBuffer = srcEntry.bufferDesc;
-
                     const size_t bufferSize = srcEntry.bufferData.Count() * sizeof(uint32_t);
 
                     RefPtr<BufferResource> bufferResource;
                     SLANG_RETURN_ON_FAIL(createBufferResource(srcEntry.bufferDesc, srcEntry.isOutput, bufferSize, srcEntry.bufferData.Buffer(), renderer, bufferResource));
 
-                    ResourceView::Desc viewDesc;
-                    viewDesc.usage = Resource::Usage::PixelShaderResource;
-                    auto bufferView = renderer->createBufferView(
-                        bufferResource,
-                        viewDesc);
+                    switch(srcBuffer.type)
+                    {
+                    case InputBufferType::ConstantBuffer:
+                        descriptorSet->setConstantBuffer(i, 0, bufferResource);
+                        break;
 
-                    descriptorSet->setResource(i, 0, bufferView);
+                    case InputBufferType::StorageBuffer:
+                        {
+                            ResourceView::Desc viewDesc;
+                            viewDesc.type = ResourceView::Type::UnorderedAccess;
+                            viewDesc.format = srcBuffer.format;
+                            auto bufferView = renderer->createBufferView(
+                                bufferResource,
+                                viewDesc);
+                            descriptorSet->setResource(i, 0, bufferView);
+                        }
+                        break;
+                    }
                 }
                 break;
 
@@ -300,7 +328,7 @@ static SamplerState* _createSamplerState(
                     auto sampler = _createSamplerState(renderer, srcEntry.samplerDesc);
 
                     ResourceView::Desc viewDesc;
-                    viewDesc.usage = Resource::Usage::PixelShaderResource;
+                    viewDesc.type = ResourceView::Type::ShaderResource;
                     auto textureView = renderer->createTextureView(
                         texture,
                         viewDesc);
@@ -314,8 +342,10 @@ static SamplerState* _createSamplerState(
                     RefPtr<TextureResource> texture;
                     SLANG_RETURN_ON_FAIL(generateTextureResource(srcEntry.textureDesc, textureBindFlags, renderer, texture));
 
+                    // TODO: support UAV textures...
+
                     ResourceView::Desc viewDesc;
-                    viewDesc.usage = Resource::Usage::PixelShaderResource;
+                    viewDesc.type = ResourceView::Type::ShaderResource;
                     auto textureView = renderer->createTextureView(
                         texture,
                         viewDesc);
@@ -325,8 +355,10 @@ static SamplerState* _createSamplerState(
                 break;
 
             case ShaderInputType::Sampler:
-                auto sampler = _createSamplerState(renderer, srcEntry.samplerDesc);
-                descriptorSet->setSampler(i, 0, sampler);
+                {
+                    auto sampler = _createSamplerState(renderer, srcEntry.samplerDesc);
+                    descriptorSet->setSampler(i, 0, sampler);
+                }
                 break;
 
             default:
@@ -335,13 +367,12 @@ static SamplerState* _createSamplerState(
         }
     }
 
-
     return SLANG_OK;
 }
 
-/* static */Result ShaderRendererUtil::createBindingState(const ShaderInputLayout& layout, Renderer* renderer, BindingStateImpl** outBindingState)
+/* static */Result ShaderRendererUtil::createBindingState(const ShaderInputLayout& layout, Renderer* renderer, BufferResource* addedConstantBuffer, BindingStateImpl** outBindingState)
 {
-    SLANG_RETURN_ON_FAIL(createBindingState(layout.entries.Buffer(), int(layout.entries.Count()), renderer, descOut));
+    SLANG_RETURN_ON_FAIL(_createBindingState(layout.entries.Buffer(), int(layout.entries.Count()), renderer, addedConstantBuffer, outBindingState));
     (*outBindingState)->m_numRenderTargets = layout.numRenderTargets;
     return SLANG_OK;
 }

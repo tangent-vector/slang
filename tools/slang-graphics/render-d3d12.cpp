@@ -99,6 +99,9 @@ protected:
     static const Int kMaxNumRenderFrames = 4;
     static const Int kMaxNumRenderTargets = 3;
 
+    static const Int kMaxRTVCount = 8;
+    static const Int kMaxDescriptorSetCount = 16;
+
     struct Submitter
     {
         virtual void setRootConstantBufferView(int index, D3D12_GPU_VIRTUAL_ADDRESS gpuBufferLocation) = 0;
@@ -200,6 +203,18 @@ protected:
         D3D12Resource m_resource;
     };
 
+    class SamplerStateImpl : public SamplerState
+    {
+    public:
+        D3D12_CPU_DESCRIPTOR_HANDLE m_cpuHandle;
+    };
+
+    class ResourceViewImpl : public ResourceView
+    {
+    public:
+        D3D12HostVisibleDescriptor m_descriptor;
+    };
+
     class InputLayoutImpl: public InputLayout
     {
         public:
@@ -264,18 +279,30 @@ protected:
     };
 
 
-    // TODO: we need a more serious allocation strategy for shader-visible descriptors
+    // During command submission, we need all the descriptor tables that get
+    // used to come from a single heap (for each descritpor heap type).
+    //
+    // We will thus keep a single heap of each type that we hope will hold
+    // all the descriptors that actually get needed in a frame.
+    //
+    // TODO: we need an allocation policy to reallocate and resize these
+    // if/when we run out of space during a frame.
+    //
+    D3D12DescriptorHeap m_viewHeap;             ///< Cbv, Srv, Uav
+    D3D12DescriptorHeap m_samplerHeap;          ///< Heap for samplers
 
-    Result initDescriptorHeaps(ID3D12Device* device)
-    {
-        // Set up descriptor heaps
-        SLANG_RETURN_ON_FAIL(m_viewHeap.init(device, 256, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE));
-        SLANG_RETURN_ON_FAIL(m_samplerHeap.init(device, 16, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE));
-        return SLANG_OK;
-    }
+    D3D12HostVisibleDescriptorAllocator m_rtvAllocator;
+    D3D12HostVisibleDescriptorAllocator m_dsvAllocator;
 
-    D3D12DescriptorHeap m_viewHeap;            ///< Cbv, Srv, Uav
-    D3D12DescriptorHeap m_samplerHeap;        ///< Heap for samplers
+    D3D12HostVisibleDescriptorAllocator m_viewAllocator;
+    D3D12HostVisibleDescriptorAllocator m_samplerAllocator;
+
+    // Space in the GPU-visible heaps is precious, so we will also keep
+    // around CPU-visible heaps for storing descriptors in a format
+    // that is ready for copying into the GPU-visible heaps as needed.
+    //
+    D3D12DescriptorHeap m_cpuViewHeap;          ///< Cbv, Srv, Uav
+    D3D12DescriptorHeap m_cpuSamplerHeap;       ///< Heap for samplers
 
     class PipelineStateImpl : public PipelineState
     {
@@ -416,6 +443,7 @@ protected:
 //    RefPtr<InputLayoutImpl> m_boundInputLayout;
 
 //    RefPtr<BindingStateImpl> m_boundBindingState;
+    RefPtr<DescriptorSetImpl> m_boundDescriptorSets[int(PipelineType::CountOf)][kMaxDescriptorSetCount];
 
     DXGI_FORMAT m_targetFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
     DXGI_FORMAT m_depthStencilFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
@@ -442,7 +470,7 @@ protected:
     ComPtr<ID3D12Device> m_device;
     ComPtr<IDXGISwapChain3> m_swapChain;
     ComPtr<ID3D12CommandQueue> m_commandQueue;
-    ComPtr<ID3D12DescriptorHeap> m_rtvHeap;
+//    ComPtr<ID3D12DescriptorHeap> m_rtvHeap;
     ComPtr<ID3D12GraphicsCommandList> m_commandList;
 
     D3D12_RECT m_scissorRect = {};
@@ -452,7 +480,7 @@ protected:
 
     UINT m_rtvDescriptorSize = 0;
 
-    ComPtr<ID3D12DescriptorHeap> m_dsvHeap;
+//    ComPtr<ID3D12DescriptorHeap> m_dsvHeap;
     UINT m_dsvDescriptorSize = 0;
 
     // Synchronization objects.
@@ -474,8 +502,8 @@ protected:
     D3D12Resource m_backBufferResources[kMaxNumRenderTargets];
     D3D12Resource m_renderTargetResources[kMaxNumRenderTargets];
 
-    D3D12Resource m_depthStencil;
-    D3D12_CPU_DESCRIPTOR_HANDLE m_depthStencilView = {};
+    RefPtr<ResourceViewImpl> m_rtvs[kMaxRTVCount];
+    RefPtr<ResourceViewImpl> m_dsv;
 
     int32_t m_depthStencilUsageFlags = 0;    ///< D3DUtil::UsageFlag combination for depth stencil
     int32_t m_targetUsageFlags = 0;            ///< D3DUtil::UsageFlag combination for target
@@ -681,15 +709,11 @@ void D3D12Renderer::_resetCommandList()
     ID3D12GraphicsCommandList* commandList = getCommandList();
     commandList->Reset(frame.m_commandAllocator, nullptr);
 
-    D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = { m_rtvHeap->GetCPUDescriptorHandleForHeapStart().ptr + m_renderTargetIndex * m_rtvDescriptorSize };
-    if (m_depthStencil)
-    {
-        commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, &m_depthStencilView);
-    }
-    else
-    {
-        commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
-    }
+    commandList->OMSetRenderTargets(
+        1,
+        &m_rtvs[0]->m_descriptor.cpuHandle,
+        FALSE,
+        m_dsv ? &m_dsv->m_descriptor.cpuHandle : nullptr);
 
     // Set necessary state.
     commandList->RSSetViewports(1, &m_viewport);
@@ -1379,27 +1403,14 @@ Result D3D12Renderer::initialize(const Desc& desc, void* inWindowHandle)
     m_renderTargetIndex = m_swapChain->GetCurrentBackBufferIndex();
 
     // Create descriptor heaps.
-    {
-        // Describe and create a render target view (RTV) descriptor heap.
-        D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
 
-        rtvHeapDesc.NumDescriptors = m_numRenderTargets;
-        rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-        rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-        SLANG_RETURN_ON_FAIL(m_device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(m_rtvHeap.writeRef())));
-        m_rtvDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-    }
+    SLANG_RETURN_ON_FAIL(m_viewHeap.init   (m_device, 256, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE));
+    SLANG_RETURN_ON_FAIL(m_samplerHeap.init(m_device, 16, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE));
 
-    {
-        // Describe and create a depth stencil view (DSV) descriptor heap.
-        D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
-        dsvHeapDesc.NumDescriptors = 1;
-        dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-        dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-        SLANG_RETURN_ON_FAIL(m_device->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(m_dsvHeap.writeRef())));
-
-        m_dsvDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
-    }
+    SLANG_RETURN_ON_FAIL(m_rtvAllocator.init    (m_device, 16, D3D12_DESCRIPTOR_HEAP_TYPE_RTV));
+    SLANG_RETURN_ON_FAIL(m_dsvAllocator.init    (m_device, 16, D3D12_DESCRIPTOR_HEAP_TYPE_DSV));
+    SLANG_RETURN_ON_FAIL(m_viewAllocator.init   (m_device, 64, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV));
+    SLANG_RETURN_ON_FAIL(m_samplerAllocator.init(m_device, 16, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER));
 
     // Setup frame resources
     {
@@ -1435,7 +1446,7 @@ Result D3D12Renderer::createFrameResources()
 {
     // Create back buffers
     {
-        D3D12_CPU_DESCRIPTOR_HANDLE rtvStart(m_rtvHeap->GetCPUDescriptorHandleForHeapStart());
+//        D3D12_CPU_DESCRIPTOR_HANDLE rtvStart(m_rtvHeap->GetCPUDescriptorHandleForHeapStart());
 
         // Work out target format
         D3D12_RESOURCE_DESC resourceDesc;
@@ -1490,8 +1501,10 @@ Result D3D12Renderer::createFrameResources()
                 m_renderTargets[i] = &m_renderTargetResources[i];
             }
 
-            D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = { rtvStart.ptr + i * m_rtvDescriptorSize };
-            m_device->CreateRenderTargetView(*m_renderTargets[i], nullptr, rtvHandle);
+            D3D12HostVisibleDescriptor rtvDescriptor;
+            SLANG_RETURN_ON_FAIL(m_rtvAllocator.allocate(&rtvDescriptor));
+
+            m_device->CreateRenderTargetView(*m_renderTargets[i], nullptr, rtvDescriptor.cpuHandle);
         }
     }
 
@@ -1541,6 +1554,7 @@ Result D3D12Renderer::createFrameResources()
         resourceDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
         resourceDesc.Alignment = 0;
 
+#if 0
         SLANG_RETURN_ON_FAIL(m_depthStencil.initCommitted(m_device, heapProps, D3D12_HEAP_FLAG_NONE, resourceDesc, D3D12_RESOURCE_STATE_DEPTH_WRITE, &clearValue));
 
         // Set the depth stencil
@@ -1552,6 +1566,7 @@ Result D3D12Renderer::createFrameResources()
         // Set up as the depth stencil view
         m_device->CreateDepthStencilView(m_depthStencil, &depthStencilDesc, m_dsvHeap->GetCPUDescriptorHandleForHeapStart());
         m_depthStencilView = m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
+#endif
     }
 
     m_viewport.Width = static_cast<float>(m_desc.width);
@@ -1572,11 +1587,13 @@ void D3D12Renderer::setClearColor(const float color[4])
 void D3D12Renderer::clearFrame()
 {
     // Record commands
-    D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = { m_rtvHeap->GetCPUDescriptorHandleForHeapStart().ptr + m_renderTargetIndex * m_rtvDescriptorSize };
-    m_commandList->ClearRenderTargetView(rtvHandle, m_clearColor, 0, nullptr);
-    if (m_depthStencil)
+    if(auto rtv = m_rtvs[0])
     {
-        m_commandList->ClearDepthStencilView(m_depthStencilView, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+        m_commandList->ClearRenderTargetView(rtv->m_descriptor.cpuHandle, m_clearColor, 0, nullptr);
+    }
+    if (m_dsv)
+    {
+        m_commandList->ClearDepthStencilView(m_dsv->m_descriptor.cpuHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
     }
 }
 
@@ -1914,6 +1931,219 @@ BufferResource* D3D12Renderer::createBufferResource(Resource::Usage initialUsage
     }
 
     return buffer.detach();
+}
+
+D3D12_FILTER_TYPE translateFilterMode(TextureFilteringMode mode)
+{
+    switch (mode)
+    {
+    default:
+        return D3D12_FILTER_TYPE(0);
+
+#define CASE(SRC, DST) \
+    case TextureFilteringMode::SRC: return D3D12_FILTER_TYPE_##DST
+
+        CASE(Point, POINT);
+        CASE(Linear, LINEAR);
+
+#undef CASE
+    }
+}
+
+D3D12_FILTER_REDUCTION_TYPE translateFilterReduction(TextureReductionOp op)
+{
+    switch (op)
+    {
+    default:
+        return D3D12_FILTER_REDUCTION_TYPE(0);
+
+#define CASE(SRC, DST) \
+    case TextureReductionOp::SRC: return D3D12_FILTER_REDUCTION_TYPE_##DST
+
+        CASE(Average, STANDARD);
+        CASE(Comparison, COMPARISON);
+        CASE(Minimum, MINIMUM);
+        CASE(Maximum, MAXIMUM);
+
+#undef CASE
+    }
+}
+
+D3D12_TEXTURE_ADDRESS_MODE translateAddressingMode(TextureAddressingMode mode)
+{
+    switch (mode)
+    {
+    default:
+        return D3D12_TEXTURE_ADDRESS_MODE(0);
+
+#define CASE(SRC, DST) \
+    case TextureAddressingMode::SRC: return D3D12_TEXTURE_ADDRESS_MODE_##DST
+
+    CASE(Wrap,          WRAP);
+    CASE(ClampToEdge,   CLAMP);
+    CASE(ClampToBorder, BORDER);
+    CASE(MirrorRepeat,  MIRROR);
+    CASE(MirrorOnce,    MIRROR_ONCE);
+
+#undef CASE
+    }
+}
+
+static D3D12_COMPARISON_FUNC translateComparisonFunc(ComparisonFunc func)
+{
+    switch (func)
+    {
+    default:
+        // TODO: need to report failures
+        return D3D12_COMPARISON_FUNC_ALWAYS;
+
+#define CASE(FROM, TO) \
+    case ComparisonFunc::FROM: return D3D12_COMPARISON_FUNC_##TO
+
+        CASE(Never, NEVER);
+        CASE(Less, LESS);
+        CASE(Equal, EQUAL);
+        CASE(LessEqual, LESS_EQUAL);
+        CASE(Greater, GREATER);
+        CASE(NotEqual, NOT_EQUAL);
+        CASE(GreaterEqual, GREATER_EQUAL);
+        CASE(Always, ALWAYS);
+#undef CASE
+    }
+}
+
+SamplerState* D3D12Renderer::createSamplerState(SamplerState::Desc const& desc)
+{
+    D3D12_FILTER_REDUCTION_TYPE dxReduction = translateFilterReduction(desc.reductionOp);
+    D3D12_FILTER dxFilter;
+    if (desc.maxAnisotropy > 1)
+    {
+        dxFilter = D3D12_ENCODE_ANISOTROPIC_FILTER(dxReduction);
+    }
+    else
+    {
+        D3D12_FILTER_TYPE dxMin = translateFilterMode(desc.minFilter);
+        D3D12_FILTER_TYPE dxMag = translateFilterMode(desc.magFilter);
+        D3D12_FILTER_TYPE dxMip = translateFilterMode(desc.mipFilter);
+
+        dxFilter = D3D12_ENCODE_BASIC_FILTER(dxMin, dxMag, dxMip, dxReduction);
+    }
+
+    D3D12_SAMPLER_DESC dxDesc = {};
+    dxDesc.Filter = dxFilter;
+    dxDesc.AddressU = translateAddressingMode(desc.addressU);
+    dxDesc.AddressV = translateAddressingMode(desc.addressV);
+    dxDesc.AddressW = translateAddressingMode(desc.addressW);
+    dxDesc.MipLODBias = desc.mipLODBias;
+    dxDesc.MaxAnisotropy = desc.maxAnisotropy;
+    dxDesc.ComparisonFunc = translateComparisonFunc(desc.comparisonFunc);
+    for (int ii = 0; ii < 4; ++ii)
+        dxDesc.BorderColor[ii] = desc.borderColor[ii];
+    dxDesc.MinLOD = desc.minLOD;
+    dxDesc.MaxLOD = desc.maxLOD;
+
+    auto samplerHeap = &m_cpuSamplerHeap;
+
+    int indexInSamplerHeap = samplerHeap->allocate();
+    if(indexInSamplerHeap < 0)
+    {
+        // We ran out of room in our CPU sampler heap.
+        //
+        // TODO: this should not be a catastrophic failure, because
+        // we should just allocate another CPU sampler heap that
+        // can service subsequent allocation.
+        //
+        return nullptr;
+    }
+    auto cpuDescriptorHandle = samplerHeap->getCpuHandle(indexInSamplerHeap);
+
+    m_device->CreateSampler(&dxDesc, cpuDescriptorHandle);
+
+    // TODO: We really ought to have a free-list of sampler-heap
+    // entries that we check before we go to the heap, and then
+    // when we are done with a sampler we simply add it to the free list.
+    //
+    RefPtr<SamplerStateImpl> samplerImpl = new SamplerStateImpl();
+    samplerImpl->m_cpuHandle = cpuDescriptorHandle;
+    return samplerImpl.detach();
+}
+
+ResourceView* D3D12Renderer::createTextureView(TextureResource* texture, ResourceView::Desc const& desc)
+{
+    auto resourceImpl = (TextureResourceImpl*) texture;
+
+    RefPtr<ResourceViewImpl> viewImpl = new ResourceViewImpl();
+
+    switch (desc.type)
+    {
+    default:
+        return nullptr;
+
+    case ResourceView::Type::RenderTarget:
+        {
+            SLANG_RETURN_NULL_ON_FAIL(m_rtvAllocator.allocate(&viewImpl->m_descriptor));
+            m_device->CreateRenderTargetView(resourceImpl->m_resource, nullptr, viewImpl->m_descriptor.cpuHandle);
+        }
+        break;
+
+    case ResourceView::Type::DepthStencil:
+        {
+            SLANG_RETURN_NULL_ON_FAIL(m_dsvAllocator.allocate(&viewImpl->m_descriptor));
+            m_device->CreateDepthStencilView(resourceImpl->m_resource, nullptr, viewImpl->m_descriptor.cpuHandle);
+        }
+        break;
+
+    case ResourceView::Type::UnorderedAccess:
+        {
+            // TODO: need to support the separate "counter resource" for the case
+            // of append/consume buffers with attached counters.
+
+            SLANG_RETURN_NULL_ON_FAIL(m_viewAllocator.allocate(&viewImpl->m_descriptor));
+            m_device->CreateUnorderedAccessView(resourceImpl->m_resource, nullptr, nullptr, viewImpl->m_descriptor.cpuHandle);
+        }
+        break;
+
+    case ResourceView::Type::ShaderResource:
+        {
+            SLANG_RETURN_NULL_ON_FAIL(m_viewAllocator.allocate(&viewImpl->m_descriptor));
+            m_device->CreateShaderResourceView(resourceImpl->m_resource, nullptr, viewImpl->m_descriptor.cpuHandle);
+        }
+        break;
+    }
+
+    return viewImpl.detach();
+}
+
+ResourceView* D3D12Renderer::createBufferView(BufferResource* buffer, ResourceView::Desc const& desc)
+{
+    auto resourceImpl = (BufferResourceImpl*) buffer;
+
+    RefPtr<ResourceViewImpl> viewImpl = new ResourceViewImpl();
+
+    switch (desc.type)
+    {
+    default:
+        return nullptr;
+
+    case ResourceView::Type::UnorderedAccess:
+        {
+            // TODO: need to support the separate "counter resource" for the case
+            // of append/consume buffers with attached counters.
+
+            SLANG_RETURN_NULL_ON_FAIL(m_viewAllocator.allocate(&viewImpl->m_descriptor));
+            m_device->CreateUnorderedAccessView(resourceImpl->m_resource, nullptr, nullptr, viewImpl->m_descriptor.cpuHandle);
+        }
+        break;
+
+    case ResourceView::Type::ShaderResource:
+        {
+            SLANG_RETURN_NULL_ON_FAIL(m_viewAllocator.allocate(&viewImpl->m_descriptor));
+            m_device->CreateShaderResourceView(resourceImpl->m_resource, nullptr, viewImpl->m_descriptor.cpuHandle);
+        }
+        break;
+    }
+
+    return viewImpl.detach();
 }
 
 InputLayout* D3D12Renderer::createInputLayout(const InputElementDesc* inputElements, UInt inputElementCount)
@@ -2416,6 +2646,36 @@ void D3D12Renderer::setBindingState(BindingState* state)
     m_boundBindingState = static_cast<BindingStateImpl*>(state);
 }
 #endif
+
+void D3D12Renderer::DescriptorSetImpl::setConstantBuffer(UInt range, UInt index, BufferResource* buffer)
+{
+    assert(!"unimplemented");
+}
+
+void D3D12Renderer::DescriptorSetImpl::setResource(UInt range, UInt index, ResourceView* view)
+{
+    assert(!"unimplemented");
+}
+
+void D3D12Renderer::DescriptorSetImpl::setSampler(UInt range, UInt index, SamplerState* sampler)
+{
+    assert(!"unimplemented");
+}
+
+void D3D12Renderer::DescriptorSetImpl::setCombinedTextureSampler(
+    UInt range,
+    UInt index,
+    ResourceView*   textureView,
+    SamplerState*   sampler)
+{
+    assert(!"unimplemented");
+}
+
+void D3D12Renderer::setDescriptorSet(PipelineType pipelineType, PipelineLayout* layout, UInt index, DescriptorSet* descriptorSet)
+{
+    auto descriptorSetImpl = (DescriptorSetImpl*) descriptorSet;
+    m_boundDescriptorSets[int(pipelineType)][index] = descriptorSetImpl;
+}
 
 ShaderProgram* D3D12Renderer::createProgram(const ShaderProgram::Desc& desc)
 {

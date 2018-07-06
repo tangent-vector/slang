@@ -5,6 +5,7 @@
 #include <d3d12.h>
 
 #include "../../slang-com-ptr.h"
+#include "../../source/core/list.h"
 
 namespace slang_graphics {
 
@@ -60,6 +61,88 @@ protected:
     int m_totalSize;                                ///< Total amount of allocations available on the heap
     int m_currentIndex;                        ///< The current descriptor
     int m_descriptorSize;                    ///< The size of each descriptor
+};
+
+/// A host-visible descriptor, used as "backing storage" for a view.
+///
+/// This type is intended to be used to represent descriptors that
+/// are allocated and freed through a `HostVisibleDescriptorAllocator`.
+struct D3D12HostVisibleDescriptor
+{
+    D3D12_CPU_DESCRIPTOR_HANDLE     cpuHandle;
+};
+
+/// An allocator for host-visible descriptors.
+///
+/// Unlike the `D3D12DescriptorHeap` type, this class allows for both
+/// allocation and freeing of descriptors, by maintaining a free list.
+/// In order to keep the implementation simple, this class only supports
+/// allocation of single descriptors and not ranges.
+///
+class D3D12HostVisibleDescriptorAllocator
+{
+    ID3D12Device*                           m_device;
+    int                                     m_chunkSize;
+    D3D12_DESCRIPTOR_HEAP_TYPE              m_type;
+
+    D3D12DescriptorHeap                     m_heap;
+    Slang::List<D3D12HostVisibleDescriptor> m_freeList;
+    Slang::List<D3D12DescriptorHeap>        m_heaps;
+
+public:
+    D3D12HostVisibleDescriptorAllocator()
+    {}
+
+    Slang::Result init(ID3D12Device* device, int chunkSize, D3D12_DESCRIPTOR_HEAP_TYPE type)
+    {
+        m_device = device;
+        m_chunkSize = chunkSize;
+        m_type = type;
+
+        SLANG_RETURN_ON_FAIL(m_heap.init(m_device, m_chunkSize, m_type, D3D12_DESCRIPTOR_HEAP_FLAG_NONE));
+
+        return SLANG_OK;
+    }
+
+    Slang::Result allocate(D3D12HostVisibleDescriptor* outDescriptor)
+    {
+        // TODO: this allocator would take some work to make thread-safe
+
+        if(m_freeList.Count() > 0)
+        {
+            auto descriptor = m_freeList[0];
+            m_freeList.FastRemoveAt(0);
+
+            *outDescriptor = descriptor;
+            return SLANG_OK;
+        }
+
+        int index = m_heap.allocate();
+        if(index < 0)
+        {
+            // Allocate a new heap and try again.
+            m_heaps.Add(m_heap);
+            SLANG_RETURN_ON_FAIL(m_heap.init(m_device, m_chunkSize, m_type, D3D12_DESCRIPTOR_HEAP_FLAG_NONE));
+
+            int index = m_heap.allocate();
+            if(index < 0)
+            {
+                assert(!"descriptor allocation failed on fresh heap");
+                return SLANG_FAIL;
+            }
+        }
+
+        D3D12HostVisibleDescriptor descriptor;
+        descriptor.cpuHandle = m_heap.getCpuHandle(index);
+
+        *outDescriptor = descriptor;
+        return SLANG_OK;
+    }
+
+    void free(D3D12HostVisibleDescriptor descriptor)
+    {
+        m_freeList.Add(descriptor);
+    }
 };
 
 // ---------------------------------------------------------------------------

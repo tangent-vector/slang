@@ -214,8 +214,8 @@ int initialize()
         if(!depthTexture) return FAILURE;
 
         ResourceView::Desc textureViewDesc;
-        textureViewDesc.usage = Resource::Usage::DepthWrite;
-        TextureView* depthTarget = gRenderer->createTextureView(depthTexture, textureViewDesc);
+        textureViewDesc.type = ResourceView::Type::DepthStencil;
+        ResourceView* depthTarget = gRenderer->createTextureView(depthTexture, textureViewDesc);
         if (!depthTarget) return FAILURE;
     }
 
@@ -263,7 +263,7 @@ int initialize()
         DescriptorSet* descriptorSet = gRenderer->createDescriptorSet(descriptorSetLayout);
         if (!descriptorSet) return FAILURE;
 
-        descriptorSet->setBuffer(0, 0, gConstantBuffer);
+        descriptorSet->setConstantBuffer(0, 0, gConstantBuffer);
 
         gDescriptorSet = descriptorSet;
     }
@@ -345,18 +345,13 @@ void renderFrame()
     glm::mat4x4 modelTransform = identity;
     glm::mat4x4 inverseTransposeModelTransform = inverse(transpose(modelTransform));
 
-    // Input Assembler (IA)
+    gRenderer->setDepthStencilTarget(gDepthTarget);
 
-    gRenderer->setInputLayout(gInputLayout);
+    gRenderer->setPipelineState(
+        PipelineType::Graphics,
+        gPipelineState);
+
     gRenderer->setPrimitiveTopology(PrimitiveTopology::TriangleList);
-
-    // Depth-Stencil Test (DS)
-
-    gRenderer->setDepthStencilTarget(gDepthBuffer);
-
-    // General fixed-function state
-
-    gRenderer->setGraphicsPipelineState(gPSO);
 
     for(auto& model : gModels)
     {
@@ -369,8 +364,11 @@ void renderFrame()
         // Vertex Shader (VS)
         // Pixel Shader (PS)
 
-        gRenderer->setShaderProgram(gShaderProgram);
-        gRenderer->setBindingState(gBindingState);
+        gRenderer->setDescriptorSet(
+            PipelineType::Graphics,
+            gPipelineLayout,
+            0,
+            gDescriptorSet);
 
         //
 

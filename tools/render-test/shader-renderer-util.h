@@ -33,6 +33,14 @@ struct BindingStateImpl : public Slang::RefObject
         uint16_t size;              ///< The amount of register indices
     };
 
+    void apply(Renderer* renderer, PipelineType pipelineType);
+
+    struct OutputBinding
+    {
+        RefPtr<Resource>    resource;
+        Slang::UInt         entryIndex;
+    };
+    List<OutputBinding> outputBindings;
 
     RefPtr<PipelineLayout>  pipelineLayout;
     RefPtr<DescriptorSet>   descriptorSet;
@@ -52,12 +60,14 @@ struct ShaderRendererUtil
     static Slang::Result createBufferResource(const InputBufferDesc& inputDesc, bool isOutput, size_t bufferSize, const void* initData, Renderer* renderer, Slang::RefPtr<BufferResource>& bufferOut);
 
         /// Create BindingState::Desc from the contents of layout
-    static Slang::Result createBindingState(const ShaderInputLayout& layout, Renderer* renderer, BindingStateImpl** outBindingState);
-        /// Create BindingState::Desc from a list of ShaderInputLayout entries
-    static Slang::Result createBindingState(ShaderInputLayoutEntry* srcEntries, int numEntries, Renderer* renderer, BindingStateImpl** outBindingState);
+    static Slang::Result createBindingState(const ShaderInputLayout& layout, Renderer* renderer, BufferResource* addedConstantBuffer, BindingStateImpl** outBindingState);
 
         /// Get the binding register associated with this binding (or -1 if none defined)
     static BindingStateImpl::RegisterRange calcRegisterRange(Renderer* renderer, const ShaderInputLayoutEntry& entry);
+
+private:
+        /// Create BindingState::Desc from a list of ShaderInputLayout entries
+    static Slang::Result _createBindingState(ShaderInputLayoutEntry* srcEntries, int numEntries, Renderer* renderer, BufferResource* addedConstantBuffer, BindingStateImpl** outBindingState);
 };
 
 } // renderer_test

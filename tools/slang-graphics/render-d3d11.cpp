@@ -924,12 +924,12 @@ ResourceView* D3D11Renderer::createTextureView(TextureResource* texture, Resourc
 {
     auto resourceImpl = (TextureResourceImpl*) texture;
 
-    switch (desc.usage)
+    switch (desc.type)
     {
     default:
         return nullptr;
 
-    case Resource::Usage::RenderTarget:
+    case ResourceView::Type::RenderTarget:
         {
             ComPtr<ID3D11RenderTargetView> rtv;
             SLANG_RETURN_NULL_ON_FAIL(m_device->CreateRenderTargetView(resourceImpl->m_resource, nullptr, rtv.writeRef()));
@@ -940,8 +940,7 @@ ResourceView* D3D11Renderer::createTextureView(TextureResource* texture, Resourc
         }
         break;
 
-    case Resource::Usage::DepthRead:
-    case Resource::Usage::DepthWrite:
+    case ResourceView::Type::DepthStencil:
         {
             ComPtr<ID3D11DepthStencilView> dsv;
             SLANG_RETURN_NULL_ON_FAIL(m_device->CreateDepthStencilView(resourceImpl->m_resource, nullptr, dsv.writeRef()));
@@ -952,7 +951,7 @@ ResourceView* D3D11Renderer::createTextureView(TextureResource* texture, Resourc
         }
         break;
 
-    case Resource::Usage::UnorderedAccess:
+    case ResourceView::Type::UnorderedAccess:
         {
             ComPtr<ID3D11UnorderedAccessView> uav;
             SLANG_RETURN_NULL_ON_FAIL(m_device->CreateUnorderedAccessView(resourceImpl->m_resource, nullptr, uav.writeRef()));
@@ -963,8 +962,7 @@ ResourceView* D3D11Renderer::createTextureView(TextureResource* texture, Resourc
         }
         break;
 
-    case Resource::Usage::PixelShaderResource:
-    case Resource::Usage::NonPixelShaderResource:
+    case ResourceView::Type::ShaderResource:
         {
             ComPtr<ID3D11ShaderResourceView> srv;
             SLANG_RETURN_NULL_ON_FAIL(m_device->CreateShaderResourceView(resourceImpl->m_resource, nullptr, srv.writeRef()));
@@ -981,12 +979,12 @@ ResourceView* D3D11Renderer::createBufferView(BufferResource* buffer, ResourceVi
 {
     auto resourceImpl = (BufferResourceImpl*) buffer;
 
-    switch (desc.usage)
+    switch (desc.type)
     {
     default:
         return nullptr;
 
-    case Resource::Usage::UnorderedAccess:
+    case ResourceView::Type::UnorderedAccess:
         {
             ComPtr<ID3D11UnorderedAccessView> uav;
             SLANG_RETURN_NULL_ON_FAIL(m_device->CreateUnorderedAccessView(resourceImpl->m_buffer, nullptr, uav.writeRef()));
@@ -997,8 +995,7 @@ ResourceView* D3D11Renderer::createBufferView(BufferResource* buffer, ResourceVi
         }
         break;
 
-    case Resource::Usage::PixelShaderResource:
-    case Resource::Usage::NonPixelShaderResource:
+    case ResourceView::Type::ShaderResource:
         {
             ComPtr<ID3D11ShaderResourceView> srv;
             SLANG_RETURN_NULL_ON_FAIL(m_device->CreateShaderResourceView(resourceImpl->m_buffer, nullptr, srv.writeRef()));
@@ -1813,7 +1810,7 @@ void D3D11Renderer::DescriptorSetImpl::setCombinedTextureSampler(
     auto samplerImpl = (SamplerStateImpl*)sampler;
 
     auto& rangeInfo = m_layout->m_ranges[range];
-    assert(rangeInfo.type == D3D11DescriptorSlotType::CombinedSamplerTexture);
+    assert(rangeInfo.type == D3D11DescriptorSlotType::CombinedTextureSampler);
 
     assert(viewImpl->m_type == ResourceViewImpl::Type::SRV);
     auto srvImpl = (ShaderResourceViewImpl*)viewImpl;

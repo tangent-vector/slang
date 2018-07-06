@@ -66,7 +66,7 @@ class RenderTestApp
 	void renderFrame();
 	void finalize();
 
-//	BindingState* getBindingState() const { return m_bindingState; }
+	BindingStateImpl* getBindingState() const { return m_bindingState; }
 
     Result writeBindingOutput(const char* fileName);
 
@@ -85,7 +85,8 @@ class RenderTestApp
 	RefPtr<InputLayout>     m_inputLayout;
 	RefPtr<BufferResource>  m_vertexBuffer;
 	RefPtr<ShaderProgram>   m_shaderProgram;
-//	RefPtr<BindingState>    m_bindingState;
+    RefPtr<PipelineState>   m_pipelineState;
+	RefPtr<BindingStateImpl>    m_bindingState;
 
 	ShaderInputLayout m_shaderInputLayout;              ///< The binding layout
     int m_numAddedConstantBuffers;                      ///< Constant buffers can be added to the binding directly. Will be added at the end.
@@ -117,22 +118,26 @@ SlangResult RenderTestApp::initialize(Renderer* renderer, ShaderCompiler* shader
     }
 
     {
-        BindingState::Desc bindingStateDesc;
-        SLANG_RETURN_ON_FAIL(ShaderRendererUtil::createBindingStateDesc(m_shaderInputLayout, m_renderer, bindingStateDesc));
-
-        //! Hack -> if bindings are specified, just set up the constant buffer binding
-        // Should probably be more sophisticated than this - with 'dynamic' constant buffer/s binding always being specified
+        //! Hack -> if doing a graphics test, add an extra binding for our dynamic constant buffer
+        //
+        // TODO: Should probably be more sophisticated than this - with 'dynamic' constant buffer/s binding always being specified
         // in the test file
-
-        if ((gOptions.shaderType == Options::ShaderProgramType::Graphics || gOptions.shaderType == Options::ShaderProgramType::GraphicsCompute)
-            && bindingStateDesc.findBindingIndex(Resource::BindFlag::ConstantBuffer, 0) < 0)
+        RefPtr<BufferResource> addedConstantBuffer;
+        switch(gOptions.shaderType)
         {
-            bindingStateDesc.addResource(BindingType::Buffer, m_constantBuffer, BindingState::RegisterRange::makeSingle(0) );
+        default:
+            break;
 
+        case Options::ShaderProgramType::Graphics:
+        case Options::ShaderProgramType::GraphicsCompute:
+            addedConstantBuffer = m_constantBuffer;
             m_numAddedConstantBuffers++;
+            break;
         }
 
-        m_bindingState = m_renderer->createBindingState(bindingStateDesc);
+        BindingStateImpl* bindingState = nullptr;
+        SLANG_RETURN_ON_FAIL(ShaderRendererUtil::createBindingState(m_shaderInputLayout, m_renderer, addedConstantBuffer, &bindingState));
+        m_bindingState = bindingState;
     }
 
     // Do other initialization that doesn't depend on the source language.
@@ -155,6 +160,37 @@ SlangResult RenderTestApp::initialize(Renderer* renderer, ShaderCompiler* shader
     m_vertexBuffer = renderer->createBufferResource(Resource::Usage::VertexBuffer, vertexBufferDesc, kVertexData);
     if(!m_vertexBuffer)
         return SLANG_FAIL;
+
+    {
+        switch(gOptions.shaderType)
+        {
+        default:
+            assert(!"unexpected test shader type");
+            return SLANG_FAIL;
+
+        case Options::ShaderProgramType::Compute:
+            {
+                ComputePipelineStateDesc desc;
+                desc.pipelineLayout = m_bindingState->pipelineLayout;
+                desc.program = m_shaderProgram;
+
+                m_pipelineState = renderer->createComputePipelineState(desc);
+            }
+            break;
+
+        case Options::ShaderProgramType::Graphics:
+        case Options::ShaderProgramType::GraphicsCompute:
+            {
+                GraphicsPipelineStateDesc desc;
+                desc.pipelineLayout = m_bindingState->pipelineLayout;
+                desc.program = m_shaderProgram;
+                desc.inputLayout = m_inputLayout;
+
+                m_pipelineState = renderer->createGraphicsPipelineState(desc);
+            }
+            break;
+        }
+    }
 
     return SLANG_OK;
 }
@@ -224,27 +260,23 @@ void RenderTestApp::renderFrame()
 		m_renderer->unmap(m_constantBuffer);
     }
 
-    // Input Assembler (IA)
+    auto pipelineType = PipelineType::Graphics;
 
-	m_renderer->setInputLayout(m_inputLayout);
+    m_renderer->setPipelineState(pipelineType, m_pipelineState);
+
 	m_renderer->setPrimitiveTopology(PrimitiveTopology::TriangleList);
-
 	m_renderer->setVertexBuffer(0, m_vertexBuffer, sizeof(Vertex));
 
-    // Vertex Shader (VS)
-    // Pixel Shader (PS)
-
-	m_renderer->setShaderProgram(m_shaderProgram);
-	m_renderer->setBindingState(m_bindingState);
-    //
+    m_bindingState->apply(m_renderer, pipelineType);
 
 	m_renderer->draw(3);
 }
 
 void RenderTestApp::runCompute()
 {
-	m_renderer->setShaderProgram(m_shaderProgram);
-	m_renderer->setBindingState(m_bindingState);
+    auto pipelineType = PipelineType::Compute;
+    m_renderer->setPipelineState(pipelineType, m_pipelineState);
+    m_bindingState->apply(m_renderer, pipelineType);
 	m_renderer->dispatchCompute(1, 1, 1);
 }
 
@@ -265,18 +297,12 @@ Result RenderTestApp::writeBindingOutput(const char* fileName)
         return SLANG_FAIL;
     }
 
-    const BindingState::Desc& bindingStateDesc = m_bindingState->getDesc();
-    // Must be the same amount of entries
-    assert(bindingStateDesc.m_bindings.Count() == m_shaderInputLayout.entries.Count() + m_numAddedConstantBuffers);
-
-    const int numBindings = int(m_shaderInputLayout.entries.Count());
-
-    for (int i = 0; i < numBindings; ++i)
+    for(auto binding : m_bindingState->outputBindings)
     {
+        auto i = binding.entryIndex;
         const auto& layoutBinding = m_shaderInputLayout.entries[i];
-        const auto& binding = bindingStateDesc.m_bindings[i];
 
-        if (layoutBinding.isOutput)
+        assert(layoutBinding.isOutput);
         {
             if (binding.resource && binding.resource->isBuffer())
             {
