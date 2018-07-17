@@ -308,7 +308,7 @@ SlangResult initialize()
         descriptorSetLayoutDesc.slotRanges = &slotRanges[0];
 
         descriptorSetLayout = gRenderer->createDescriptorSetLayout(descriptorSetLayoutDesc);
-        if(!descriptorSetLayout) return FAILURE;
+        if(!descriptorSetLayout) return SLANG_FAIL;
     }
 
     {
@@ -322,7 +322,7 @@ SlangResult initialize()
         pipelineLayoutDesc.descriptorSets = &descriptorSets[0];
 
         PipelineLayout* pipelineLayout = gRenderer->createPipelineLayout(pipelineLayoutDesc);
-        if(!pipelineLayout) return FAILURE;
+        if(!pipelineLayout) return SLANG_FAIL;
 
         gPipelineLayout = pipelineLayout;
     }
@@ -330,7 +330,7 @@ SlangResult initialize()
     // Descriptor Set
     {
         DescriptorSet* descriptorSet = gRenderer->createDescriptorSet(descriptorSetLayout);
-        if(!descriptorSet) return FAILURE;
+        if(!descriptorSet) return SLANG_FAIL;
 
         descriptorSet->setConstantBuffer(0, 0, gConstantBuffer);
 
@@ -348,7 +348,7 @@ SlangResult initialize()
         // ...
 
         PipelineState* pipelineState = gRenderer->createGraphicsPipelineState(desc);
-        if(!pipelineState) return FAILURE;
+        if(!pipelineState) return SLANG_FAIL;
 
         gPipelineState = pipelineState;
     }
