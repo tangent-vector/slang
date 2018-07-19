@@ -344,6 +344,7 @@ SlangResult initialize()
         desc.pipelineLayout = gPipelineLayout;
         desc.inputLayout = inputLayout;
         desc.program = shaderProgram;
+        desc.renderTargetCount = 1;
 
         // ...
 

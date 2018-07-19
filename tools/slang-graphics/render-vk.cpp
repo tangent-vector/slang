@@ -45,6 +45,8 @@ public:
     virtual void setClearColor(const float color[4]) override;
     virtual void clearFrame() override;
     virtual void presentFrame() override;
+    TextureResource::Desc getSwapChainTextureDesc() override;
+
     virtual TextureResource* createTextureResource(Resource::Usage initialUsage, const TextureResource::Desc& desc, const TextureResource::Data* initData) override;
     virtual BufferResource* createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& bufferDesc, const void* initData) override;
     virtual SamplerState* createSamplerState(SamplerState::Desc const& desc) override;
@@ -1072,6 +1074,13 @@ void VKRenderer::presentFrame()
     m_swapChain.present(vsync);
 
     _beginRender();
+}
+
+TextureResource::Desc VKRenderer::getSwapChainTextureDesc()
+{
+    TextureResource::Desc desc;
+    desc.init2D(Resource::Type::Texture2D, Format::Unknown, m_desc.width, m_desc.height, 1);
+    return desc;
 }
 
 SlangResult VKRenderer::captureScreenSurface(Surface& surfaceOut)

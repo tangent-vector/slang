@@ -493,21 +493,15 @@ public:
     {
         DescriptorSlotType  type            = DescriptorSlotType::Unknown;
         UInt                count           = 1;
-        UInt                registerOffset  = 0;
-        UInt                spaceOffset     = 0;
 
         SlotRangeDesc()
         {}
 
         SlotRangeDesc(
             DescriptorSlotType  type,
-            UInt                count = 1,
-            UInt                registerOffset = 0,
-            UInt                spaceOffset = 0)
+            UInt                count = 1)
             : type(type)
             , count(count)
-            , registerOffset(registerOffset)
-            , spaceOffset(spaceOffset)
         {}
     };
 
@@ -524,19 +518,13 @@ public:
     struct DescriptorSetDesc
     {
         DescriptorSetLayout*    layout          = nullptr;
-        UInt                    registerOffset  = 0;
-        UInt                    spaceOffset     = 0;
 
         DescriptorSetDesc()
         {}
 
         DescriptorSetDesc(
-            DescriptorSetLayout*    layout,
-            UInt                    registerOffset  = 0,
-            UInt                    spaceOffset     = 0)
+            DescriptorSetLayout*    layout)
             : layout(layout)
-            , registerOffset(registerOffset)
-            , spaceOffset(spaceOffset)
         {}
     };
 
@@ -776,6 +764,8 @@ public:
     virtual void clearFrame() = 0;
 
     virtual void presentFrame() = 0;
+
+    virtual TextureResource::Desc getSwapChainTextureDesc() = 0;
 
         /// Create a texture resource. initData holds the initialize data to set the contents of the texture when constructed.
     virtual TextureResource* createTextureResource(Resource::Usage initialUsage, const TextureResource::Desc& desc, const TextureResource::Data* initData = nullptr) { return nullptr; }

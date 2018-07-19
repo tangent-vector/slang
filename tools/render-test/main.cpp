@@ -185,6 +185,7 @@ SlangResult RenderTestApp::initialize(Renderer* renderer, ShaderCompiler* shader
                 desc.pipelineLayout = m_bindingState->pipelineLayout;
                 desc.program = m_shaderProgram;
                 desc.inputLayout = m_inputLayout;
+                desc.renderTargetCount = m_bindingState->m_numRenderTargets;
 
                 m_pipelineState = renderer->createGraphicsPipelineState(desc);
             }

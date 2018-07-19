@@ -57,6 +57,8 @@ public:
     virtual void setClearColor(const float color[4]) override;
     virtual void clearFrame() override;
     virtual void presentFrame() override;
+    TextureResource::Desc getSwapChainTextureDesc() override;
+
     virtual TextureResource* createTextureResource(Resource::Usage initialUsage, const TextureResource::Desc& desc, const TextureResource::Data* initData) override;
     virtual BufferResource* createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& bufferDesc, const void* initData) override;
     virtual SamplerState* createSamplerState(SamplerState::Desc const& desc) override;
@@ -1641,6 +1643,14 @@ void D3D12Renderer::presentFrame()
     beginRender();
 }
 
+TextureResource::Desc D3D12Renderer::getSwapChainTextureDesc()
+{
+    TextureResource::Desc desc;
+    desc.init2D(Resource::Type::Texture2D, Format::Unknown, m_desc.width, m_desc.height, 1);
+
+    return desc;
+}
+
 SlangResult D3D12Renderer::captureScreenSurface(Surface& surfaceOut)
 {
     return captureTextureToSurface(*m_renderTargets[m_renderTargetIndex], surfaceOut);
@@ -2752,14 +2762,18 @@ PipelineLayout* D3D12Renderer::createPipelineLayout(const PipelineLayout::Desc& 
 
         auto& desc = descriptorSetLayout->m_desc;
 
+        UInt samplerCount = 0;
+        UInt srvCount = 0;
+        UInt cbvCount = 0;
+        UInt uavCount = 0;
+
         UInt rangeCount = desc.slotRangeCount;
         for(UInt rr = 0; rr < rangeCount; ++rr)
         {
             auto& rangeInfo = desc.slotRanges[rr];
 
             UInt bindingCount   = rangeInfo.count;
-            UInt bindingIndex   = descriptorSetInfo.registerOffset + rangeInfo.registerOffset;
-            UInt bindingSpace   = descriptorSetInfo.spaceOffset    + rangeInfo.spaceOffset;
+            UInt bindingSpace   = dd;
 
             switch(rangeInfo.type)
             {
@@ -2771,6 +2785,8 @@ PipelineLayout* D3D12Renderer::createPipelineLayout(const PipelineLayout::Desc& 
 
             case DescriptorSlotType::Sampler:
                 {
+                    UInt bindingIndex = samplerCount; samplerCount += bindingCount;
+
                     D3D12_DESCRIPTOR_RANGE& range = nextSamplerRange();
 
                     range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
@@ -2784,6 +2800,8 @@ PipelineLayout* D3D12Renderer::createPipelineLayout(const PipelineLayout::Desc& 
             case DescriptorSlotType::SampledImage:
             case DescriptorSlotType::UniformTexelBuffer:
                 {
+                    UInt bindingIndex = srvCount; srvCount += bindingCount;
+
                     D3D12_DESCRIPTOR_RANGE& range = nextRange();
 
                     range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
@@ -2808,6 +2826,8 @@ PipelineLayout* D3D12Renderer::createPipelineLayout(const PipelineLayout::Desc& 
             case DescriptorSlotType::StorageBuffer:
             case DescriptorSlotType::DynamicStorageBuffer:
                 {
+                    UInt bindingIndex = uavCount; uavCount += bindingCount;
+
                     D3D12_DESCRIPTOR_RANGE& range = nextRange();
 
                     range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
@@ -2830,6 +2850,8 @@ PipelineLayout* D3D12Renderer::createPipelineLayout(const PipelineLayout::Desc& 
             case DescriptorSlotType::UniformBuffer:
             case DescriptorSlotType::DynamicUniformBuffer:
                 {
+                    UInt bindingIndex = cbvCount; cbvCount += bindingCount;
+
                     // TODO: non-dynamic constant buffers should be
                     // allocated inside of descritpor tables rather
                     // than as root parameters.

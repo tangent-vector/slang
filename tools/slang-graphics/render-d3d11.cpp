@@ -56,6 +56,8 @@ public:
     virtual void setClearColor(const float color[4]) override;
     virtual void clearFrame() override;
     virtual void presentFrame() override;
+    TextureResource::Desc getSwapChainTextureDesc() override;
+
     virtual TextureResource* createTextureResource(Resource::Usage initialUsage, const TextureResource::Desc& desc, const TextureResource::Data* initData) override;
     virtual BufferResource* createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& bufferDesc, const void* initData) override;
     virtual SamplerState* createSamplerState(SamplerState::Desc const& desc) override;
@@ -138,14 +140,7 @@ public:
         };
         List<RangeInfo> m_ranges;
 
-        struct BindingRangeInfo
-        {
-            UInt count;
-            UInt bindingIndex;
-            UInt arrayIndex;
-        };
-
-        List<BindingRangeInfo>  m_bindingRanges[int(D3D11DescriptorSlotType::CountOf)];
+        UInt m_counts[int(D3D11DescriptorSlotType::CountOf)];
     };
 
     class PipelineLayoutImpl : public PipelineLayout
@@ -306,8 +301,11 @@ public:
     ComPtr<ID3D11DeviceContext> m_immediateContext;
     ComPtr<ID3D11Texture2D> m_backBufferTexture;
 
-    List<ComPtr<ID3D11RenderTargetView> > m_renderTargetViews;
-    List<ComPtr<ID3D11Texture2D> > m_renderTargetTextures;
+    RefPtr<TextureResourceImpl>     m_primaryRenderTargetTexture;
+    RefPtr<RenderTargetViewImpl>    m_primaryRenderTargetView;
+
+//    List<ComPtr<ID3D11RenderTargetView> > m_renderTargetViews;
+//    List<ComPtr<ID3D11Texture2D> > m_renderTargetTextures;
 
     bool m_renderTargetBindingsDirty = false;
 
@@ -488,7 +486,7 @@ SlangResult D3D11Renderer::initialize(const Desc& desc, void* inWindowHandle)
 
     SLANG_RETURN_ON_FAIL(m_swapChain->GetBuffer(0, kIID_ID3D11Texture2D, (void**)m_backBufferTexture.writeRef()));
 
-    for (int i = 0; i < 8; i++)
+//    for (int i = 0; i < 8; i++)
     {
         ComPtr<ID3D11Texture2D> texture;
         D3D11_TEXTURE2D_DESC textureDesc;
@@ -502,11 +500,23 @@ SlangResult D3D11Renderer::initialize(const Desc& desc, void* inWindowHandle)
         rtvDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
         SLANG_RETURN_ON_FAIL(m_device->CreateRenderTargetView(texture, &rtvDesc, rtv.writeRef()));
 
-        m_renderTargetViews.Add(rtv);
-        m_renderTargetTextures.Add(texture);
+        TextureResource::Desc resourceDesc;
+        resourceDesc.init2D(Resource::Type::Texture2D, Format::RGBA_Unorm_UInt8, textureDesc.Width, textureDesc.Height, 1);
+        auto primaryRenderTargetTexture = this->createTextureResource(Resource::Usage::RenderTarget, resourceDesc, nullptr);
+        if(!primaryRenderTargetTexture) return SLANG_FAIL;
+
+        ResourceView::Desc viewDesc;
+        viewDesc.format = resourceDesc.format;
+        viewDesc.type = ResourceView::Type::RenderTarget;
+        auto primaryRenderTargetView = this->createTextureView(primaryRenderTargetTexture, viewDesc);
+
+        m_primaryRenderTargetTexture = (TextureResourceImpl*) primaryRenderTargetTexture;
+        m_primaryRenderTargetView = (RenderTargetViewImpl*) primaryRenderTargetView;
     }
 
-    m_immediateContext->OMSetRenderTargets((UINT)m_renderTargetViews.Count(), m_renderTargetViews.Buffer()->readRef(), nullptr);
+//    m_immediateContext->OMSetRenderTargets(1, m_primaryRenderTargetView->m_rtv.readRef(), nullptr);
+    m_rtvBindings[0] = m_primaryRenderTargetView->m_rtv;
+    m_targetBindingsDirty[int(PipelineType::Graphics)] = true;
 
     // Similarly, we are going to set up a viewport once, and then never
     // switch, since this is a simple test app.
@@ -529,21 +539,34 @@ void D3D11Renderer::setClearColor(const float color[4])
 
 void D3D11Renderer::clearFrame()
 {
-    for (auto i = 0u; i < m_renderTargetViews.Count(); i++)
-	{
-        m_immediateContext->ClearRenderTargetView(m_renderTargetViews[i], m_clearColor);
-	}
+    m_immediateContext->ClearRenderTargetView(m_primaryRenderTargetView->m_rtv, m_clearColor);
+
+    if(m_dsvBinding)
+    {
+        m_immediateContext->ClearDepthStencilView(m_dsvBinding, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
+    }
 }
 
 void D3D11Renderer::presentFrame()
 {
-    m_immediateContext->CopyResource(m_backBufferTexture, m_renderTargetTextures[0]);
+    m_immediateContext->CopyResource(m_backBufferTexture, m_primaryRenderTargetTexture->m_resource);
     m_swapChain->Present(0, 0);
+}
+
+TextureResource::Desc D3D11Renderer::getSwapChainTextureDesc()
+{
+    D3D11_TEXTURE2D_DESC dxDesc;
+    ((ID3D11Texture2D*)m_primaryRenderTargetTexture->m_resource.get())->GetDesc(&dxDesc);
+
+    TextureResource::Desc desc;
+    desc.init2D(Resource::Type::Texture2D, Format::Unknown, dxDesc.Width, dxDesc.Height, 1);
+
+    return desc;
 }
 
 SlangResult D3D11Renderer::captureScreenSurface(Surface& surfaceOut)
 {
-    return captureTextureToSurface(m_device, m_immediateContext, m_renderTargetTextures[0], surfaceOut);
+    return captureTextureToSurface(m_device, m_immediateContext, (ID3D11Texture2D*) m_primaryRenderTargetTexture->m_resource.get(), surfaceOut);
 }
 
 static D3D11_BIND_FLAG _calcResourceFlag(Resource::BindFlag::Enum bindFlag)
@@ -1213,6 +1236,8 @@ void D3D11Renderer::setPipelineState(PipelineType pipelineType, PipelineState* s
             // OM
 
             m_immediateContext->OMSetDepthStencilState(stateImpl->m_depthStencilState, stateImpl->m_stencilRef);
+
+            m_currentGraphicsState = stateImpl;
         }
         break;
 
@@ -1224,6 +1249,8 @@ void D3D11Renderer::setPipelineState(PipelineType pipelineType, PipelineState* s
             // CS
 
             m_immediateContext->CSSetShader(programImpl->m_computeShader, nullptr, 0);
+
+            m_currentComputeState = stateImpl;
         }
         break;
     }
@@ -1379,6 +1406,9 @@ PipelineState* D3D11Renderer::createGraphicsPipelineState(const GraphicsPipeline
     state->m_stencilRef = desc.depthStencil.stencilRef;
     state->m_depthStencilState = depthStencilState;
     state->m_rasterizerState = rasterizerState;
+    state->m_pipelineLayout = (PipelineLayoutImpl*) desc.pipelineLayout;
+    state->m_inputLayout = (InputLayoutImpl*) desc.inputLayout;
+    state->m_rtvCount = desc.renderTargetCount;
     return state;
 }
 
@@ -1400,18 +1430,117 @@ void D3D11Renderer::dispatchCompute(int x, int y, int z)
 DescriptorSetLayout* D3D11Renderer::createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc)
 {
     RefPtr<DescriptorSetLayoutImpl> descriptorSetLayoutImpl = new DescriptorSetLayoutImpl();
+
+    UInt counts[int(D3D11DescriptorSlotType::CountOf)] = { 0, };
+
+    UInt rangeCount = desc.slotRangeCount;
+    for(UInt rr = 0; rr < rangeCount; ++rr)
+    {
+        auto rangeDesc = desc.slotRanges[rr];
+
+        DescriptorSetLayoutImpl::RangeInfo rangeInfo;
+
+        switch(rangeDesc.type)
+        {
+        default:
+            assert(!"invalid slot type");
+            return nullptr;
+
+        case DescriptorSlotType::Sampler:
+            rangeInfo.type = D3D11DescriptorSlotType::Sampler;
+            break;
+
+        case DescriptorSlotType::CombinedImageSampler:
+            rangeInfo.type = D3D11DescriptorSlotType::CombinedTextureSampler;
+            break;
+
+        case DescriptorSlotType::UniformBuffer:
+        case DescriptorSlotType::DynamicUniformBuffer:
+            rangeInfo.type = D3D11DescriptorSlotType::ConstantBuffer;
+            break;
+
+        case DescriptorSlotType::SampledImage:
+        case DescriptorSlotType::UniformTexelBuffer:
+        case DescriptorSlotType::InputAttachment:
+            rangeInfo.type = D3D11DescriptorSlotType::ShaderResourceView;
+            break;
+
+        case DescriptorSlotType::StorageImage:
+        case DescriptorSlotType::StorageTexelBuffer:
+        case DescriptorSlotType::StorageBuffer:
+        case DescriptorSlotType::DynamicStorageBuffer:
+            rangeInfo.type = D3D11DescriptorSlotType::UnorderedAccessView;
+            break;
+        }
+
+        if(rangeInfo.type == D3D11DescriptorSlotType::CombinedTextureSampler)
+        {
+            auto srvTypeIndex = int(D3D11DescriptorSlotType::ShaderResourceView);
+            auto samplerTypeIndex = int(D3D11DescriptorSlotType::Sampler);
+
+            rangeInfo.arrayIndex = counts[srvTypeIndex];
+            rangeInfo.pairedSamplerArrayIndex = counts[samplerTypeIndex];
+
+            counts[srvTypeIndex] += rangeDesc.count;
+            counts[samplerTypeIndex] += rangeDesc.count;
+        }
+        else
+        {
+            auto typeIndex = int(rangeInfo.type);
+
+            rangeInfo.arrayIndex = counts[typeIndex];
+            counts[typeIndex] += rangeDesc.count;
+        }
+        descriptorSetLayoutImpl->m_ranges.Add(rangeInfo);
+    }
+
+    for(int ii = 0; ii < int(D3D11DescriptorSlotType::CountOf); ++ii)
+    {
+        descriptorSetLayoutImpl->m_counts[ii] = counts[ii];
+    }
+
     return descriptorSetLayoutImpl.detach();
 }
 
 PipelineLayout* D3D11Renderer::createPipelineLayout(const PipelineLayout::Desc& desc)
 {
     RefPtr<PipelineLayoutImpl> pipelineLayoutImpl = new PipelineLayoutImpl();
+
+    UInt counts[int(D3D11DescriptorSlotType::CountOf)] = { 0, };
+
+    UInt setCount = desc.descriptorSetCount;
+    for(UInt ii = 0; ii < setCount; ++ii)
+    {
+        auto setDesc = desc.descriptorSets[ii];
+        PipelineLayoutImpl::DescriptorSetInfo setInfo;
+
+        setInfo.layout = (DescriptorSetLayoutImpl*) setDesc.layout;
+
+        for(int jj = 0; jj < int(D3D11DescriptorSlotType::CountOf); ++jj)
+        {
+            setInfo.baseIndices[jj] = counts[jj];
+        }
+
+        pipelineLayoutImpl->m_descriptorSets.Add(setInfo);
+    }
+
+    pipelineLayoutImpl->m_uavCount = counts[int(D3D11DescriptorSlotType::UnorderedAccessView)];
+
     return pipelineLayoutImpl.detach();
 }
 
 DescriptorSet* D3D11Renderer::createDescriptorSet(DescriptorSetLayout* layout)
 {
+    auto layoutImpl = (DescriptorSetLayoutImpl*)layout;
+
     RefPtr<DescriptorSetImpl> descriptorSetImpl = new DescriptorSetImpl();
+
+    descriptorSetImpl->m_layout = layoutImpl;
+    descriptorSetImpl->m_cbs     .SetSize(layoutImpl->m_counts[int(D3D11DescriptorSlotType::ConstantBuffer)]);
+    descriptorSetImpl->m_srvs    .SetSize(layoutImpl->m_counts[int(D3D11DescriptorSlotType::ShaderResourceView)]);
+    descriptorSetImpl->m_uavs    .SetSize(layoutImpl->m_counts[int(D3D11DescriptorSlotType::UnorderedAccessView)]);
+    descriptorSetImpl->m_samplers.SetSize(layoutImpl->m_counts[int(D3D11DescriptorSlotType::Sampler)]);
+
     return descriptorSetImpl.detach();
 }
 
@@ -1838,13 +1967,12 @@ void D3D11Renderer::setDescriptorSet(PipelineType pipelineType, PipelineLayout* 
 
     {
         int slotType = int(D3D11DescriptorSlotType::ConstantBuffer);
-        UInt baseIndex = setInfo.baseIndices[slotType];
-
-        for(auto range : descriptorSetLayoutImpl->m_bindingRanges[slotType])
+        UInt slotCount = setInfo.layout->m_counts[slotType];
+        if(slotCount)
         {
-            UINT startSlot = baseIndex + range.bindingIndex;
-            UINT slotCount = range.count;
-            auto cbs = descriptorSetImpl->m_cbs[range.arrayIndex].readRef();
+            UInt startSlot = setInfo.baseIndices[slotType];
+
+            auto cbs = descriptorSetImpl->m_cbs[0].readRef();
 
             m_immediateContext->VSSetConstantBuffers(startSlot, slotCount, cbs);
             // ...
@@ -1856,13 +1984,12 @@ void D3D11Renderer::setDescriptorSet(PipelineType pipelineType, PipelineLayout* 
 
     {
         int slotType = int(D3D11DescriptorSlotType::ShaderResourceView);
-        UInt baseIndex = setInfo.baseIndices[slotType];
-
-        for(auto range : descriptorSetLayoutImpl->m_bindingRanges[slotType])
+        UInt slotCount = setInfo.layout->m_counts[slotType];
+        if(slotCount)
         {
-            UINT startSlot = baseIndex + range.bindingIndex;
-            UINT slotCount = range.count;
-            auto srvs = descriptorSetImpl->m_srvs[range.arrayIndex].readRef();
+            UInt startSlot = setInfo.baseIndices[slotType];
+
+            auto srvs = descriptorSetImpl->m_srvs[0].readRef();
 
             m_immediateContext->VSSetShaderResources(startSlot, slotCount, srvs);
             // ...
@@ -1874,13 +2001,12 @@ void D3D11Renderer::setDescriptorSet(PipelineType pipelineType, PipelineLayout* 
 
     {
         int slotType = int(D3D11DescriptorSlotType::Sampler);
-        UInt baseIndex = setInfo.baseIndices[slotType];
-
-        for(auto range : descriptorSetLayoutImpl->m_bindingRanges[slotType])
+        UInt slotCount = setInfo.layout->m_counts[slotType];
+        if(slotCount)
         {
-            UINT startSlot = baseIndex + range.bindingIndex;
-            UINT slotCount = range.count;
-            auto samplers = descriptorSetImpl->m_samplers[range.arrayIndex].readRef();
+            UInt startSlot = setInfo.baseIndices[slotType];
+
+            auto samplers = descriptorSetImpl->m_samplers[0].readRef();
 
             m_immediateContext->VSSetSamplers(startSlot, slotCount, samplers);
             // ...
@@ -1891,14 +2017,19 @@ void D3D11Renderer::setDescriptorSet(PipelineType pipelineType, PipelineLayout* 
     }
 
     {
+        // Note: UAVs are handled differently from other bindings, because
+        // D3D11 requires all UAVs to be set with a single call, rather
+        // than allowing incremental updates. We will therefore shadow
+        // the UAV bindings with `m_uavBindings` and then flush them
+        // as needed right before a draw/dispatch.
+        //
         int slotType = int(D3D11DescriptorSlotType::UnorderedAccessView);
-        UInt baseIndex = setInfo.baseIndices[slotType];
-
-        for(auto range : descriptorSetLayoutImpl->m_bindingRanges[slotType])
+        UInt slotCount = setInfo.layout->m_counts[slotType];
+        if(slotCount)
         {
-            UINT startSlot = baseIndex + range.bindingIndex;
-            UINT slotCount = range.count;
-            auto uavs = descriptorSetImpl->m_uavs[range.arrayIndex].readRef();
+            UInt startSlot = setInfo.baseIndices[slotType];
+
+            auto uavs = descriptorSetImpl->m_uavs[0].readRef();
 
             for(UINT ii = 0; ii < slotCount; ++ii)
             {

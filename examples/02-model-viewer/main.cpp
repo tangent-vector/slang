@@ -204,8 +204,8 @@ int initialize()
 
     // Depth-Stencil Test (DS)
     {
-        TextureResource::Desc depthBufferDesc;
-        depthBufferDesc.init2D(Resource::Type::Texture2D, Format::D_Float32, gWindowWidth, gWindowHeight, 1);
+        TextureResource::Desc depthBufferDesc = gRenderer->getSwapChainTextureDesc();
+        depthBufferDesc.format = Format::D_Float32;
         depthBufferDesc.setDefaults(Resource::Usage::DepthWrite);
 
         TextureResource* depthTexture = gRenderer->createTextureResource(
@@ -217,6 +217,8 @@ int initialize()
         textureViewDesc.type = ResourceView::Type::DepthStencil;
         ResourceView* depthTarget = gRenderer->createTextureView(depthTexture, textureViewDesc);
         if (!depthTarget) return FAILURE;
+
+        gDepthTarget = depthTarget;
     }
 
     // Shaders (VS, PS, ...)
@@ -275,6 +277,7 @@ int initialize()
         desc.pipelineLayout = gPipelineLayout;
         desc.inputLayout = inputLayout;
         desc.program = shaderProgram;
+        desc.renderTargetCount = 1;
 
         // ...
 
