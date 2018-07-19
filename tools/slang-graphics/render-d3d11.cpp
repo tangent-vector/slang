@@ -1896,7 +1896,7 @@ void D3D11Renderer::_flushGraphicsState()
             m_dsvBinding,
             rtvCount,
             uavCount,
-            m_uavBindings[pipelineType][rtvCount].readRef(),
+            m_uavBindings[pipelineType][0].readRef(),
             nullptr);
     }
 }

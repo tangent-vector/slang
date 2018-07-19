@@ -297,9 +297,15 @@ static SamplerState* _createSamplerState(
 
     List<BindingStateImpl::OutputBinding> outputBindings;
 
+    if(addedConstantBuffer)
+    {
+        descriptorSet->setConstantBuffer(0, 0, addedConstantBuffer);
+    }
     for (int i = 0; i < numEntries; i++)
     {
         const ShaderInputLayoutEntry& srcEntry = srcEntries[i];
+
+        auto rangeIndex = i + (addedConstantBuffer ? 1 : 0);
 
         switch (srcEntry.type)
         {
@@ -314,7 +320,7 @@ static SamplerState* _createSamplerState(
                     switch(srcBuffer.type)
                     {
                     case InputBufferType::ConstantBuffer:
-                        descriptorSet->setConstantBuffer(i, 0, bufferResource);
+                        descriptorSet->setConstantBuffer(rangeIndex, 0, bufferResource);
                         break;
 
                     case InputBufferType::StorageBuffer:
@@ -325,7 +331,7 @@ static SamplerState* _createSamplerState(
                             auto bufferView = renderer->createBufferView(
                                 bufferResource,
                                 viewDesc);
-                            descriptorSet->setResource(i, 0, bufferView);
+                            descriptorSet->setResource(rangeIndex, 0, bufferView);
                         }
                         break;
                     }
@@ -353,7 +359,7 @@ static SamplerState* _createSamplerState(
                         texture,
                         viewDesc);
 
-                    descriptorSet->setCombinedTextureSampler(i, 0, textureView, sampler);
+                    descriptorSet->setCombinedTextureSampler(rangeIndex, 0, textureView, sampler);
 
                     if(srcEntry.isOutput)
                     {
@@ -378,7 +384,7 @@ static SamplerState* _createSamplerState(
                         texture,
                         viewDesc);
 
-                    descriptorSet->setResource(i, 0, textureView);
+                    descriptorSet->setResource(rangeIndex, 0, textureView);
 
                     if(srcEntry.isOutput)
                     {
@@ -393,7 +399,7 @@ static SamplerState* _createSamplerState(
             case ShaderInputType::Sampler:
                 {
                     auto sampler = _createSamplerState(renderer, srcEntry.samplerDesc);
-                    descriptorSet->setSampler(i, 0, sampler);
+                    descriptorSet->setSampler(rangeIndex, 0, sampler);
                 }
                 break;
 
