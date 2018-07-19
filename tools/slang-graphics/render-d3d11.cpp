@@ -958,6 +958,7 @@ ResourceView* D3D11Renderer::createTextureView(TextureResource* texture, Resourc
             SLANG_RETURN_NULL_ON_FAIL(m_device->CreateRenderTargetView(resourceImpl->m_resource, nullptr, rtv.writeRef()));
 
             RefPtr<RenderTargetViewImpl> viewImpl = new RenderTargetViewImpl();
+            viewImpl->m_type = ResourceViewImpl::Type::RTV;
             viewImpl->m_rtv = rtv;
             return viewImpl.detach();
         }
@@ -969,6 +970,7 @@ ResourceView* D3D11Renderer::createTextureView(TextureResource* texture, Resourc
             SLANG_RETURN_NULL_ON_FAIL(m_device->CreateDepthStencilView(resourceImpl->m_resource, nullptr, dsv.writeRef()));
 
             RefPtr<DepthStencilViewImpl> viewImpl = new DepthStencilViewImpl();
+            viewImpl->m_type = ResourceViewImpl::Type::DSV;
             viewImpl->m_dsv = dsv;
             return viewImpl.detach();
         }
@@ -980,6 +982,7 @@ ResourceView* D3D11Renderer::createTextureView(TextureResource* texture, Resourc
             SLANG_RETURN_NULL_ON_FAIL(m_device->CreateUnorderedAccessView(resourceImpl->m_resource, nullptr, uav.writeRef()));
 
             RefPtr<UnorderedAccessViewImpl> viewImpl = new UnorderedAccessViewImpl();
+            viewImpl->m_type = ResourceViewImpl::Type::UAV;
             viewImpl->m_uav = uav;
             return viewImpl.detach();
         }
@@ -991,6 +994,7 @@ ResourceView* D3D11Renderer::createTextureView(TextureResource* texture, Resourc
             SLANG_RETURN_NULL_ON_FAIL(m_device->CreateShaderResourceView(resourceImpl->m_resource, nullptr, srv.writeRef()));
 
             RefPtr<ShaderResourceViewImpl> viewImpl = new ShaderResourceViewImpl();
+            viewImpl->m_type = ResourceViewImpl::Type::SRV;
             viewImpl->m_srv = srv;
             return viewImpl.detach();
         }
@@ -1001,6 +1005,7 @@ ResourceView* D3D11Renderer::createTextureView(TextureResource* texture, Resourc
 ResourceView* D3D11Renderer::createBufferView(BufferResource* buffer, ResourceView::Desc const& desc)
 {
     auto resourceImpl = (BufferResourceImpl*) buffer;
+    auto resourceDesc = resourceImpl->getDesc();
 
     switch (desc.type)
     {
@@ -1009,10 +1014,26 @@ ResourceView* D3D11Renderer::createBufferView(BufferResource* buffer, ResourceVi
 
     case ResourceView::Type::UnorderedAccess:
         {
+            D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+            uavDesc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+            uavDesc.Format = D3DUtil::getMapFormat(desc.format);
+            uavDesc.Buffer.FirstElement = 0;
+            uavDesc.Buffer.NumElements = resourceDesc.sizeInBytes;
+
+            if(resourceDesc.elementSize)
+            {
+                uavDesc.Buffer.NumElements = resourceDesc.sizeInBytes / resourceDesc.elementSize;
+            }
+            else if(desc.format == Format::Unknown)
+            {
+                uavDesc.Buffer.Flags |= D3D11_BUFFER_UAV_FLAG_RAW;
+            }
+
             ComPtr<ID3D11UnorderedAccessView> uav;
-            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateUnorderedAccessView(resourceImpl->m_buffer, nullptr, uav.writeRef()));
+            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateUnorderedAccessView(resourceImpl->m_buffer, &uavDesc, uav.writeRef()));
 
             RefPtr<UnorderedAccessViewImpl> viewImpl = new UnorderedAccessViewImpl();
+            viewImpl->m_type = ResourceViewImpl::Type::UAV;
             viewImpl->m_uav = uav;
             return viewImpl.detach();
         }
@@ -1020,10 +1041,25 @@ ResourceView* D3D11Renderer::createBufferView(BufferResource* buffer, ResourceVi
 
     case ResourceView::Type::ShaderResource:
         {
+            D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+            srvDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+            srvDesc.Format = D3DUtil::getMapFormat(desc.format);
+            srvDesc.Buffer.ElementOffset = 0;
+            srvDesc.Buffer.ElementWidth = 1;
+            srvDesc.Buffer.FirstElement = 0;
+            srvDesc.Buffer.NumElements = resourceDesc.sizeInBytes;
+
+            if(resourceDesc.elementSize)
+            {
+                srvDesc.Buffer.ElementWidth = resourceDesc.elementSize;
+                srvDesc.Buffer.NumElements = resourceDesc.sizeInBytes / resourceDesc.elementSize;
+            }
+
             ComPtr<ID3D11ShaderResourceView> srv;
-            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateShaderResourceView(resourceImpl->m_buffer, nullptr, srv.writeRef()));
+            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateShaderResourceView(resourceImpl->m_buffer, &srvDesc, srv.writeRef()));
 
             RefPtr<ShaderResourceViewImpl> viewImpl = new ShaderResourceViewImpl();
+            viewImpl->m_type = ResourceViewImpl::Type::SRV;
             viewImpl->m_srv = srv;
             return viewImpl.detach();
         }
@@ -1415,9 +1451,11 @@ PipelineState* D3D11Renderer::createGraphicsPipelineState(const GraphicsPipeline
 PipelineState* D3D11Renderer::createComputePipelineState(const ComputePipelineStateDesc& desc)
 {
     auto programImpl = (ShaderProgramImpl*) desc.program;
+    auto pipelineLayoutImpl = (PipelineLayoutImpl*) desc.pipelineLayout;
 
     ComputePipelineStateImpl* state = new ComputePipelineStateImpl();
     state->m_program = programImpl;
+    state->m_pipelineLayout = pipelineLayoutImpl;
     return state;
 }
 
@@ -1519,6 +1557,7 @@ PipelineLayout* D3D11Renderer::createPipelineLayout(const PipelineLayout::Desc& 
         for(int jj = 0; jj < int(D3D11DescriptorSlotType::CountOf); ++jj)
         {
             setInfo.baseIndices[jj] = counts[jj];
+            counts[jj] += setInfo.layout->m_counts[jj];
         }
 
         pipelineLayoutImpl->m_descriptorSets.Add(setInfo);
@@ -1863,7 +1902,7 @@ void D3D11Renderer::_flushGraphicsState()
 
 void D3D11Renderer::_flushComputeState()
 {
-    auto pipelineType = int(PipelineType::Graphics);
+    auto pipelineType = int(PipelineType::Compute);
     if(m_targetBindingsDirty[pipelineType])
     {
         m_targetBindingsDirty[pipelineType] = false;

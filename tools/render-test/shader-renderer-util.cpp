@@ -282,8 +282,20 @@ static SamplerState* _createSamplerState(
     DescriptorSetLayout* descriptorSetLayout = renderer->createDescriptorSetLayout(descriptorSetLayoutDesc);
     if(!descriptorSetLayout) return SLANG_FAIL;
 
+    List<PipelineLayout::DescriptorSetDesc> pipelineDescriptorSets;
+    pipelineDescriptorSets.Add(PipelineLayout::DescriptorSetDesc(descriptorSetLayout));
+
+    PipelineLayout::Desc pipelineLayoutDesc;
+    pipelineLayoutDesc.descriptorSetCount = pipelineDescriptorSets.Count();
+    pipelineLayoutDesc.descriptorSets = pipelineDescriptorSets.Buffer();
+
+    PipelineLayout* pipelineLayout = renderer->createPipelineLayout(pipelineLayoutDesc);
+    if(!pipelineLayout) return SLANG_FAIL;
+
     DescriptorSet* descriptorSet = renderer->createDescriptorSet(descriptorSetLayout);
     if(!descriptorSet) return SLANG_FAIL;
+
+    List<BindingStateImpl::OutputBinding> outputBindings;
 
     for (int i = 0; i < numEntries; i++)
     {
@@ -317,6 +329,14 @@ static SamplerState* _createSamplerState(
                         }
                         break;
                     }
+
+                    if(srcEntry.isOutput)
+                    {
+                        BindingStateImpl::OutputBinding binding;
+                        binding.entryIndex = i;
+                        binding.resource = bufferResource;
+                        outputBindings.Add(binding);
+                    }
                 }
                 break;
 
@@ -334,6 +354,14 @@ static SamplerState* _createSamplerState(
                         viewDesc);
 
                     descriptorSet->setCombinedTextureSampler(i, 0, textureView, sampler);
+
+                    if(srcEntry.isOutput)
+                    {
+                        BindingStateImpl::OutputBinding binding;
+                        binding.entryIndex = i;
+                        binding.resource = texture;
+                        outputBindings.Add(binding);
+                    }
                 }
                 break;
 
@@ -351,6 +379,14 @@ static SamplerState* _createSamplerState(
                         viewDesc);
 
                     descriptorSet->setResource(i, 0, textureView);
+
+                    if(srcEntry.isOutput)
+                    {
+                        BindingStateImpl::OutputBinding binding;
+                        binding.entryIndex = i;
+                        binding.resource = texture;
+                        outputBindings.Add(binding);
+                    }
                 }
                 break;
 
@@ -367,6 +403,12 @@ static SamplerState* _createSamplerState(
         }
     }
 
+    BindingStateImpl* bindingState = new BindingStateImpl();
+    bindingState->descriptorSet = descriptorSet;
+    bindingState->pipelineLayout = pipelineLayout;
+    bindingState->outputBindings = outputBindings;
+
+    *outBindingState = bindingState;
     return SLANG_OK;
 }
 
