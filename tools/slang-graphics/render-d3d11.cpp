@@ -1027,6 +1027,7 @@ ResourceView* D3D11Renderer::createBufferView(BufferResource* buffer, ResourceVi
             else if(desc.format == Format::Unknown)
             {
                 uavDesc.Buffer.Flags |= D3D11_BUFFER_UAV_FLAG_RAW;
+                uavDesc.Format = DXGI_FORMAT_R32_TYPELESS;
             }
 
             ComPtr<ID3D11UnorderedAccessView> uav;
