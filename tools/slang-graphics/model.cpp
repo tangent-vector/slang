@@ -195,11 +195,9 @@ RefPtr<TextureResource> loadTextureImage(
     return texture;
 }
 
-Result Model::initialize(
-    Renderer*   renderer,
+Result ModelLoader::load(
     char const* inputPath,
-    LoadFlags   loadFlags,
-    float       scale)
+    void**      outModel)
 {
     // TODO: need to actually allocate/load the data
 
@@ -230,12 +228,12 @@ Result Model::initialize(
     // Translate each material imported by TinyObj into a format that
     // we can actually use for rendering.
     //
-    std::vector<RefPtr<Material>> materials;
+    std::vector<void*> materials;
     for(auto& objMaterial : objMaterials)
     {
-        RefPtr<Material> material = new Material();
+        MaterialData materialData;
 
-        material->diffuseColor = glm::vec3(
+        materialData.diffuseColor = glm::vec3(
             objMaterial.diffuse[0],
             objMaterial.diffuse[1],
             objMaterial.diffuse[2]);
@@ -243,14 +241,14 @@ Result Model::initialize(
         // load any referenced textures here
         if(objMaterial.diffuse_texname.length())
         {
-            material->diffuseMap = loadTextureImage(
+            materialData.diffuseMap = loadTextureImage(
                 renderer,
                 objMaterial.diffuse_texname.c_str());
         }
 
+        auto material = callbacks->createMaterial(materialData);
         materials.push_back(material);
     }
-
 
     // Flip the winding order on all faces if we are asked to...
     //
@@ -413,7 +411,10 @@ Result Model::initialize(
     std::vector<Vertex> flatVertices;
     std::vector<Index> flatIndices;
 
-    RefPtr<Mesh> currentMesh;
+    MeshData* currentMesh = nullptr;
+    MeshData currentMeshStorage;
+
+    std::vector<void*> meshes;
 
     for(auto& objShape : objShapes)
     {
@@ -423,15 +424,21 @@ Result Model::initialize(
         {
             size_t objFaceIndex = objFaceCounter++;
             int faceMaterialID = objShape.mesh.material_ids[objFaceIndex];
-            Material* faceMaterial = materials[faceMaterialID];
+            void* faceMaterial = materials[faceMaterialID];
 
             if(!currentMesh || (faceMaterial != currentMesh->material))
             {
+                // finish old mesh.
+                if(currentMesh)
+                {
+                    meshes.push_back(callbacks->createMesh(*currentMesh));
+                }
+
                 // Need to start a new mesh.
-                currentMesh = new Mesh();
-                meshes.push_back(currentMesh);
+                currentMesh = &currentMeshStorage;
                 currentMesh->material = faceMaterial;
                 currentMesh->firstIndex = (int)flatIndices.size();
+                currentMesh->indexCount = 0;
             }
 
             for(size_t objFaceVertex = 0; objFaceVertex < objFaceVertexCount; ++objFaceVertex)
@@ -481,28 +488,41 @@ Result Model::initialize(
         }
     }
 
-    vertexCount = (int)flatVertices.size();
-    indexCount = (int)flatIndices.size();
+    // finish last mesh.
+    if(currentMesh)
+    {
+        meshes.push_back(callbacks->createMesh(*currentMesh));
+    }
+
+    ModelData modelData;
+
+    modelData.vertexCount = (int)flatVertices.size();
+    modelData.indexCount = (int)flatIndices.size();
+
+    modelData.meshCount = meshes.size();
+    modelData.meshes = meshes.data();
 
     BufferResource::Desc vertexBufferDesc;
-    vertexBufferDesc.init(vertexCount * sizeof(Vertex));
+    vertexBufferDesc.init(modelData.vertexCount * sizeof(Vertex));
     vertexBufferDesc.setDefaults(Resource::Usage::VertexBuffer);
 
-    vertexBuffer = renderer->createBufferResource(
+    modelData.vertexBuffer = renderer->createBufferResource(
         Resource::Usage::VertexBuffer,
         vertexBufferDesc,
         flatVertices.data());
-    if(!vertexBuffer) return SLANG_FAIL;
+    if(!modelData.vertexBuffer) return SLANG_FAIL;
 
     BufferResource::Desc indexBufferDesc;
-    indexBufferDesc.init(indexCount * sizeof(Index));
+    indexBufferDesc.init(modelData.indexCount * sizeof(Index));
     vertexBufferDesc.setDefaults(Resource::Usage::IndexBuffer);
 
-    indexBuffer = renderer->createBufferResource(
+    modelData.indexBuffer = renderer->createBufferResource(
         Resource::Usage::IndexBuffer,
         indexBufferDesc,
         flatIndices.data());
-    if(!indexBuffer) return SLANG_FAIL;
+    if(!modelData.indexBuffer) return SLANG_FAIL;
+
+    *outModel = callbacks->createModel(modelData);
 
     return SLANG_OK;
 }

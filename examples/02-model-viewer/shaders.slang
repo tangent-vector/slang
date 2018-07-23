@@ -1,21 +1,42 @@
 // shaders.slang
 
-// This file provides a simple vertex and fragment shader that can be compiled
-// using Slang. This code should also be valid as HLSL, and thus it does not
-// use any of the new language features supported by Slang.
 
-cbuffer Uniforms
+//
+
+struct PerView
 {
     float4x4    viewProjection;
 
     float3      lightDir;
     float3      lightColor;
+};
 
-    float3      materialDiffuseColor;
+interface IMaterial
+{
+    float3 getDiffuseColor();
+};
 
+struct SimpleMaterial : IMaterial
+{
+    float3 diffuseColor;
+
+    float3 getDiffuseColor()
+    {
+        return diffuseColor;
+    }
+};
+
+struct PerModel
+{
     float4x4    modelTransform;
     float4x4    inverseTransposeModelTransform;
-}
+};
+
+type_param TMaterial : IMaterial;
+
+ParameterBlock<PerView>     gViewParams;
+ParameterBlock<PerModel>    gModelParams;
+ParameterBlock<TMaterial>   gMaterial;
 
 struct AssembledVertex
 {
@@ -50,6 +71,7 @@ struct VertexStageOutput
     float4          sv_position     : SV_Position;
 };
 
+[shader("vertex")]
 VertexStageOutput vertexMain(VertexStageInput input)
 {
     VertexStageOutput output;
@@ -58,14 +80,14 @@ VertexStageOutput vertexMain(VertexStageInput input)
     float3 normal   = input.assembledVertex.normal;
     float2 uv       = input.assembledVertex.uv;
 
-    float3 worldPosition = mul(modelTransform, float4(position, 1.0)).xyz;
-    float3 worldNormal = normal; // mul(inverseTransposeModelTransform, float4(normal, 0.0)).xyz;
+    float3 worldPosition = mul(gModelParams.modelTransform, float4(position, 1.0)).xyz;
+    float3 worldNormal = mul(gModelParams.inverseTransposeModelTransform, float4(normal, 0.0)).xyz;
 
     output.coarseVertex.worldPosition = worldPosition;
     output.coarseVertex.worldNormal   = worldNormal;
     output.coarseVertex.uv            = uv;
 
-    output.sv_position = mul(viewProjection, float4(worldPosition, 1.0));
+    output.sv_position = mul(gViewParams.viewProjection, float4(worldPosition, 1.0));
 
     return output;
 }
@@ -82,14 +104,15 @@ struct FragmentStageOutput
     Fragment fragment   : SV_Target;
 };
 
+[shader("fragment")]
 FragmentStageOutput fragmentMain(FragmentStageInput input)
 {
     FragmentStageOutput output;
 
     float3 N = normalize(input.coarseVertex.worldNormal);
-    float3 L = normalize(lightDir);
+    float3 L = normalize(gViewParams.lightDir);
 
-    output.fragment.color.xyz = materialDiffuseColor * max(0, dot(N, L));
+    output.fragment.color.xyz = gMaterial.getDiffuseColor() * max(0, dot(N, L));
     output.fragment.color.w = 1.0f;
 
     return output;
