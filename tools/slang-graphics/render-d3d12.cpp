@@ -277,6 +277,7 @@ protected:
     {
     public:
         ComPtr<ID3D12RootSignature> m_rootSignature;
+        UInt                        m_descriptorSetCount;
     };
 
     class DescriptorSetImpl : public DescriptorSet
@@ -331,7 +332,7 @@ protected:
     {
     public:
         PipelineType                m_pipelineType;
-        ComPtr<ID3D12RootSignature> m_rootSignature;
+        RefPtr<PipelineLayoutImpl>  m_pipelineLayout;
         ComPtr<ID3D12PipelineState> m_pipelineState;
     };
 
@@ -1173,7 +1174,12 @@ Result D3D12Renderer::_calcBindParameters(BindParameters& params)
 
 Result D3D12Renderer::_bindRenderState(PipelineStateImpl* pipelineStateImpl, ID3D12GraphicsCommandList* commandList, Submitter* submitter)
 {
-    submitter->setRootSignature(pipelineStateImpl->m_rootSignature);
+    // TODO: we should only set some of this state as needed...
+
+    auto pipelineTypeIndex = (int) pipelineStateImpl->m_pipelineType;
+    auto pipelineLayout = pipelineStateImpl->m_pipelineLayout;
+
+    submitter->setRootSignature(pipelineLayout->m_rootSignature);
     commandList->SetPipelineState(pipelineStateImpl->m_pipelineState);
 
     ID3D12DescriptorHeap* heaps[] =
@@ -1183,54 +1189,57 @@ Result D3D12Renderer::_bindRenderState(PipelineStateImpl* pipelineStateImpl, ID3
     };
     commandList->SetDescriptorHeaps(SLANG_COUNT_OF(heaps), heaps);
 
-#if 0
+    // We need to copy descriptors over from the descriptor sets
+    // (where they are stored in CPU-visible heaps) to the GPU-visible
+    // heaps so that they can be accessed by shader code.
+
+    Int descriptorSetCount = pipelineLayout->m_descriptorSetCount;
+    Int rootParameterIndex = 0;
+    for(Int dd = 0; dd < descriptorSetCount; ++dd)
     {
-        int index = 0;
+        auto descriptorSet = m_boundDescriptorSets[pipelineTypeIndex][dd];
+        auto descriptorSetLayout = descriptorSet->m_layout;
 
-        int numConstantBuffers = 0;
+        // TODO: require that `descriptorSetLayout` is compatible with
+        // `pipelineLayout->descriptorSetlayouts[dd]`.
+
         {
-            if (bindingState)
+            if(auto descriptorCount = descriptorSetLayout->m_resourceCount)
             {
-                D3D12DescriptorHeap& heap = bindingState->m_viewHeap;
-                const auto& details = bindingState->m_bindingDetails;
-                const auto& bindings = bindingState->getDesc().m_bindings;
-                const int numBindings = int(details.Count());
+                auto& gpuHeap = m_viewHeap;
+                auto gpuDescriptorTable = gpuHeap.allocate(descriptorCount);
 
-                for (int i = 0; i < numBindings; i++)
-                {
-                    const auto& detail = details[i];
-                    const auto& binding = bindings[i];
+                auto& cpuHeap = *descriptorSet->m_resourceHeap;
+                auto cpuDescriptorTable = descriptorSet->m_resourceTable;
 
-                    if (binding.bindingType == BindingType::Buffer)
-                    {
-                        assert(binding.resource && binding.resource->isBuffer());
-                        if (binding.resource->canBind(Resource::BindFlag::ConstantBuffer))
-                        {
-                            BufferResourceImpl* buffer = static_cast<BufferResourceImpl*>(binding.resource.Ptr());
-                            buffer->bindConstantBufferView(m_circularResourceHeap, index++, submitter);
-                            numConstantBuffers++;
-                        }
-                    }
+                m_device->CopyDescriptorsSimple(
+                    descriptorCount,
+                    gpuHeap.getCpuHandle(gpuDescriptorTable),
+                    cpuHeap.getCpuHandle(cpuDescriptorTable),
+                    D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-                    if (detail.m_srvIndex >= 0)
-                    {
-                        submitter->setRootDescriptorTable(index++, heap.getGpuHandle(detail.m_srvIndex));
-                    }
-
-                    if (detail.m_uavIndex >= 0)
-                    {
-                        submitter->setRootDescriptorTable(index++, heap.getGpuHandle(detail.m_uavIndex));
-                    }
-                }
+                submitter->setRootDescriptorTable(rootParameterIndex++, gpuHeap.getGpuHandle(gpuDescriptorTable));
             }
         }
-
-        if (bindingState && bindingState->m_samplerHeap.getUsedSize() > 0)
         {
-            submitter->setRootDescriptorTable(index, bindingState->m_samplerHeap.getGpuStart());
+            if(auto descriptorCount = descriptorSetLayout->m_samplerCount)
+            {
+                auto& gpuHeap = m_samplerHeap;
+                auto gpuDescriptorTable = gpuHeap.allocate(descriptorCount);
+
+                auto& cpuHeap = *descriptorSet->m_samplerHeap;
+                auto cpuDescriptorTable = descriptorSet->m_samplerTable;
+
+                m_device->CopyDescriptorsSimple(
+                    descriptorCount,
+                    gpuHeap.getCpuHandle(gpuDescriptorTable),
+                    cpuHeap.getCpuHandle(cpuDescriptorTable),
+                    D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+
+                submitter->setRootDescriptorTable(rootParameterIndex++, gpuHeap.getGpuHandle(gpuDescriptorTable));
+            }
         }
     }
-#endif
 
     return SLANG_OK;
 }
@@ -2854,6 +2863,16 @@ void D3D12Renderer::DescriptorSetImpl::setCombinedTextureSampler(
 
 void D3D12Renderer::setDescriptorSet(PipelineType pipelineType, PipelineLayout* layout, UInt index, DescriptorSet* descriptorSet)
 {
+    // In D3D12, unlike Vulkan, binding a root signature invalidates *all* descriptor table
+    // bindings (rather than preserving those that are part of the longest common prefix
+    // between the old and new layout).
+    //
+    // In order to accomodate having descriptor-set bindings that persist across changes
+    // in pipeline state (which may also change pipeline layout), we will shadow the
+    // descriptor-set bindings and only flush them on-demand at draw tiume once the final
+    // pipline layout is known.
+    //
+
     auto descriptorSetImpl = (DescriptorSetImpl*) descriptorSet;
     m_boundDescriptorSets[int(pipelineType)][index] = descriptorSetImpl;
 }
@@ -3295,6 +3314,7 @@ PipelineLayout* D3D12Renderer::createPipelineLayout(const PipelineLayout::Desc& 
 
     RefPtr<PipelineLayoutImpl> pipelineLayoutImpl = new PipelineLayoutImpl();
     pipelineLayoutImpl->m_rootSignature = rootSignature;
+    pipelineLayoutImpl->m_descriptorSetCount = descriptorSetCount;
     return pipelineLayoutImpl.detach();
 }
 
@@ -3423,7 +3443,7 @@ PipelineState* D3D12Renderer::createGraphicsPipelineState(const GraphicsPipeline
 
     RefPtr<PipelineStateImpl> pipelineStateImpl = new PipelineStateImpl();
     pipelineStateImpl->m_pipelineType = PipelineType::Graphics;
-    pipelineStateImpl->m_rootSignature = pipelineLayoutImpl->m_rootSignature;
+    pipelineStateImpl->m_pipelineLayout = pipelineLayoutImpl;
     pipelineStateImpl->m_pipelineState = pipelineState;
     return pipelineStateImpl.detach();
 }
@@ -3444,7 +3464,7 @@ PipelineState* D3D12Renderer::createComputePipelineState(const ComputePipelineSt
 
     RefPtr<PipelineStateImpl> pipelineStateImpl = new PipelineStateImpl();
     pipelineStateImpl->m_pipelineType = PipelineType::Compute;
-    pipelineStateImpl->m_rootSignature = pipelineLayoutImpl->m_rootSignature;
+    pipelineStateImpl->m_pipelineLayout = pipelineLayoutImpl;
     pipelineStateImpl->m_pipelineState = pipelineState;
     return pipelineStateImpl.detach();
 }
