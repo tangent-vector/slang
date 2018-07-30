@@ -69,7 +69,7 @@ protected:
 /// are allocated and freed through a `HostVisibleDescriptorAllocator`.
 struct D3D12HostVisibleDescriptor
 {
-    D3D12_CPU_DESCRIPTOR_HANDLE     cpuHandle;
+    D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle;
 };
 
 /// An allocator for host-visible descriptors.

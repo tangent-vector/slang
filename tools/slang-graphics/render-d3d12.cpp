@@ -257,8 +257,20 @@ protected:
     class DescriptorSetLayoutImpl : public DescriptorSetLayout
     {
     public:
-        Slang::List<DescriptorSetLayout::SlotRangeDesc> m_ranges;
-        DescriptorSetLayout::Desc m_desc;
+        struct RangeInfo
+        {
+            DescriptorSlotType  type;
+            Int                 count;
+            Int                 arrayIndex;
+        };
+
+        List<RangeInfo> m_ranges;
+
+        List<D3D12_DESCRIPTOR_RANGE>    m_dxRanges;
+        List<D3D12_ROOT_PARAMETER>      m_dxRootParameters;
+
+        Int m_resourceCount;
+        Int m_samplerCount;
     };
 
     class PipelineLayoutImpl : public PipelineLayout
@@ -278,6 +290,15 @@ protected:
             UInt index,
             ResourceView*   textureView,
             SamplerState*   sampler) override;
+
+        D3D12Renderer*              m_renderer;
+        DescriptorSetLayoutImpl*    m_layout;
+
+        D3D12DescriptorHeap*        m_resourceHeap = nullptr;
+        D3D12DescriptorHeap*        m_samplerHeap = nullptr;
+
+        Int                         m_resourceTable = 0;
+        Int                         m_samplerTable = 0;
     };
 
 
@@ -308,12 +329,8 @@ protected:
 
     class PipelineStateImpl : public PipelineState
     {
-        public:
-        D3D12_PRIMITIVE_TOPOLOGY_TYPE m_primitiveTopologyType;
-//        RefPtr<BindingStateImpl> m_bindingState;
-        RefPtr<InputLayoutImpl> m_inputLayout;
-        RefPtr<ShaderProgramImpl> m_shaderProgram;
-
+    public:
+        PipelineType                m_pipelineType;
         ComPtr<ID3D12RootSignature> m_rootSignature;
         ComPtr<ID3D12PipelineState> m_pipelineState;
     };
@@ -711,11 +728,12 @@ void D3D12Renderer::_resetCommandList()
     ID3D12GraphicsCommandList* commandList = getCommandList();
     commandList->Reset(frame.m_commandAllocator, nullptr);
 
-    commandList->OMSetRenderTargets(
-        1,
-        &m_rtvs[0]->m_descriptor.cpuHandle,
-        FALSE,
-        m_dsv ? &m_dsv->m_descriptor.cpuHandle : nullptr);
+    // TIM: when should this get set?
+//    commandList->OMSetRenderTargets(
+//        1,
+//        &m_rtvs[0]->m_descriptor.cpuHandle,
+//        FALSE,
+//        m_dsv ? &m_dsv->m_descriptor.cpuHandle : nullptr);
 
     // Set necessary state.
     commandList->RSSetViewports(1, &m_viewport);
@@ -1329,6 +1347,27 @@ Result D3D12Renderer::initialize(const Desc& desc, void* inWindowHandle)
         return SLANG_FAIL;
     }
 
+    // set up debug layer
+#ifndef NDEBUG
+    {
+
+        LOAD_D3D_PROC(PFN_D3D12_GET_DEBUG_INTERFACE, D3D12GetDebugInterface);
+        if (!D3D12GetDebugInterface_)
+        {
+            return SLANG_FAIL;
+        }
+
+        ComPtr<ID3D12Debug> debug;
+
+        if (!SUCCEEDED(D3D12GetDebugInterface_(IID_PPV_ARGS(debug.writeRef()))))
+        {
+            return SLANG_FAIL;
+        }
+
+        debug->EnableDebugLayer();
+    }
+#endif
+
     m_numRenderFrames = 3;
     m_numRenderTargets = 2;
 
@@ -1407,7 +1446,10 @@ Result D3D12Renderer::initialize(const Desc& desc, void* inWindowHandle)
     // Create descriptor heaps.
 
     SLANG_RETURN_ON_FAIL(m_viewHeap.init   (m_device, 256, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE));
-    SLANG_RETURN_ON_FAIL(m_samplerHeap.init(m_device, 16, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE));
+    SLANG_RETURN_ON_FAIL(m_samplerHeap.init(m_device, 16,  D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER,     D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE));
+
+    SLANG_RETURN_ON_FAIL(m_cpuViewHeap.init   (m_device, 1024, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE));
+    SLANG_RETURN_ON_FAIL(m_cpuSamplerHeap.init(m_device, 64,   D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER,     D3D12_DESCRIPTOR_HEAP_FLAG_NONE));
 
     SLANG_RETURN_ON_FAIL(m_rtvAllocator.init    (m_device, 16, D3D12_DESCRIPTOR_HEAP_TYPE_RTV));
     SLANG_RETURN_ON_FAIL(m_dsvAllocator.init    (m_device, 16, D3D12_DESCRIPTOR_HEAP_TYPE_DSV));
@@ -2127,6 +2169,7 @@ ResourceView* D3D12Renderer::createTextureView(TextureResource* texture, Resourc
 ResourceView* D3D12Renderer::createBufferView(BufferResource* buffer, ResourceView::Desc const& desc)
 {
     auto resourceImpl = (BufferResourceImpl*) buffer;
+    auto resourceDesc = resourceImpl->getDesc();
 
     RefPtr<ResourceViewImpl> viewImpl = new ResourceViewImpl();
 
@@ -2137,18 +2180,49 @@ ResourceView* D3D12Renderer::createBufferView(BufferResource* buffer, ResourceVi
 
     case ResourceView::Type::UnorderedAccess:
         {
+            D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+            uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+            uavDesc.Format = D3DUtil::getMapFormat(desc.format);
+            uavDesc.Buffer.FirstElement = 0;
+            uavDesc.Buffer.NumElements = resourceDesc.sizeInBytes;
+
+            if(resourceDesc.elementSize)
+            {
+                uavDesc.Buffer.StructureByteStride = resourceDesc.elementSize;
+                uavDesc.Buffer.NumElements = resourceDesc.sizeInBytes / resourceDesc.elementSize;
+            }
+            else if(desc.format == Format::Unknown)
+            {
+                uavDesc.Buffer.Flags |= D3D12_BUFFER_UAV_FLAG_RAW;
+                uavDesc.Format = DXGI_FORMAT_R32_TYPELESS;
+            }
+
+
             // TODO: need to support the separate "counter resource" for the case
             // of append/consume buffers with attached counters.
 
             SLANG_RETURN_NULL_ON_FAIL(m_viewAllocator.allocate(&viewImpl->m_descriptor));
-            m_device->CreateUnorderedAccessView(resourceImpl->m_resource, nullptr, nullptr, viewImpl->m_descriptor.cpuHandle);
+            m_device->CreateUnorderedAccessView(resourceImpl->m_resource, nullptr, &uavDesc, viewImpl->m_descriptor.cpuHandle);
         }
         break;
 
     case ResourceView::Type::ShaderResource:
         {
+            D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+            srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+            srvDesc.Format = D3DUtil::getMapFormat(desc.format);
+            srvDesc.Buffer.StructureByteStride = 0;
+            srvDesc.Buffer.FirstElement = 0;
+            srvDesc.Buffer.NumElements = resourceDesc.sizeInBytes;
+
+            if(resourceDesc.elementSize)
+            {
+                srvDesc.Buffer.StructureByteStride = resourceDesc.elementSize;
+                srvDesc.Buffer.NumElements = resourceDesc.sizeInBytes / resourceDesc.elementSize;
+            }
+
             SLANG_RETURN_NULL_ON_FAIL(m_viewAllocator.allocate(&viewImpl->m_descriptor));
-            m_device->CreateShaderResourceView(resourceImpl->m_resource, nullptr, viewImpl->m_descriptor.cpuHandle);
+            m_device->CreateShaderResourceView(resourceImpl->m_resource, &srvDesc, viewImpl->m_descriptor.cpuHandle);
         }
         break;
     }
@@ -2421,7 +2495,7 @@ void D3D12Renderer::draw(UInt vertexCount, UInt startVertex)
     ID3D12GraphicsCommandList* commandList = m_commandList;
 
     auto pipelineState = m_currentPipelineState.Ptr();
-    if (!pipelineState || (pipelineState->m_shaderProgram->m_pipelineType != PipelineType::Graphics))
+    if (!pipelineState || (pipelineState->m_pipelineType != PipelineType::Graphics))
     {
         assert(!"No graphics pipeline state set");
         return;
@@ -2659,17 +2733,81 @@ void D3D12Renderer::setBindingState(BindingState* state)
 
 void D3D12Renderer::DescriptorSetImpl::setConstantBuffer(UInt range, UInt index, BufferResource* buffer)
 {
-    assert(!"unimplemented");
+    auto dxDevice = m_renderer->m_device;
+
+
+    auto resourceImpl = (BufferResourceImpl*) buffer;
+    auto resourceDesc = resourceImpl->getDesc();
+
+    D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
+    cbvDesc.BufferLocation = resourceImpl->m_resource.getResource()->GetGPUVirtualAddress();
+    cbvDesc.SizeInBytes = resourceDesc.sizeInBytes;
+
+    auto& rangeInfo = m_layout->m_ranges[range];
+
+#ifdef _DEBUG
+    switch(rangeInfo.type)
+    {
+    default:
+        assert(!"incorrect slot type");
+        break;
+
+    case DescriptorSlotType::UniformBuffer:
+    case DescriptorSlotType::DynamicUniformBuffer:
+        break;
+    }
+#endif
+
+    auto descriptorIndex = m_resourceTable + rangeInfo.arrayIndex + index;
+    dxDevice->CreateConstantBufferView(
+        &cbvDesc,
+        m_resourceHeap->getCpuHandle(descriptorIndex));
 }
 
 void D3D12Renderer::DescriptorSetImpl::setResource(UInt range, UInt index, ResourceView* view)
 {
-    assert(!"unimplemented");
+    auto dxDevice = m_renderer->m_device;
+
+    auto viewImpl = (ResourceViewImpl*) view;
+
+    auto& rangeInfo = m_layout->m_ranges[range];
+
+    // TODO: validation that slot type matches view
+
+    auto descriptorIndex = m_resourceTable + rangeInfo.arrayIndex + index;
+    dxDevice->CopyDescriptorsSimple(
+        1,
+        m_resourceHeap->getCpuHandle(descriptorIndex),
+        viewImpl->m_descriptor.cpuHandle,
+        D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 }
 
 void D3D12Renderer::DescriptorSetImpl::setSampler(UInt range, UInt index, SamplerState* sampler)
 {
-    assert(!"unimplemented");
+    auto dxDevice = m_renderer->m_device;
+
+    auto samplerImpl = (SamplerStateImpl*) sampler;
+
+    auto& rangeInfo = m_layout->m_ranges[range];
+
+#ifdef _DEBUG
+    switch(rangeInfo.type)
+    {
+    default:
+        assert(!"incorrect slot type");
+        break;
+
+    case DescriptorSlotType::Sampler:
+        break;
+    }
+#endif
+
+    auto descriptorIndex = m_samplerTable + rangeInfo.arrayIndex + index;
+    dxDevice->CopyDescriptorsSimple(
+        1,
+        m_samplerHeap->getCpuHandle(descriptorIndex),
+        samplerImpl->m_cpuHandle,
+        D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
 }
 
 void D3D12Renderer::DescriptorSetImpl::setCombinedTextureSampler(
@@ -2678,7 +2816,40 @@ void D3D12Renderer::DescriptorSetImpl::setCombinedTextureSampler(
     ResourceView*   textureView,
     SamplerState*   sampler)
 {
-    assert(!"unimplemented");
+    auto dxDevice = m_renderer->m_device;
+
+    auto viewImpl = (ResourceViewImpl*) textureView;
+    auto samplerImpl = (SamplerStateImpl*) sampler;
+
+    auto& rangeInfo = m_layout->m_ranges[range];
+
+#ifdef _DEBUG
+    switch(rangeInfo.type)
+    {
+    default:
+        assert(!"incorrect slot type");
+        break;
+
+    case DescriptorSlotType::CombinedImageSampler:
+        break;
+    }
+#endif
+
+    auto arrayIndex = rangeInfo.arrayIndex + index;
+    auto resourceDescriptorIndex = m_resourceTable + arrayIndex;
+    auto samplerDescriptorIndex = m_samplerTable + arrayIndex;
+
+    dxDevice->CopyDescriptorsSimple(
+        1,
+        m_resourceHeap->getCpuHandle(resourceDescriptorIndex),
+        viewImpl->m_descriptor.cpuHandle,
+        D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+    dxDevice->CopyDescriptorsSimple(
+        1,
+        m_samplerHeap->getCpuHandle(samplerDescriptorIndex),
+        samplerImpl->m_cpuHandle,
+        D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
 }
 
 void D3D12Renderer::setDescriptorSet(PipelineType pipelineType, PipelineLayout* layout, UInt index, DescriptorSet* descriptorSet)
@@ -2711,21 +2882,294 @@ ShaderProgram* D3D12Renderer::createProgram(const ShaderProgram::Desc& desc)
 
 DescriptorSetLayout* D3D12Renderer::createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc)
 {
-    // TODO: we could conceivably have each descriptor-set layout
-    // store its data pre-packages as `D3D12_DESCRIPTOR_RANGE`
-    // and `D3D12_ROOT_PARAMETER` values, to streamline subsequent
-    // calls to `createPipelineLayout`.
+    Int rangeCount = desc.slotRangeCount;
+
+    // For our purposes, there are three main cases of descriptor ranges to consider:
+    //
+    // 1. Resources: CBV, SRV, UAV
+    //
+    // 2. Samplers
+    //
+    // 3. Combined texture/sampler pairs
+    //
+    // The combined case presents challenges, because we will implement
+    // them as both a resource slot and a sampler slot, and for conveience
+    // in the indexing logic, it would be nice it they "lined up."
+    //
+    // We will start by counting how many ranges, and how many
+    // descriptors, of each type we have.
+    //
+
+    Int dedicatedResourceCount = 0;
+    Int dedicatedSamplerCount = 0;
+    Int combinedCount = 0;
+
+    Int dedicatedResourceRangeCount = 0;
+    Int dedicatedSamplerRangeCount = 0;
+    Int combinedRangeCount = 0;
+
+    for(Int rr = 0; rr < rangeCount; ++rr)
+    {
+        auto rangeDesc = desc.slotRanges[rr];
+        switch(rangeDesc.type)
+        {
+        case DescriptorSlotType::Sampler:
+            dedicatedSamplerCount += rangeDesc.count;
+            dedicatedSamplerRangeCount++;
+            break;
+
+        case DescriptorSlotType::CombinedImageSampler:
+            combinedCount += rangeDesc.count;
+            combinedRangeCount++;
+            break;
+
+        default:
+            dedicatedResourceCount += rangeDesc.count;
+            dedicatedResourceRangeCount++;
+            break;
+        }
+    }
+
+    // Now we know how many ranges we have to allocate space for,
+    // and also how they need to be arranged.
+    //
+    // Each "combined" range will map to two ranges in the D3D
+    // descriptor tables.
 
     RefPtr<DescriptorSetLayoutImpl> descriptorSetLayoutImpl = new DescriptorSetLayoutImpl();
 
-    UInt rangeCount = desc.slotRangeCount;
-    for(UInt rr = 0; rr < rangeCount; ++rr)
+    // We know the total number of resource and sampler "slots" that an instance
+    // of this decriptor-set layout would need:
+    //
+    descriptorSetLayoutImpl->m_resourceCount = combinedCount + dedicatedResourceCount;
+    descriptorSetLayoutImpl->m_samplerCount = combinedCount + dedicatedSamplerCount;
+
+    // We can start by allocating the D3D root parameter info needed for the
+    // descriptor set, based on the total number or ranges we need, which
+    // we can compute from the combined and dedicated counts:
+    //
+    Int totalResourceRangeCount = combinedRangeCount + dedicatedResourceRangeCount;
+    Int totalSamplerRangeCount  = combinedRangeCount + dedicatedSamplerRangeCount;
+
+    if( totalResourceRangeCount )
     {
-        descriptorSetLayoutImpl->m_ranges.Add(desc.slotRanges[rr]);
+        D3D12_ROOT_PARAMETER dxRootParameter = {};
+        dxRootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        dxRootParameter.DescriptorTable.NumDescriptorRanges = totalResourceRangeCount;
+        descriptorSetLayoutImpl->m_dxRootParameters.Add(dxRootParameter);
+    }
+    if( totalSamplerRangeCount )
+    {
+        D3D12_ROOT_PARAMETER dxRootParameter = {};
+        dxRootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        dxRootParameter.DescriptorTable.NumDescriptorRanges = totalResourceRangeCount;
+        descriptorSetLayoutImpl->m_dxRootParameters.Add(dxRootParameter);
     }
 
-    descriptorSetLayoutImpl->m_desc.slotRangeCount = rangeCount;
-    descriptorSetLayoutImpl->m_desc.slotRanges = descriptorSetLayoutImpl->m_ranges.Buffer();
+    // Next we can allocate space for all the D3D register ranges we need,
+    // again based on totals that we can compute easily:
+    //
+    Int totalRangeCount = totalResourceRangeCount + totalSamplerRangeCount;
+    descriptorSetLayoutImpl->m_dxRanges.SetSize(totalRangeCount);
+
+    // Now we will walk through the ranges in  the order they were
+    // specified, so that we can fill in the "range info" required for
+    // binding parameters into descriptor sets allocated with this layout.
+    //
+    // This effectively determines the space required in two arrays
+    // in each descriptor set: one for resources, and one for samplers.
+    // A "combined" descriptor requires space in both arrays. The entries
+    // for "dedicated" samplers/resources always come after those for
+    // "combined" descriptors in the same array, so that a single index
+    // can be used for both arrays in the combined case.
+    //
+
+    {
+        Int samplerCounter = 0;
+        Int resourceCounter = 0;
+        Int combinedCounter = 0;
+        for(Int rr = 0; rr < rangeCount; ++rr)
+        {
+            auto rangeDesc = desc.slotRanges[rr];
+
+            DescriptorSetLayoutImpl::RangeInfo rangeInfo;
+
+            rangeInfo.type = rangeDesc.type;
+            rangeInfo.count = rangeDesc.count;
+
+            switch(rangeDesc.type)
+            {
+            default:
+                // Default case is a dedicated resource, and its index in the
+                // resource array will come after all the combined entries.
+                rangeInfo.arrayIndex = combinedCount + resourceCounter;
+                resourceCounter += rangeInfo.count;
+                break;
+
+            case DescriptorSlotType::Sampler:
+                // A dedicated sampler comes after all the entries for
+                // combined texture/samplers in the sampler array.
+                rangeInfo.arrayIndex = combinedCount + samplerCounter;
+                samplerCounter += rangeInfo.count;
+                break;
+
+            case DescriptorSlotType::CombinedImageSampler:
+                // Combined descriptors take entries at the front of
+                // the resource and sampler arrays.
+                rangeInfo.arrayIndex = combinedCounter;
+                combinedCounter += rangeInfo.count;
+                break;
+            }
+
+            descriptorSetLayoutImpl->m_ranges.Add(rangeInfo);
+        }
+    }
+
+    // Finally, we will go through and fill in ready-to-go D3D
+    // register range information.
+    {
+        UInt cbvCounter = 0;
+        UInt srvCounter = 0;
+        UInt uavCounter = 0;
+        UInt samplerCounter = 0;
+
+        for(Int rr = 0; rr < rangeCount; ++rr)
+        {
+            auto rangeDesc = desc.slotRanges[rr];
+            Int bindingCount = rangeDesc.count;
+
+            // All of these descriptor ranges will be initialized
+            // with a "space" of zero, with the assumption that
+            // the actual space number will come from when they are
+            // used as part of a pipeline layout.
+            //
+            Int bindingSpace = 0;
+
+            Int dxRangeIndex = -1;
+            Int dxPairedSamplerRangeIndex = -1;
+
+            switch(rangeDesc.type)
+            {
+            default:
+                // Default case is a dedicated resource, and its index in the
+                // resource array will come after all the combined entries.
+                dxRangeIndex = combinedRangeCount + rr;
+                break;
+
+            case DescriptorSlotType::Sampler:
+                // A dedicated sampler comes after all the entries for
+                // combined texture/samplers in the sampler array.
+                dxRangeIndex = totalResourceRangeCount + combinedRangeCount + rr;
+                break;
+
+            case DescriptorSlotType::CombinedImageSampler:
+                // Combined descriptors take entries at the front of
+                // the resource and sampler arrays.
+                dxRangeIndex = rr;
+                dxPairedSamplerRangeIndex = totalResourceRangeCount + rr;
+                break;
+            }
+
+            D3D12_DESCRIPTOR_RANGE& dxRange = descriptorSetLayoutImpl->m_dxRanges[dxRangeIndex];
+            memset(&dxRange, 0, sizeof(dxRange));
+
+            switch(rangeDesc.type)
+            {
+            default:
+                // ERROR: unsupported slot type.
+                break;
+
+            case DescriptorSlotType::Sampler:
+                {
+                    UInt bindingIndex = samplerCounter; samplerCounter += bindingCount;
+
+                    dxRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
+                    dxRange.NumDescriptors = bindingCount;
+                    dxRange.BaseShaderRegister = bindingIndex;
+                    dxRange.RegisterSpace = bindingSpace;
+                    dxRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+                }
+                break;
+
+            case DescriptorSlotType::SampledImage:
+            case DescriptorSlotType::UniformTexelBuffer:
+                {
+                    UInt bindingIndex = srvCounter; srvCounter += bindingCount;
+
+                    dxRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+                    dxRange.NumDescriptors = bindingCount;
+                    dxRange.BaseShaderRegister = bindingIndex;
+                    dxRange.RegisterSpace = bindingSpace;
+                    dxRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+                }
+                break;
+
+            case DescriptorSlotType::CombinedImageSampler:
+                {
+                    // The combined texture/sampler case basically just
+                    // does the work of both the SRV and sampler cases above.
+
+                    {
+                        // Here's the SRV logic:
+
+                        UInt bindingIndex = srvCounter; srvCounter += bindingCount;
+
+                        dxRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+                        dxRange.NumDescriptors = bindingCount;
+                        dxRange.BaseShaderRegister = bindingIndex;
+                        dxRange.RegisterSpace = bindingSpace;
+                        dxRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+                    }
+
+                    {
+                        // And here we do the sampler logic at the "paired" index.
+                        D3D12_DESCRIPTOR_RANGE& dxPairedSamplerRange = descriptorSetLayoutImpl->m_dxRanges[dxPairedSamplerRangeIndex];
+                        memset(&dxPairedSamplerRange, 0, sizeof(dxPairedSamplerRange));
+
+                        UInt pairedSamplerBindingIndex = srvCounter; srvCounter += bindingCount;
+
+                        dxPairedSamplerRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
+                        dxPairedSamplerRange.NumDescriptors = bindingCount;
+                        dxPairedSamplerRange.BaseShaderRegister = pairedSamplerBindingIndex;
+                        dxPairedSamplerRange.RegisterSpace = bindingSpace;
+                        dxPairedSamplerRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+                    }
+
+                }
+                break;
+
+
+            case DescriptorSlotType::InputAttachment:
+            case DescriptorSlotType::StorageImage:
+            case DescriptorSlotType::StorageTexelBuffer:
+            case DescriptorSlotType::StorageBuffer:
+            case DescriptorSlotType::DynamicStorageBuffer:
+                {
+                    UInt bindingIndex = uavCounter; uavCounter += bindingCount;
+
+                    dxRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+                    dxRange.NumDescriptors = bindingCount;
+                    dxRange.BaseShaderRegister = bindingIndex;
+                    dxRange.RegisterSpace = bindingSpace;
+                    dxRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+                }
+                break;
+
+            case DescriptorSlotType::UniformBuffer:
+            case DescriptorSlotType::DynamicUniformBuffer:
+                {
+                    UInt bindingIndex = cbvCounter; cbvCounter += bindingCount;
+
+                    dxRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
+                    dxRange.NumDescriptors = bindingCount;
+                    dxRange.BaseShaderRegister = bindingIndex;
+                    dxRange.RegisterSpace = bindingSpace;
+                    dxRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+                }
+                break;
+            }
+        }
+    }
 
     return descriptorSetLayoutImpl.detach();
 }
@@ -2741,8 +3185,8 @@ PipelineLayout* D3D12Renderer::createPipelineLayout(const PipelineLayout::Desc& 
     UInt rangeCount = 0;
     UInt rootParameterCount = 0;
 
-    auto nextParameter = [&]() { return rootParameters[rootParameterCount++]; };
-    auto nextRange = [&]() { return ranges[rangeCount++]; };
+//    auto nextParameter = [&]() -> D3D12_ROOT_PARAMETER& { return rootParameters[rootParameterCount++]; };
+//    auto nextRange = [&]() -> D3D12_DESCRIPTOR_RANGE& { return ranges[rangeCount++]; };
 
     // We will allocate all samplers as a single contiguous table, rather
     // than multiple tables.
@@ -2750,153 +3194,100 @@ PipelineLayout* D3D12Renderer::createPipelineLayout(const PipelineLayout::Desc& 
     // TODO: we should do the same for the other cases, but we haven't
     // implemented the necessary descriptor-table allocation logic.
     //
-    D3D12_DESCRIPTOR_RANGE samplerRanges[kMaxRanges];
-    UInt samplerRangeCount = 0;
-    auto nextSamplerRange = [&]() { return samplerRanges[samplerRangeCount++]; };
+//    D3D12_DESCRIPTOR_RANGE samplerRanges[kMaxRanges];
+//    UInt samplerRangeCount = 0;
+//    auto nextSamplerRange = [&]() { return samplerRanges[samplerRangeCount++]; };
 
     auto descriptorSetCount = desc.descriptorSetCount;
+
+    // We are going to make two passes over the descriptor set layouts
+    // that are being used to build the pipeline layout. In the first
+    // pass we will collect all the descriptor ranges that have been
+    // specified, applying an offset to their register spaces as needed.
+    //
     for(UInt dd = 0; dd < descriptorSetCount; ++dd)
     {
         auto& descriptorSetInfo = desc.descriptorSets[dd];
         auto descriptorSetLayout = (DescriptorSetLayoutImpl*) descriptorSetInfo.layout;
 
-        auto& desc = descriptorSetLayout->m_desc;
+        // For now we assume that the register space used for
+        // logical descriptor set #N will be space N.
+        //
+        // TODO: This might need to be revisited in the future because
+        // a single logical descriptor set might need to encompass stuff
+        // that comes from multiple spaces (e.g., if it contains an unbounded
+        // array).
+        //
+        UInt bindingSpace   = dd;
 
-        UInt samplerCount = 0;
-        UInt srvCount = 0;
-        UInt cbvCount = 0;
-        UInt uavCount = 0;
-
-        UInt rangeCount = desc.slotRangeCount;
-        for(UInt rr = 0; rr < rangeCount; ++rr)
+        // Copy descriptor range infromation from the set layout into our
+        // temporary copy (this is required because the same set layout
+        // might be applied to different ranges).
+        //
+        // API design note: this copy step could be avoided if the D3D
+        // API allowed for a "space offset" to be applied as part of
+        // a descriptor-table root parameter.
+        //
+        for(auto setDescriptorRange : descriptorSetLayout->m_dxRanges)
         {
-            auto& rangeInfo = desc.slotRanges[rr];
-
-            UInt bindingCount   = rangeInfo.count;
-            UInt bindingSpace   = dd;
-
-            switch(rangeInfo.type)
-            {
-            case DescriptorSlotType::CombinedImageSampler:
-            case DescriptorSlotType::InputAttachment:
-            default:
-                // ERROR: unsupported slot type.
-                break;
-
-            case DescriptorSlotType::Sampler:
-                {
-                    UInt bindingIndex = samplerCount; samplerCount += bindingCount;
-
-                    D3D12_DESCRIPTOR_RANGE& range = nextSamplerRange();
-
-                    range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
-                    range.NumDescriptors = bindingCount;
-                    range.BaseShaderRegister = bindingIndex;
-                    range.RegisterSpace = bindingSpace;
-                    range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-                }
-                break;
-
-            case DescriptorSlotType::SampledImage:
-            case DescriptorSlotType::UniformTexelBuffer:
-                {
-                    UInt bindingIndex = srvCount; srvCount += bindingCount;
-
-                    D3D12_DESCRIPTOR_RANGE& range = nextRange();
-
-                    range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-                    range.NumDescriptors = bindingCount;
-                    range.BaseShaderRegister = bindingIndex;
-                    range.RegisterSpace = bindingSpace;
-                    range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-                    D3D12_ROOT_PARAMETER& param = nextParameter();
-
-                    param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-                    param.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-
-                    D3D12_ROOT_DESCRIPTOR_TABLE& table = param.DescriptorTable;
-                    table.NumDescriptorRanges = 1;
-                    table.pDescriptorRanges = &range;
-                }
-                break;
-
-            case DescriptorSlotType::StorageImage:
-            case DescriptorSlotType::StorageTexelBuffer:
-            case DescriptorSlotType::StorageBuffer:
-            case DescriptorSlotType::DynamicStorageBuffer:
-                {
-                    UInt bindingIndex = uavCount; uavCount += bindingCount;
-
-                    D3D12_DESCRIPTOR_RANGE& range = nextRange();
-
-                    range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-                    range.NumDescriptors = bindingCount;
-                    range.BaseShaderRegister = bindingIndex;
-                    range.RegisterSpace = bindingSpace;
-                    range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-                    D3D12_ROOT_PARAMETER& param = nextParameter();
-
-                    param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-                    param.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-
-                    D3D12_ROOT_DESCRIPTOR_TABLE& table = param.DescriptorTable;
-                    table.NumDescriptorRanges = 1;
-                    table.pDescriptorRanges = &range;
-                }
-                break;
-
-            case DescriptorSlotType::UniformBuffer:
-            case DescriptorSlotType::DynamicUniformBuffer:
-                {
-                    UInt bindingIndex = cbvCount; cbvCount += bindingCount;
-
-                    // TODO: non-dynamic constant buffers should be
-                    // allocated inside of descritpor tables rather
-                    // than as root parameters.
-
-                    for(UInt ii = 0; ii < bindingCount; ++ii)
-                    {
-                        D3D12_ROOT_PARAMETER& param = nextParameter();
-                        param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-                        param.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-
-                        D3D12_ROOT_DESCRIPTOR& descriptor = param.Descriptor;
-                        descriptor.ShaderRegister   = bindingIndex + ii;
-                        descriptor.RegisterSpace    = bindingSpace;
-                    }
-                }
-                break;
-
-            }
+            auto& range = ranges[rangeCount++];
+            range = setDescriptorRange;
+            range.RegisterSpace = bindingSpace;
         }
     }
 
-    if(samplerRangeCount != 0)
+    // In our second pass, we will copy over root parameters, which
+    // may end up pointing into the list of ranges from the first step.
+    //
+    auto rangePtr = &ranges[0];
+    for(UInt dd = 0; dd < descriptorSetCount; ++dd)
     {
-        D3D12_ROOT_PARAMETER& param = nextParameter();
+        auto& descriptorSetInfo = desc.descriptorSets[dd];
+        auto descriptorSetLayout = (DescriptorSetLayoutImpl*) descriptorSetInfo.layout;
 
-        param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        param.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+        // Copy root parameter information from the set layout to our
+        // overall pipeline layout.
+        for( auto setRootParameter : descriptorSetLayout->m_dxRootParameters )
+        {
+            auto& rootParameter = rootParameters[rootParameterCount++];
+            rootParameter = setRootParameter;
 
-        D3D12_ROOT_DESCRIPTOR_TABLE& table = param.DescriptorTable;
-        table.NumDescriptorRanges = samplerRangeCount;
-        table.pDescriptorRanges = samplerRanges;
+            // In the case where this parameter is a descriptor table, it
+            // needs to point into our array of ranges (with offsets applied),
+            // so we will fix up those pointers here.
+            //
+            if(rootParameter.ParameterType == D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE)
+            {
+                rootParameter.DescriptorTable.pDescriptorRanges = rangePtr;
+                rangePtr += rootParameter.DescriptorTable.NumDescriptorRanges;
+            }
+        }
     }
 
     D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc = {};
     rootSignatureDesc.NumParameters = rootParameterCount;
     rootSignatureDesc.pParameters = rootParameters;
+
+    // TODO: static samplers should be reasonably easy to support...
     rootSignatureDesc.NumStaticSamplers = 0;
     rootSignatureDesc.pStaticSamplers = nullptr;
 
-    // TODO: only set this flag if needed
+    // TODO: only set this flag if needed (requires creating root
+    // signature at same time as pipeline state...).
+    //
     rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
     ComPtr<ID3DBlob> signature;
     ComPtr<ID3DBlob> error;
-    SLANG_RETURN_NULL_ON_FAIL(m_D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, signature.writeRef(), error.writeRef()));
+    if( SLANG_FAILED(m_D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, signature.writeRef(), error.writeRef())) )
+    {
+        fprintf(stderr, "error: D3D12SerializeRootSignature failed");
+        if( error )
+        {
+            fprintf(stderr, ": %s\n", (const char*) error->GetBufferPointer());
+        }
+        return nullptr;
+    }
 
     ComPtr<ID3D12RootSignature> rootSignature;
     SLANG_RETURN_NULL_ON_FAIL(m_device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(rootSignature.writeRef())));
@@ -2909,7 +3300,34 @@ PipelineLayout* D3D12Renderer::createPipelineLayout(const PipelineLayout::Desc& 
 
 DescriptorSet* D3D12Renderer::createDescriptorSet(DescriptorSetLayout* layout)
 {
+    auto layoutImpl = (DescriptorSetLayoutImpl*) layout;
+
     RefPtr<DescriptorSetImpl> descriptorSetImpl = new DescriptorSetImpl();
+    descriptorSetImpl->m_renderer = this;
+    descriptorSetImpl->m_layout = layoutImpl;
+
+    // We allocate CPU-visible descriptor tables to providing the
+    // backing storage for each descriptor set. GPU-visible storage
+    // will only be allocated as needed during per-frame logic in
+    // order to ensure that a descriptor set it available for use
+    // in rendering.
+    //
+    Int resourceCount = layoutImpl->m_resourceCount;
+    if( resourceCount )
+    {
+        auto resourceHeap = &m_cpuViewHeap;
+        descriptorSetImpl->m_resourceHeap = resourceHeap;
+        descriptorSetImpl->m_resourceTable = resourceHeap->allocate(resourceCount);
+    }
+
+    Int samplerCount = layoutImpl->m_samplerCount;
+    if( samplerCount )
+    {
+        auto samplerHeap = &m_cpuSamplerHeap;
+        descriptorSetImpl->m_samplerHeap = samplerHeap;
+        descriptorSetImpl->m_samplerTable = samplerHeap->allocate(samplerCount);
+    }
+
     return descriptorSetImpl.detach();
 }
 
@@ -3004,6 +3422,8 @@ PipelineState* D3D12Renderer::createGraphicsPipelineState(const GraphicsPipeline
     SLANG_RETURN_NULL_ON_FAIL(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(pipelineState.writeRef())));
 
     RefPtr<PipelineStateImpl> pipelineStateImpl = new PipelineStateImpl();
+    pipelineStateImpl->m_pipelineType = PipelineType::Graphics;
+    pipelineStateImpl->m_rootSignature = pipelineLayoutImpl->m_rootSignature;
     pipelineStateImpl->m_pipelineState = pipelineState;
     return pipelineStateImpl.detach();
 }
@@ -3023,6 +3443,8 @@ PipelineState* D3D12Renderer::createComputePipelineState(const ComputePipelineSt
     SLANG_RETURN_NULL_ON_FAIL(m_device->CreateComputePipelineState(&computeDesc, IID_PPV_ARGS(pipelineState.writeRef())));
 
     RefPtr<PipelineStateImpl> pipelineStateImpl = new PipelineStateImpl();
+    pipelineStateImpl->m_pipelineType = PipelineType::Compute;
+    pipelineStateImpl->m_rootSignature = pipelineLayoutImpl->m_rootSignature;
     pipelineStateImpl->m_pipelineState = pipelineState;
     return pipelineStateImpl.detach();
 }
