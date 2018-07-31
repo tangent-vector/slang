@@ -215,13 +215,15 @@ public:
     class TextureViewImpl : public ResourceViewImpl
     {
     public:
-        GLuint m_textureID;
+        RefPtr<TextureResourceImpl> m_resource;
+        GLuint                      m_textureID;
     };
 
     class BufferViewImpl : public ResourceViewImpl
     {
     public:
-        GLuint m_bufferID;
+        RefPtr<BufferResourceImpl>  m_resource;
+        GLuint                      m_bufferID;
     };
 
     enum class GLDescriptorSlotType
@@ -917,6 +919,7 @@ ResourceView* GLRenderer::createTextureView(TextureResource* texture, ResourceVi
     // TODO: actually do something?
 
     RefPtr<TextureViewImpl> viewImpl = new TextureViewImpl();
+    viewImpl->m_resource = resourceImpl;
     viewImpl->m_textureID = resourceImpl->m_handle;
     return viewImpl;
 }
@@ -928,6 +931,7 @@ ResourceView* GLRenderer::createBufferView(BufferResource* buffer, ResourceView:
     // TODO: actually do something?
 
     RefPtr<BufferViewImpl> viewImpl = new BufferViewImpl();
+    viewImpl->m_resource = resourceImpl;
     viewImpl->m_bufferID = resourceImpl->m_handle;
     return viewImpl;
 }

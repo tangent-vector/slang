@@ -530,6 +530,7 @@ public:
 
     struct Desc
     {
+        UInt                        renderTargetCount   = 0;
         UInt                        descriptorSetCount  = 0;
         DescriptorSetDesc const*    descriptorSets      = nullptr;
     };

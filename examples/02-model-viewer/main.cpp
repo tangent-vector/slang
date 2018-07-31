@@ -623,6 +623,7 @@ int initialize()
         };
 
         PipelineLayout::Desc pipelineLayoutDesc;
+        PipelineLayoutDesc.renderTargetCount = 1;
         pipelineLayoutDesc.descriptorSetCount = 1;
         pipelineLayoutDesc.descriptorSets = &descriptorSets[0];
 
@@ -811,6 +812,7 @@ public:
                     parameterBlockLayouts[pp]->descriptorSetLayout);
             }
             PipelineLayout::Desc pipelineLayoutDesc;
+            pipelineLayoutDesc.renderTargetCount = 1;
             pipelineLayoutDesc.descriptorSetCount = descriptorSets.size();
             pipelineLayoutDesc.descriptorSets = descriptorSets.data();
             auto pipelineLayout = renderer->createPipelineLayout(pipelineLayoutDesc);

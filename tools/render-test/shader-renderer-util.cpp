@@ -199,8 +199,11 @@ static SamplerState* _createSamplerState(
     return RegisterRange::makeInvalid();
 }
 
-/*static*/ Result ShaderRendererUtil::_createBindingState(ShaderInputLayoutEntry* srcEntries, int numEntries, Renderer* renderer, BufferResource* addedConstantBuffer, BindingStateImpl** outBindingState)
+/* static */Result ShaderRendererUtil::createBindingState(const ShaderInputLayout& layout, Renderer* renderer, BufferResource* addedConstantBuffer, BindingStateImpl** outBindingState)
 {
+    auto srcEntries = layout.entries.Buffer();
+    auto numEntries = int(layout.entries.Count());
+
     const int textureBindFlags = Resource::BindFlag::NonPixelShaderResource | Resource::BindFlag::PixelShaderResource;
 
     List<DescriptorSetLayout::SlotRangeDesc> slotRangeDescs;
@@ -286,6 +289,7 @@ static SamplerState* _createSamplerState(
     pipelineDescriptorSets.Add(PipelineLayout::DescriptorSetDesc(descriptorSetLayout));
 
     PipelineLayout::Desc pipelineLayoutDesc;
+    pipelineLayoutDesc.renderTargetCount = layout.numRenderTargets;
     pipelineLayoutDesc.descriptorSetCount = pipelineDescriptorSets.Count();
     pipelineLayoutDesc.descriptorSets = pipelineDescriptorSets.Buffer();
 
@@ -413,15 +417,9 @@ static SamplerState* _createSamplerState(
     bindingState->descriptorSet = descriptorSet;
     bindingState->pipelineLayout = pipelineLayout;
     bindingState->outputBindings = outputBindings;
+    bindingState->m_numRenderTargets = layout.numRenderTargets;
 
     *outBindingState = bindingState;
-    return SLANG_OK;
-}
-
-/* static */Result ShaderRendererUtil::createBindingState(const ShaderInputLayout& layout, Renderer* renderer, BufferResource* addedConstantBuffer, BindingStateImpl** outBindingState)
-{
-    SLANG_RETURN_ON_FAIL(_createBindingState(layout.entries.Buffer(), int(layout.entries.Count()), renderer, addedConstantBuffer, outBindingState));
-    (*outBindingState)->m_numRenderTargets = layout.numRenderTargets;
     return SLANG_OK;
 }
 

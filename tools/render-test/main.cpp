@@ -219,6 +219,16 @@ Result RenderTestApp::initializeShaders(ShaderCompiler* shaderCompiler)
 	fclose(sourceFile);
 	sourceText[sourceSize] = 0;
 
+    switch( gOptions.shaderType )
+    {
+    default:
+        m_shaderInputLayout.numRenderTargets = 1;
+        break;
+
+    case Options::ShaderProgramType::Compute:
+        m_shaderInputLayout.numRenderTargets = 0;
+        break;
+    }
 	m_shaderInputLayout.Parse(sourceText);
 
 	ShaderCompileRequest::SourceInfo sourceInfo;

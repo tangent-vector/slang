@@ -318,6 +318,7 @@ SlangResult initialize()
         };
 
         PipelineLayout::Desc pipelineLayoutDesc;
+        pipelineLayoutDesc.renderTargetCount = 1;
         pipelineLayoutDesc.descriptorSetCount = 1;
         pipelineLayoutDesc.descriptorSets = &descriptorSets[0];
 

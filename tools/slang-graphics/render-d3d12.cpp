@@ -175,11 +175,28 @@ protected:
 
         static BackingStyle _calcResourceBackingStyle(Usage usage)
         {
+            // Note: the D3D12 back-end has support for "versioning" of constant buffers,
+            // where the same logical `BufferResource` can actually point to different
+            // backing storage over its lifetime, to emulate the ability to modify the
+            // buffer contents as in D3D11, etc.
+            //
+            // The VK back-end doesn't have the same behavior, and it is difficult
+            // to both support this degree of flexibility *and* efficeintly exploit
+            // descriptor tables (since any table referencing the buffer would need
+            // to be updated when a new buffer "version" gets allocated).
+            //
+            // I'm choosing to disable this for now, and make all buffers be memory-backed,
+            // although this creates synchronization issues that we'll have to address
+            // next.
+
+            return BackingStyle::ResourceBacked;
+#if 0
             switch (usage)
             {
                 case Usage::ConstantBuffer:     return BackingStyle::MemoryBacked;
                 default:                        return BackingStyle::ResourceBacked;
             }
+#endif
         }
 
         BackingStyle m_backingStyle;        ///< How the resource is 'backed' - either as a resource or cpu memory. Cpu memory is typically used for constant buffers.
@@ -214,7 +231,8 @@ protected:
     class ResourceViewImpl : public ResourceView
     {
     public:
-        D3D12HostVisibleDescriptor m_descriptor;
+        RefPtr<Resource>            m_resource;
+        D3D12HostVisibleDescriptor  m_descriptor;
     };
 
     class InputLayoutImpl: public InputLayout
@@ -300,6 +318,17 @@ protected:
 
         Int                         m_resourceTable = 0;
         Int                         m_samplerTable = 0;
+
+        // The following arrays are used to retain the relevant
+        // objects so that they will not be released while this
+        // descriptor-set is still alive.
+        //
+        // For the `m_resourceObjects` array, the values are either
+        // the relevant `ResourceViewImpl` for SRV/UAV slots, or
+        // a `BufferResourceImpl` for a CBV slot.
+        //
+        List<RefPtr<RefObject>>         m_resourceObjects;
+        List<RefPtr<SamplerStateImpl>>  m_samplerObjects;
     };
 
 
@@ -453,7 +482,7 @@ protected:
 
     List<BoundVertexBuffer> m_boundVertexBuffers;
 
-    BufferResourceImpl* m_boundIndexBuffer;
+    RefPtr<BufferResourceImpl> m_boundIndexBuffer;
     DXGI_FORMAT m_boundIndexFormat;
     UINT m_boundIndexOffset;
 
@@ -1339,9 +1368,15 @@ Result D3D12Renderer::initialize(const Desc& desc, void* inWindowHandle)
 
             if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)
             {
+                
                 // TODO: may want to allow software driver as fallback
             }
-            else if (SUCCEEDED(D3D12CreateDevice_(candidateAdapter, featureLevel, IID_PPV_ARGS(m_device.writeRef()))))
+            else
+            {
+                continue;
+            }
+
+            if (SUCCEEDED(D3D12CreateDevice_(candidateAdapter, featureLevel, IID_PPV_ARGS(m_device.writeRef()))))
             {
                 // We found one!
                 adapter = candidateAdapter;
@@ -1936,15 +1971,15 @@ TextureResource* D3D12Renderer::createTextureResource(Resource::Usage initialUsa
             subResourceIndex++;
         }
 
-        {
-            // const D3D12_RESOURCE_STATES finalState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-            const D3D12_RESOURCE_STATES finalState = _calcResourceState(initialUsage);
-
-            D3D12BarrierSubmitter submitter(m_commandList);
-            texture->m_resource.transition(finalState, submitter);
-        }
-
         // Block - waiting for copy to complete (so can drop upload texture)
+        submitGpuWorkAndWait();
+    }
+
+    {
+        const D3D12_RESOURCE_STATES finalState = _calcResourceState(initialUsage);
+        D3D12BarrierSubmitter submitter(m_commandList);
+        texture->m_resource.transition(finalState, submitter);
+
         submitGpuWorkAndWait();
     }
 
@@ -1958,13 +1993,19 @@ BufferResource* D3D12Renderer::createBufferResource(Resource::Usage initialUsage
     BufferResource::Desc srcDesc(descIn);
     srcDesc.setDefaults(initialUsage);
 
+    // Always align up to 256 bytes, since that is required for constant buffers.
+    //
+    // TODO: only do this for buffers that could potentially be bound as constant buffers...
+    //
+    const size_t alignedSizeInBytes = D3DUtil::calcAligned(srcDesc.sizeInBytes, 256);
+
     RefPtr<BufferResourceImpl> buffer(new BufferResourceImpl(initialUsage, srcDesc));
 
     // Save the style
     buffer->m_backingStyle = BufferResourceImpl::_calcResourceBackingStyle(initialUsage);
 
     D3D12_RESOURCE_DESC bufferDesc;
-    _initBufferResourceDesc(srcDesc.sizeInBytes, bufferDesc);
+    _initBufferResourceDesc(alignedSizeInBytes, bufferDesc);
 
     bufferDesc.Flags = _calcResourceBindFlags(initialUsage, srcDesc.bindFlags);
 
@@ -1974,7 +2015,7 @@ BufferResource* D3D12Renderer::createBufferResource(Resource::Usage initialUsage
         {
             // Assume the constant buffer will change every frame. We'll just keep a copy of the contents
             // in regular memory until it needed
-            buffer->m_memory.SetSize(UInt(srcDesc.sizeInBytes));
+            buffer->m_memory.SetSize(UInt(alignedSizeInBytes));
             // Initialize
             if (initData)
             {
@@ -2134,6 +2175,7 @@ ResourceView* D3D12Renderer::createTextureView(TextureResource* texture, Resourc
     auto resourceImpl = (TextureResourceImpl*) texture;
 
     RefPtr<ResourceViewImpl> viewImpl = new ResourceViewImpl();
+    viewImpl->m_resource = resourceImpl;
 
     switch (desc.type)
     {
@@ -2181,6 +2223,7 @@ ResourceView* D3D12Renderer::createBufferView(BufferResource* buffer, ResourceVi
     auto resourceDesc = resourceImpl->getDesc();
 
     RefPtr<ResourceViewImpl> viewImpl = new ResourceViewImpl();
+    viewImpl->m_resource = resourceImpl;
 
     switch (desc.type)
     {
@@ -2539,6 +2582,7 @@ void D3D12Renderer::draw(UInt vertexCount, UInt startVertex)
     }
 
     // Set up index buffer
+    if(m_boundIndexBuffer)
     {
         D3D12_INDEX_BUFFER_VIEW indexBufferView;
         indexBufferView.BufferLocation = m_boundIndexBuffer->m_resource.getResource()->GetGPUVirtualAddress()
@@ -2748,9 +2792,12 @@ void D3D12Renderer::DescriptorSetImpl::setConstantBuffer(UInt range, UInt index,
     auto resourceImpl = (BufferResourceImpl*) buffer;
     auto resourceDesc = resourceImpl->getDesc();
 
+    // Constant buffer view size must be a multiple of 256 bytes, so we round it up here.
+    const size_t alignedSizeInBytes = D3DUtil::calcAligned(resourceDesc.sizeInBytes, 256);
+
     D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
     cbvDesc.BufferLocation = resourceImpl->m_resource.getResource()->GetGPUVirtualAddress();
-    cbvDesc.SizeInBytes = resourceDesc.sizeInBytes;
+    cbvDesc.SizeInBytes = alignedSizeInBytes;
 
     auto& rangeInfo = m_layout->m_ranges[range];
 
@@ -2767,7 +2814,10 @@ void D3D12Renderer::DescriptorSetImpl::setConstantBuffer(UInt range, UInt index,
     }
 #endif
 
-    auto descriptorIndex = m_resourceTable + rangeInfo.arrayIndex + index;
+    auto arrayIndex = rangeInfo.arrayIndex + index;
+    auto descriptorIndex = m_resourceTable + arrayIndex;
+
+    m_resourceObjects[arrayIndex] = resourceImpl;
     dxDevice->CreateConstantBufferView(
         &cbvDesc,
         m_resourceHeap->getCpuHandle(descriptorIndex));
@@ -2783,7 +2833,10 @@ void D3D12Renderer::DescriptorSetImpl::setResource(UInt range, UInt index, Resou
 
     // TODO: validation that slot type matches view
 
-    auto descriptorIndex = m_resourceTable + rangeInfo.arrayIndex + index;
+    auto arrayIndex = rangeInfo.arrayIndex + index;
+    auto descriptorIndex = m_resourceTable + arrayIndex;
+
+    m_resourceObjects[arrayIndex] = viewImpl;
     dxDevice->CopyDescriptorsSimple(
         1,
         m_resourceHeap->getCpuHandle(descriptorIndex),
@@ -2811,7 +2864,10 @@ void D3D12Renderer::DescriptorSetImpl::setSampler(UInt range, UInt index, Sample
     }
 #endif
 
-    auto descriptorIndex = m_samplerTable + rangeInfo.arrayIndex + index;
+    auto arrayIndex = rangeInfo.arrayIndex + index;
+    auto descriptorIndex = m_resourceTable + arrayIndex;
+
+    m_samplerObjects[arrayIndex] = samplerImpl;
     dxDevice->CopyDescriptorsSimple(
         1,
         m_samplerHeap->getCpuHandle(descriptorIndex),
@@ -2848,12 +2904,14 @@ void D3D12Renderer::DescriptorSetImpl::setCombinedTextureSampler(
     auto resourceDescriptorIndex = m_resourceTable + arrayIndex;
     auto samplerDescriptorIndex = m_samplerTable + arrayIndex;
 
+    m_resourceObjects[arrayIndex] = viewImpl;
     dxDevice->CopyDescriptorsSimple(
         1,
         m_resourceHeap->getCpuHandle(resourceDescriptorIndex),
         viewImpl->m_descriptor.cpuHandle,
         D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
+    m_samplerObjects[arrayIndex] = samplerImpl;
     dxDevice->CopyDescriptorsSimple(
         1,
         m_samplerHeap->getCpuHandle(samplerDescriptorIndex),
@@ -3259,6 +3317,24 @@ PipelineLayout* D3D12Renderer::createPipelineLayout(const PipelineLayout::Desc& 
             auto& range = ranges[rangeCount++];
             range = setDescriptorRange;
             range.RegisterSpace = bindingSpace;
+
+            // HACK: in order to deal with SM5.0 shaders, `u` registers
+            // in `space0` need to start with a number *after* the number
+            // of `SV_Target` outputs that will be used.
+            //
+            // TODO: This is clearly a mess, and doing this behavior here
+            // means it *won't* work for SM5.1 where the restriction is
+            // lifted. The only real alternative is to rely on explicit
+            // register numbers (e.g., from shader reflection) but that
+            // goes against the simplicity that this API layer strives for
+            // (everything so far has been set up to work correctly with
+            // automatic assignment of bindings).
+            //
+            if( range.RegisterSpace == 0
+                && range.RangeType == D3D12_DESCRIPTOR_RANGE_TYPE_UAV )
+            {
+                range.BaseShaderRegister += desc.renderTargetCount;
+            }
         }
     }
 
@@ -3345,6 +3421,7 @@ DescriptorSet* D3D12Renderer::createDescriptorSet(DescriptorSetLayout* layout)
         auto resourceHeap = &m_cpuViewHeap;
         descriptorSetImpl->m_resourceHeap = resourceHeap;
         descriptorSetImpl->m_resourceTable = resourceHeap->allocate(resourceCount);
+        descriptorSetImpl->m_resourceObjects.SetSize(resourceCount);
     }
 
     Int samplerCount = layoutImpl->m_samplerCount;
@@ -3353,6 +3430,7 @@ DescriptorSet* D3D12Renderer::createDescriptorSet(DescriptorSetLayout* layout)
         auto samplerHeap = &m_cpuSamplerHeap;
         descriptorSetImpl->m_samplerHeap = samplerHeap;
         descriptorSetImpl->m_samplerTable = samplerHeap->allocate(samplerCount);
+        descriptorSetImpl->m_samplerObjects.SetSize(samplerCount);
     }
 
     return descriptorSetImpl.detach();
