@@ -404,10 +404,16 @@ SlangResult D3D11Renderer::initialize(const Desc& desc, void* inWindowHandle)
         return SLANG_FAIL;
     }
 
-    // We create our device in debug mode, just so that we can check that the
-    // example doesn't trigger warnings.
     UINT deviceFlags = 0;
+
+#ifdef _DEBUG
+    // We will enable the D3D debug more for debug builds.
+    //
+    // TODO: we should probably provide a command-line option
+    // to override this kind of default rather than leave it
+    // up to each back-end to specify.
     deviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
+#endif
 
     // Our swap chain uses RGBA8 with sRGB, with double buffering.
     DXGI_SWAP_CHAIN_DESC swapChainDesc = { 0 };

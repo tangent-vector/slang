@@ -218,7 +218,7 @@ Result ModelLoader::load(
 
     if(!diagnostics.empty())
     {
-        log("%s", diagnostics);
+        log("%s", diagnostics.c_str());
     }
     if(!success)
     {

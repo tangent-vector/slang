@@ -494,6 +494,7 @@ void loadModel(
     Model* model = nullptr;
     if(SLANG_FAILED(loader.load(inputPath, (void**)&model)))
     {
+        log("failed to load '%s'\n", inputPath);
         return;
     }
 
