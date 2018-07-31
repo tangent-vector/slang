@@ -96,7 +96,6 @@ public:
     virtual SlangResult captureScreenSurface(Surface& surfaceOut) override;
     virtual InputLayout* createInputLayout(const InputElementDesc* inputElements, UInt inputElementCount) override;
 
-//    virtual BindingState* createBindingState(const BindingState::Desc& bindingStateDesc) override;
     virtual DescriptorSetLayout* createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc) override;
     virtual PipelineLayout* createPipelineLayout(const PipelineLayout::Desc& desc) override;
     virtual DescriptorSet* createDescriptorSet(DescriptorSetLayout* layout) override;
@@ -225,37 +224,6 @@ public:
         GLuint m_bufferID;
     };
 
-#if 0
-    struct BindingDetail
-    {
-        GLuint m_samplerHandle = 0;
-    };
-
-    class BindingStateImpl: public BindingState
-    {
-		public:
-        typedef BindingState Parent;
-
-            /// Ctor
-		BindingStateImpl(const Desc& desc, GLRenderer* renderer):
-            Parent(desc),
-			m_renderer(renderer)
-		{
-		}
-
-		~BindingStateImpl()
-		{
-			if (m_renderer)
-			{
-				m_renderer->destroyBindingEntries(getDesc(), m_bindingDetails.Buffer());
-			}
-		}
-
-		GLRenderer* m_renderer;
-        List<BindingDetail> m_bindingDetails;
-    };
-#endif
-
     enum class GLDescriptorSlotType
     {
         ConstantBuffer,
@@ -273,6 +241,7 @@ public:
             UInt                    arrayIndex;
         };
         List<RangeInfo> m_ranges;
+        Int             m_counts[int(GLDescriptorSlotType::CountOf)];
     };
 
     class PipelineLayoutImpl : public PipelineLayout
@@ -299,6 +268,7 @@ public:
             ResourceView*   textureView,
             SamplerState*   sampler) override;
 
+        RefPtr<DescriptorSetLayoutImpl>     m_layout;
         List<RefPtr<BufferResourceImpl>>    m_constantBuffers;
         List<RefPtr<TextureViewImpl>>       m_textures;
         List<RefPtr<SamplerStateImpl>>      m_samplers;
@@ -328,6 +298,7 @@ public:
     {
     public:
         RefPtr<ShaderProgramImpl>   m_program;
+        RefPtr<PipelineLayoutImpl>  m_pipelineLayout;
         RefPtr<InputLayoutImpl>     m_inputLayout;
     };
 
@@ -466,11 +437,11 @@ void GLRenderer::bindBufferImpl(int target, UInt startSlot, UInt slotCount, Buff
 
 void GLRenderer::flushStateForDraw()
 {
-    auto layout = m_currentPipelineState->m_inputLayout.Ptr();
-    auto attrCount = layout->m_attributeCount;
+    auto inputLayout = m_currentPipelineState->m_inputLayout.Ptr();
+    auto attrCount = inputLayout->m_attributeCount;
     for (UInt ii = 0; ii < attrCount; ++ii)
     {
-        auto& attr = layout->m_attributes[ii];
+        auto& attr = inputLayout->m_attributes[ii];
 
         auto streamIndex = attr.streamIndex;
 
@@ -489,6 +460,57 @@ void GLRenderer::flushStateForDraw()
     for (UInt ii = attrCount; ii < kMaxVertexStreams; ++ii)
     {
         glDisableVertexAttribArray((GLuint)ii);
+    }
+
+    // Next bind the descriptor sets as required by the layout
+    auto pipelineLayout = m_currentPipelineState->m_pipelineLayout;
+    auto descriptorSetCount = pipelineLayout->m_sets.Count();
+    for(UInt ii = 0; ii < descriptorSetCount; ++ii)
+    {
+        auto descriptorSet = m_boundDescriptorSets[ii];
+        auto descriptorSetInfo = pipelineLayout->m_sets[ii];
+        auto descriptorSetLayout = descriptorSetInfo.layout;
+
+        // TODO: need to validate that `descriptorSet->m_layout` matches
+        // `descriptorSetLayout`.
+
+        {
+            // First we will bind any uniform buffers that were specified.
+
+            auto slotTypeIndex = int(GLDescriptorSlotType::ConstantBuffer);
+            auto count = descriptorSetLayout->m_counts[slotTypeIndex];
+            auto baseIndex = descriptorSetInfo.baseArrayIndex[slotTypeIndex];
+
+            for(Int ii = 0; ii < count; ++ii)
+            {
+                auto bufferImpl = descriptorSet->m_constantBuffers[ii];
+                glBindBufferBase(GL_UNIFORM_BUFFER, ii, bufferImpl->m_handle);
+            }
+        }
+
+
+        {
+            // Next we will bind any combined texture/sampler slots.
+
+            auto slotTypeIndex = int(GLDescriptorSlotType::CombinedTextureSampler);
+            auto count = descriptorSetLayout->m_counts[slotTypeIndex];
+            auto baseIndex = descriptorSetInfo.baseArrayIndex[slotTypeIndex];
+
+            // TODO: We should be able to use a single call to glBindTextures here,
+            // rather than a loop. This would also eliminate the need to retain
+            // the appropriate target (e.g., `GL_TEXTURE_2D` for binding).
+
+            for(Int ii = 0; ii < count; ++ii)
+            {
+                auto textureViewImpl = descriptorSet->m_textures[ii];
+                auto samplerImpl = descriptorSet->m_samplers[ii];
+
+                glActiveTexture(GL_TEXTURE0 + ii);
+                glBindTexture(GL_TEXTURE_2D, textureViewImpl->m_textureID);
+
+                glBindSampler(baseIndex + ii, samplerImpl->m_samplerID);
+            }
+        }
     }
 }
 
@@ -1003,7 +1025,6 @@ void GLRenderer::setPipelineState(PipelineType pipelineType, PipelineState* stat
     auto program = pipelineStateImpl->m_program;
     GLuint programID = program ? program->m_id : 0;
     glUseProgram(programID);
-    glUseProgram(pipelineStateImpl->m_program->m_id);
 }
 
 void GLRenderer::draw(UInt vertexCount, UInt startVertex = 0)
@@ -1015,6 +1036,7 @@ void GLRenderer::draw(UInt vertexCount, UInt startVertex = 0)
 
 void GLRenderer::drawIndexed(UInt indexCount, UInt startIndex, UInt baseVertex)
 {
+    assert(!"unimplemented");
 }
 
 void GLRenderer::dispatchCompute(int x, int y, int z)
@@ -1148,16 +1170,30 @@ void GLRenderer::setBindingState(BindingState* stateIn)
 
 void GLRenderer::DescriptorSetImpl::setConstantBuffer(UInt range, UInt index, BufferResource* buffer)
 {
-    // TODO: assign to tempoary array in the descriptor set
+    auto resourceImpl = (BufferResourceImpl*) buffer;
+
+    auto layout = m_layout;
+    auto rangeInfo = layout->m_ranges[range];
+    auto arrayIndex = rangeInfo.arrayIndex + index;
+
+    m_constantBuffers[arrayIndex] = resourceImpl;
 }
 
 void GLRenderer::DescriptorSetImpl::setResource(UInt range, UInt index, ResourceView* view)
 {
-    // TODO: assign to tempoary array in the descriptor set
+    auto viewImpl = (ResourceViewImpl*) view;
+
+    auto layout = m_layout;
+    auto rangeInfo = layout->m_ranges[range];
+    auto arrayIndex = rangeInfo.arrayIndex + index;
+
+    assert(!"unimplemented");
 }
 
 void GLRenderer::DescriptorSetImpl::setSampler(UInt range, UInt index, SamplerState* sampler)
-{}
+{
+    assert(!"unsupported");
+}
 
 void GLRenderer::DescriptorSetImpl::setCombinedTextureSampler(
     UInt range,
@@ -1165,30 +1201,126 @@ void GLRenderer::DescriptorSetImpl::setCombinedTextureSampler(
     ResourceView*   textureView,
     SamplerState*   sampler)
 {
-    // TODO: assign to tempoary array in the descriptor set
+    auto viewImpl = (TextureViewImpl*) textureView;
+    auto samplerImpl = (SamplerStateImpl*) sampler;
+
+    auto layout = m_layout;
+    auto rangeInfo = layout->m_ranges[range];
+    auto arrayIndex = rangeInfo.arrayIndex + index;
+
+    m_textures[arrayIndex] = viewImpl;
+    m_samplers[arrayIndex] = samplerImpl;
 }
 
 void GLRenderer::setDescriptorSet(PipelineType pipelineType, PipelineLayout* layout, UInt index, DescriptorSet* descriptorSet)
 {
     auto descriptorSetImpl = (DescriptorSetImpl*)descriptorSet;
+
+    // TODO: can we just bind things immediately here, rather than shadowing the state?
+
     m_boundDescriptorSets[index] = descriptorSetImpl;
 }
 
 DescriptorSetLayout* GLRenderer::createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc)
 {
     RefPtr<DescriptorSetLayoutImpl> layoutImpl = new DescriptorSetLayoutImpl();
+
+    Int counts[int(GLDescriptorSlotType::CountOf)] = { 0, };
+
+    Int rangeCount = desc.slotRangeCount;
+    for(Int rr = 0; rr < rangeCount; ++rr)
+    {
+        auto rangeDesc = desc.slotRanges[rr];
+        DescriptorSetLayoutImpl::RangeInfo rangeInfo;
+
+        GLDescriptorSlotType glSlotType;
+        switch( rangeDesc.type )
+        {
+        default:
+            assert(!"unsupported");
+            break;
+
+        // TODO: There are many other slot types we could support here,
+        // in particular including storage buffers.
+
+        case DescriptorSlotType::CombinedImageSampler:
+            glSlotType = GLDescriptorSlotType::CombinedTextureSampler;
+            break;
+
+        case DescriptorSlotType::UniformBuffer:
+        case DescriptorSlotType::DynamicUniformBuffer:
+            glSlotType = GLDescriptorSlotType::ConstantBuffer;
+            break;
+        }
+
+        rangeInfo.type = glSlotType;
+        rangeInfo.arrayIndex = counts[int(glSlotType)];
+        counts[int(glSlotType)] += rangeDesc.count;
+
+        layoutImpl->m_ranges.Add(rangeInfo);
+    }
+
+    for( Int ii = 0; ii < int(GLDescriptorSlotType::CountOf); ++ii )
+    {
+        layoutImpl->m_counts[ii] = counts[ii];
+    }
+
     return layoutImpl.detach();
 }
 
 PipelineLayout* GLRenderer::createPipelineLayout(const PipelineLayout::Desc& desc)
 {
     RefPtr<PipelineLayoutImpl> layoutImpl = new PipelineLayoutImpl();
+
+    static const int kSlotTypeCount = int(GLDescriptorSlotType::CountOf);
+    Int counts[kSlotTypeCount] = { 0, };
+
+    Int setCount = desc.descriptorSetCount;
+    for( Int ii = 0; ii < setCount; ++ii )
+    {
+        auto setLayout = (DescriptorSetLayoutImpl*) desc.descriptorSets[ii].layout;
+
+        PipelineLayoutImpl::DescriptorSetInfo setInfo;
+        setInfo.layout = setLayout;
+
+        for( Int ii = 0; ii < int(GLDescriptorSlotType::CountOf); ++ii )
+        {
+            setInfo.baseArrayIndex[ii] = counts[ii];
+            counts[ii] += setLayout->m_counts[ii];
+        }
+
+        layoutImpl->m_sets.Add(setInfo);
+    }
+
     return layoutImpl.detach();
 }
 
 DescriptorSet* GLRenderer::createDescriptorSet(DescriptorSetLayout* layout)
 {
+    auto layoutImpl = (DescriptorSetLayoutImpl*) layout;
+
     RefPtr<DescriptorSetImpl> descriptorSetImpl = new DescriptorSetImpl();
+
+    descriptorSetImpl->m_layout = layoutImpl;
+
+    // TODO: storage for the arrays of bound objects could be tail allocated
+    // as part of the descriptor set, with offsets pre-computed in the
+    // descriptor set layout.
+
+    {
+        auto slotTypeIndex = int(GLDescriptorSlotType::ConstantBuffer);
+        auto slotCount = layoutImpl->m_counts[slotTypeIndex];
+        descriptorSetImpl->m_constantBuffers.SetSize(slotCount);
+    }
+
+    {
+        auto slotTypeIndex = int(GLDescriptorSlotType::CombinedTextureSampler);
+        auto slotCount = layoutImpl->m_counts[slotTypeIndex];
+
+        descriptorSetImpl->m_textures.SetSize(slotCount);
+        descriptorSetImpl->m_samplers.SetSize(slotCount);
+    }
+
     return descriptorSetImpl.detach();
 }
 
@@ -1249,20 +1381,24 @@ ShaderProgram* GLRenderer::createProgram(const ShaderProgram::Desc& desc)
 PipelineState* GLRenderer::createGraphicsPipelineState(const GraphicsPipelineStateDesc& desc)
 {
     auto programImpl        = (ShaderProgramImpl*)  desc.program;
+    auto pipelineLayoutImpl = (PipelineLayoutImpl*) desc.pipelineLayout;
     auto inputLayoutImpl    = (InputLayoutImpl*)    desc.inputLayout;
 
     RefPtr<PipelineStateImpl> pipelineStateImpl = new PipelineStateImpl();
     pipelineStateImpl->m_program = programImpl;
+    pipelineStateImpl->m_pipelineLayout = pipelineLayoutImpl;
     pipelineStateImpl->m_inputLayout = inputLayoutImpl;
     return pipelineStateImpl.detach();
 }
 
 PipelineState* GLRenderer::createComputePipelineState(const ComputePipelineStateDesc& desc)
 {
-    auto programImpl = (ShaderProgramImpl*) desc.program;
+    auto programImpl        = (ShaderProgramImpl*)  desc.program;
+    auto pipelineLayoutImpl = (PipelineLayoutImpl*) desc.pipelineLayout;
 
     RefPtr<PipelineStateImpl> pipelineStateImpl = new PipelineStateImpl();
     pipelineStateImpl->m_program = programImpl;
+    pipelineStateImpl->m_pipelineLayout = pipelineLayoutImpl;
     return pipelineStateImpl.detach();
 }
 
