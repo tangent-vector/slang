@@ -73,7 +73,7 @@
 
 using namespace Slang;
 
-namespace slang_graphics {
+namespace gfx {
 
 class GLRenderer : public Renderer
 {

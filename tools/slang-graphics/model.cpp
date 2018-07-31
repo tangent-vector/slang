@@ -18,7 +18,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-namespace slang_graphics {
+namespace gfx {
 
 // TinyObj provides a tuple type that bundles up indices, but doesn't
 // provide equality comparison or hashing for that type. We'd like
@@ -68,11 +68,11 @@ bool operator==(SmoothingGroupVertexID const& left, SmoothingGroupVertexID const
 
 namespace std
 {
-    template<> struct hash<slang_graphics::ObjIndexKey>
+    template<> struct hash<gfx::ObjIndexKey>
     {
-        size_t operator()(slang_graphics::ObjIndexKey const& key) const
+        size_t operator()(gfx::ObjIndexKey const& key) const
         {
-            slang_graphics::Hasher hasher;
+            gfx::Hasher hasher;
             hasher.add(key.index.vertex_index);
             hasher.add(key.index.normal_index);
             hasher.add(key.index.texcoord_index);
@@ -80,11 +80,11 @@ namespace std
         }
     };
 
-    template<> struct hash<slang_graphics::SmoothingGroupVertexID>
+    template<> struct hash<gfx::SmoothingGroupVertexID>
     {
-        size_t operator()(slang_graphics::SmoothingGroupVertexID const& id) const
+        size_t operator()(gfx::SmoothingGroupVertexID const& id) const
         {
-            slang_graphics::Hasher hasher;
+            gfx::Hasher hasher;
             hasher.add(id.smoothingGroup);
             hasher.add(id.positionID);
             return hasher.state;
@@ -92,7 +92,7 @@ namespace std
     };
 }
 
-namespace slang_graphics
+namespace gfx
 {
 
 RefPtr<TextureResource> loadTextureImage(
@@ -527,4 +527,4 @@ Result ModelLoader::load(
     return SLANG_OK;
 }
 
-} // slang_graphics
+} // gfx

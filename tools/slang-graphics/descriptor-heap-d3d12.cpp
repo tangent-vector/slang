@@ -1,7 +1,7 @@
 
 #include "descriptor-heap-d3d12.h"
 
-namespace slang_graphics {
+namespace gfx {
 using namespace Slang;
 
 D3D12DescriptorHeap::D3D12DescriptorHeap():
@@ -43,5 +43,5 @@ Result D3D12DescriptorHeap::init(ID3D12Device* device, const D3D12_CPU_DESCRIPTO
     return SLANG_OK;
 }
 
-} // namespace slang_graphics
+} // namespace gfx
 

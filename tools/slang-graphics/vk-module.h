@@ -14,7 +14,7 @@
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
 
-namespace slang_graphics {
+namespace gfx {
 
 struct VulkanModule
 {

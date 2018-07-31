@@ -3,7 +3,7 @@
 
 #include "vk-module.h"
 
-namespace slang_graphics {
+namespace gfx {
 
 #define VK_API_GLOBAL_PROCS(x) \
     x(vkGetInstanceProcAddr) \

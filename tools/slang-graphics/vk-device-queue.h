@@ -3,7 +3,7 @@
 
 #include "vk-api.h"
 
-namespace slang_graphics {
+namespace gfx {
 
 struct VulkanDeviceQueue
 {

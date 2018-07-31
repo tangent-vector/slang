@@ -13,7 +13,7 @@
 #include <D3Dcommon.h>
 #include <DXGIFormat.h>
 
-namespace slang_graphics {
+namespace gfx {
 
 class D3DUtil
 {

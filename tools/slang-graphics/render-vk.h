@@ -1,10 +1,10 @@
 // render-vk.h
 #pragma once
 
-namespace slang_graphics {
+namespace gfx {
 
 class Renderer;
 
 Renderer* createVKRenderer();
 
-} // slang_graphics
+} // gfx

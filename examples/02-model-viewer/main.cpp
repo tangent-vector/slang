@@ -15,7 +15,7 @@
 #include "slang-graphics/render-d3d11.h"
 #include "slang-graphics/vector-math.h"
 #include "slang-graphics/window.h"
-using namespace slang_graphics;
+using namespace gfx;
 
 #include <memory>
 #include <vector>

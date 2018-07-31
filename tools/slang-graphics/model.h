@@ -6,7 +6,7 @@
 
 #include <vector>
 
-namespace slang_graphics {
+namespace gfx {
 
 using Slang::RefObject;
 using Slang::RefPtr;
@@ -75,4 +75,4 @@ struct ModelLoader
 };
 
 
-} // slang_graphics
+} // gfx

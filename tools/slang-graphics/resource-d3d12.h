@@ -13,7 +13,7 @@
 #include "../../slang-com-ptr.h"
 #include "d3d-util.h"
 
-namespace slang_graphics {
+namespace gfx {
 
 // Enables more conservative barriers - restoring the state of resources after they are used.
 // Should not need to be enabled in normal builds, as the barriers should correctly sync resources

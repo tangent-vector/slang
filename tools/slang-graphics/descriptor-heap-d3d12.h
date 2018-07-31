@@ -7,7 +7,7 @@
 #include "../../slang-com-ptr.h"
 #include "../../source/core/list.h"
 
-namespace slang_graphics {
+namespace gfx {
 
 /*! \brief A simple class to manage an underlying Dx12 Descriptor Heap. Allocations are made linearly in order. It is not possible to free
 individual allocations, but all allocations can be deallocated with 'deallocateAll'. */
@@ -194,5 +194,5 @@ SLANG_FORCE_INLINE D3D12_GPU_DESCRIPTOR_HANDLE D3D12DescriptorHeap::getGpuHandle
     return dst;
 }
 
-} // namespace slang_graphics
+} // namespace gfx
 

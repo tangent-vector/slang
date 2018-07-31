@@ -6,7 +6,7 @@
 // We will use the C standard library just for printing error messages.
 #include <stdio.h>
 
-namespace slang_graphics {
+namespace gfx {
 using namespace Slang;
 
 /* static */D3D_PRIMITIVE_TOPOLOGY D3DUtil::getPrimitiveTopology(PrimitiveTopology topology)

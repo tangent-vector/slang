@@ -3,7 +3,7 @@
 
 #include "../../source/core/list.h"
 
-namespace slang_graphics {
+namespace gfx {
 using namespace Slang;
 
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! VulkanApi !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!

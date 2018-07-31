@@ -1,6 +1,6 @@
 #include "circular-resource-heap-d3d12.h"
 
-namespace slang_graphics {
+namespace gfx {
 using namespace Slang;
 
 D3D12CircularResourceHeap::D3D12CircularResourceHeap():
@@ -219,4 +219,4 @@ D3D12CircularResourceHeap::Cursor D3D12CircularResourceHeap::allocate(size_t siz
 	return cursor;
 }
 
-} // namespace slang_graphics
+} // namespace gfx

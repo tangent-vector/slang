@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-namespace slang_graphics {
+namespace gfx {
 
 struct WindowDesc
 {
@@ -50,7 +50,7 @@ int runApplication(
 
 #define SG_CONSOLE_MAIN(APPLICATION_ENTRY)  \
     int main(int argc, char** argv) {       \
-        return slang_graphics::runApplication(&(APPLIATION_ENTRY), argc, argv); \
+        return gfx::runApplication(&(APPLIATION_ENTRY), argc, argv); \
     }
 
 #ifdef _WIN32
@@ -66,7 +66,7 @@ int runWindowsApplication(
         void*   /* prevInstance */,     \
         void*   /* commandLine */,      \
         int     showCommand) {          \
-        return slang_graphics::runWindowsApplication(&(APPLICATION_ENTRY), instance, showCommand); \
+        return gfx::runWindowsApplication(&(APPLICATION_ENTRY), instance, showCommand); \
     }
 
 #else
@@ -75,4 +75,4 @@ int runWindowsApplication(
 
 #endif
 
-} // slang_graphics
+} // gfx

@@ -1,7 +1,7 @@
 ﻿// resource-d3d12.cpp
 #include "resource-d3d12.h"
 
-namespace slang_graphics {
+namespace gfx {
 using namespace Slang;
 
 /* !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! D3D12BarrierSubmitter !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! */

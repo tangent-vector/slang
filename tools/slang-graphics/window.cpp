@@ -20,7 +20,7 @@
 #error "The slang-graphics library currently only supports Windows platforms"
 #endif
 
-namespace slang_graphics {
+namespace gfx {
 
 #if _WIN32
 
@@ -286,4 +286,4 @@ uint64_t getTimerFrequency()
 
 #endif
 
-} // slang_graphics
+} // gfx

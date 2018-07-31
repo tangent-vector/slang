@@ -3,7 +3,7 @@
 
 #include "render.h"
 
-namespace slang_graphics {
+namespace gfx {
 
 class Surface;
 

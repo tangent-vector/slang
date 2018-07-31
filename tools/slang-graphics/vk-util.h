@@ -15,7 +15,7 @@
 /// Is similar to SLANG_VK_RETURN_ON_FAIL, but does not return. Will call checkFail on failure - which asserts on debug builds.
 #define SLANG_VK_CHECK(x) {  VkResult _res = x; if (_res != VK_SUCCESS) { VulkanUtil::checkFail(_res); }  }
 
-namespace slang_graphics {
+namespace gfx {
 
 // Utility functions for Vulkan
 struct VulkanUtil

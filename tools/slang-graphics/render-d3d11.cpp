@@ -40,7 +40,7 @@
 //
 using namespace Slang;
 
-namespace slang_graphics {
+namespace gfx {
 
 class D3D11Renderer : public Renderer
 {

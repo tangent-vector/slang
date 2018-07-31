@@ -7,8 +7,8 @@
 #include "../../external/glm/glm/gtc/matrix_transform.hpp"
 #include "../../external/glm/glm/gtc/constants.hpp"
 
-namespace slang_graphics {
+namespace gfx {
 
 using namespace glm;
 
-} // slang_graphics
+} // gfx

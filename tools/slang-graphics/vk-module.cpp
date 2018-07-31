@@ -11,7 +11,7 @@
 #   include <dlfcn.h>
 #endif
 
-namespace slang_graphics {
+namespace gfx {
 using namespace Slang;
 
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! VulkanModule !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!

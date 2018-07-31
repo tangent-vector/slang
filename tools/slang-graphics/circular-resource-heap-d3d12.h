@@ -6,7 +6,7 @@
 
 #include "resource-d3d12.h"
 
-namespace slang_graphics {
+namespace gfx {
 
 /*! \brief The D3D12CircularResourceHeap is a heap that is suited for size constrained real-time resources allocation that
 is transitory in nature. It is designed to allocate resources which are used and discarded, often used where in
@@ -202,5 +202,5 @@ class D3D12CircularResourceHeap
 	ID3D12Device* m_device;				///< The device that resources will be constructed on
 };
 
-} // namespace slang_graphics
+} // namespace gfx
 

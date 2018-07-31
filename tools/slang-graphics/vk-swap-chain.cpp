@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-namespace slang_graphics {
+namespace gfx {
 using namespace Slang;
 
 static int _indexOf(List<VkSurfaceFormatKHR>& formatsIn, VkFormat format)

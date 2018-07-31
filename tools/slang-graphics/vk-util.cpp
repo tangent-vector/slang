@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-namespace slang_graphics {
+namespace gfx {
 
 /* static */VkFormat VulkanUtil::getVkFormat(Format format)
 {

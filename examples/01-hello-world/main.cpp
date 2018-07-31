@@ -31,7 +31,7 @@
 #include "slang-graphics/render.h"
 #include "slang-graphics/render-d3d11.h"
 #include "slang-graphics/window.h"
-using namespace slang_graphics;
+using namespace gfx;
 
 #include <vector>
 

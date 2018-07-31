@@ -10,7 +10,7 @@
 #include "../../source/core/smart-pointer.h"
 #include "../../source/core/list.h"
 
-namespace slang_graphics {
+namespace gfx {
 
 // Had to move here, because Options needs types defined here
 typedef intptr_t Int;

@@ -46,7 +46,7 @@
 
 #define ENABLE_DEBUG_LAYER 1
 
-namespace slang_graphics {
+namespace gfx {
 using namespace Slang;
 
 class D3D12Renderer : public Renderer

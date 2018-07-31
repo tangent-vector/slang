@@ -3,7 +3,7 @@
 
 #include "../../source/core/slang-math.h"
 
-namespace slang_graphics {
+namespace gfx {
 using namespace Slang;
 
 /* static */const Resource::BindFlag::Enum Resource::s_requiredBinding[] =
