@@ -174,7 +174,7 @@
     <ProjectReference Include="..\..\source\core\core.vcxproj">
       <Project>{F9BE7957-8399-899E-0C49-E714FDDD4B65}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\tools\slang-graphics\slang-graphics.vcxproj">
+    <ProjectReference Include="..\..\tools\gfx\gfx.vcxproj">
       <Project>{222F7498-B40C-4F3F-A704-DDEB91A4484A}</Project>
     </ProjectReference>
   </ItemGroup>

@@ -10,11 +10,11 @@
 
 // We will again make use of a simple graphics API abstraction
 // layer, just to keep the examples short and to the point.
-#include "slang-graphics/model.h"
-#include "slang-graphics/render.h"
-#include "slang-graphics/render-d3d11.h"
-#include "slang-graphics/vector-math.h"
-#include "slang-graphics/window.h"
+#include "gfx/model.h"
+#include "gfx/render.h"
+#include "gfx/render-d3d11.h"
+#include "gfx/vector-math.h"
+#include "gfx/window.h"
 using namespace gfx;
 
 #include <memory>
@@ -962,4 +962,4 @@ void innerMain(ApplicationContext* context)
 // This macro instantiates an appropriate main function to
 // invoke the `innerMain` above.
 //
-SG_UI_MAIN(innerMain)
+GFX_UI_MAIN(innerMain)

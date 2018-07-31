@@ -48,7 +48,7 @@ int runApplication(
     int                 argc,
     char const* const*  argv);
 
-#define SG_CONSOLE_MAIN(APPLICATION_ENTRY)  \
+#define GFX_CONSOLE_MAIN(APPLICATION_ENTRY)  \
     int main(int argc, char** argv) {       \
         return gfx::runApplication(&(APPLIATION_ENTRY), argc, argv); \
     }
@@ -60,7 +60,7 @@ int runWindowsApplication(
     void*               instance,
     int                 showCommand);
 
-#define SG_UI_MAIN(APPLICATION_ENTRY)   \
+#define GFX_UI_MAIN(APPLICATION_ENTRY)   \
     int __stdcall WinMain(              \
         void*   instance,               \
         void*   /* prevInstance */,     \
@@ -71,7 +71,7 @@ int runWindowsApplication(
 
 #else
 
-#define SG_UI_MAIN(APPLICATION_ENTRY) SG_CONSOLE_MAIN(APPLICATION_ENTRY)
+#define GFX_UI_MAIN(APPLICATION_ENTRY) GFX_CONSOLE_MAIN(APPLICATION_ENTRY)
 
 #endif
 

@@ -21,7 +21,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "slang-eval-test", "tools\sl
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "render-test", "tools\render-test\render-test.vcxproj", "{96610759-07B9-4EEB-A974-5C634A2E742B}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "slang-graphics", "tools\slang-graphics\slang-graphics.vcxproj", "{222F7498-B40C-4F3F-A704-DDEB91A4484A}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "gfx", "tools\gfx\gfx.vcxproj", "{222F7498-B40C-4F3F-A704-DDEB91A4484A}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "slangc", "source\slangc\slangc.vcxproj", "{D56CBCEB-1EB5-4CA8-AEC4-48EA35ED61C7}"
 EndProject

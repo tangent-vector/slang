@@ -28,9 +28,9 @@
 // with Slang may depend on an application/engine making certain
 // design choices in their abstraction layer.
 //
-#include "slang-graphics/render.h"
-#include "slang-graphics/render-d3d11.h"
-#include "slang-graphics/window.h"
+#include "gfx/render.h"
+#include "gfx/render-d3d11.h"
+#include "gfx/window.h"
 using namespace gfx;
 
 #include <vector>
@@ -432,4 +432,4 @@ void innerMain(ApplicationContext* context)
 // This macro instantiates an appropriate main function to
 // invoke the `innerMain` above.
 //
-SG_UI_MAIN(innerMain)
+GFX_UI_MAIN(innerMain)

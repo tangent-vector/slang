@@ -260,16 +260,16 @@ function example(name)
     -- if it is going to use Slang, so we might as well set up a suitable
     -- include path here rather than make each example do it.
     --
-    -- Most of the examples also need the `slang-graphics` library,
+    -- Most of the examples also need the `gfx` library,
     -- which lives under `tools/`, so we will add that to the path as well.
     --
     includedirs { ".", "tools" }
 
     -- The examples also need to link against the slang library,
-    -- and the slang-graphics abstraction layer (which in turn
+    -- and the `gfx` abstraction layer (which in turn
     -- depends on the `core` library). We specify all of that here,
     -- rather than in each example.
-    links { "slang", "core", "slang-graphics" }
+    links { "slang", "core", "gfx" }
 end
 
 --
@@ -287,14 +287,6 @@ example "01-hello-world"
 
 -- Let's go ahead and set up the projects for our other examples now.
 example "02-model-viewer"
-
---example "03-modules"
-
---example "04-parameter-blocks"
-
---example "05-generics"
-
---example "06-associated-types"
 
 
 -- Most of the other projects have more interesting configuration going
@@ -379,8 +371,8 @@ tool "slang-eval-test"
 
 tool "render-test"
     uuid "96610759-07B9-4EEB-A974-5C634A2E742B"
-    includedirs { ".", "external", "source", "tools/slang-graphics" }
-    links { "core", "slang", "slang-graphics" }
+    includedirs { ".", "external", "source", "tools/gfx" }
+    links { "core", "slang", "gfx" }
     filter { "system:windows" }
 
         systemversion "10.0.14393.0"
@@ -391,12 +383,12 @@ tool "render-test"
         postbuildcommands { '"$(SolutionDir)tools\\copy-hlsl-libs.bat" "$(WindowsSdkDir)Redist/D3D/%{cfg.platform:lower()}/" "%{cfg.targetdir}/"'}
 
 --
--- `slang-graphics` is a utility library for doing GPU rendering
+-- `gfx` is a utility library for doing GPU rendering
 -- and compute, which is used by both our testing and exmaples.
 -- It depends on teh `core` library, so we need to declare that:
 --
 
-tool "slang-graphics"
+tool "gfx"
     uuid "222F7498-B40C-4F3F-A704-DDEB91A4484A"
     -- Unlike most of the code under `tools/`, this is a library
     -- rather than a stand-alone executable.
