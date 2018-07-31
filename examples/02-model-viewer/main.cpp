@@ -29,7 +29,7 @@ using namespace slang_graphics;
 struct ShaderLibrary
 {
     std::string                 inputPath;
-    Renderer*                   renderer;
+    RefPtr<Renderer>            renderer;
     SlangCompileRequest*        slangRequest;
     slang::ShaderReflection*    slangReflection;
 };
@@ -80,11 +80,6 @@ ShaderLibrary* loadShaderLibrary(Renderer* renderer, char const* inputPath)
     int translationUnitIndex = spAddTranslationUnit(slangRequest, SLANG_SOURCE_LANGUAGE_SLANG, nullptr);
     spAddTranslationUnitSourceFile(slangRequest, translationUnitIndex, inputPath);
 
-//    char const* vertexEntryPointName    = "vertexMain";
-//    char const* fragmentEntryPointName  = "fragmentMain";
-//    int vertexIndex   = spAddEntryPoint(slangRequest, translationUnitIndex, vertexEntryPointName,   SLANG_STAGE_VERTEX);
-//    int fragmentIndex = spAddEntryPoint(slangRequest, translationUnitIndex, fragmentEntryPointName, SLANG_STAGE_FRAGMENT);
-
     int compileErr = spCompile(slangRequest);
     if(auto diagnostics = spGetDiagnosticOutput(slangRequest))
     {
@@ -97,42 +92,7 @@ ShaderLibrary* loadShaderLibrary(Renderer* renderer, char const* inputPath)
         return nullptr;
     }
 
-#if 0
-    ISlangBlob* vertexShaderBlob = nullptr;
-    spGetEntryPointCodeBlob(slangRequest, vertexIndex, 0, &vertexShaderBlob);
-
-    ISlangBlob* fragmentShaderBlob = nullptr;
-    spGetEntryPointCodeBlob(slangRequest, fragmentIndex, 0, &fragmentShaderBlob);
-
-    char const* vertexCode = (char const*) vertexShaderBlob->getBufferPointer();
-    char const* vertexCodeEnd = vertexCode + vertexShaderBlob->getBufferSize();
-
-    char const* fragmentCode = (char const*) fragmentShaderBlob->getBufferPointer();
-    char const* fragmentCodeEnd = fragmentCode + fragmentShaderBlob->getBufferSize();
-#endif
-
     auto slangReflection = (slang::ShaderReflection*) spGetReflection(slangRequest);
-
-//    spDestroyCompileRequest(slangRequest);
-//    spDestroySession(slangSession);
-
-#if 0
-    ShaderProgram::KernelDesc kernelDescs[] =
-    {
-        { StageType::Vertex,    vertexCode,     vertexCodeEnd},
-        { StageType::Fragment,  fragmentCode,   fragmentCodeEnd},
-    };
-
-    ShaderProgram::Desc programDesc;
-    programDesc.pipelineType = PipelineType::Graphics;
-    programDesc.kernels = &kernelDescs[0];
-    programDesc.kernelCount = 2;
-
-    ShaderProgram* shaderProgram = renderer->createProgram(programDesc);
-
-    vertexShaderBlob->release();
-    fragmentShaderBlob->release();
-#endif
 
     ShaderLibrary* library = new ShaderLibrary();
     library->renderer = renderer;
@@ -370,16 +330,11 @@ struct Effect
 ApplicationContext* gAppContext;
 Window* gWindow;
 Renderer* gRenderer;
-//BufferResource* gConstantBuffer;
 ResourceView* gDepthTarget;
 
-//PipelineLayout* gPipelineLayout;
-//PipelineState*  gPipelineState;
-//DescriptorSet*  gDescriptorSet;
 Effect* gEffect;
 
 ParameterBlockLayout* gPerViewParameterBlockLayout;
-//ParameterBlockLayout* gSimpleMaterialParameterBlockLayout;
 ParameterBlockLayout* gPerModelParameterBlockLayout;
 
 struct Material
@@ -523,26 +478,6 @@ int initialize()
     rendererDesc.height = gWindowHeight;
     gRenderer->initialize(rendererDesc, getPlatformWindowHandle(gWindow));
 
-#if 0
-    // Create a constant buffer for passing the model-view-projection matrix.
-    //
-    // TODO: A future version of this example will show how to
-    // use the Slang reflection API to query the required size
-    // for the data in this constant buffer.
-    //
-    int constantBufferSize = 16 * sizeof(float);
-
-    BufferResource::Desc constantBufferDesc;
-    constantBufferDesc.init(constantBufferSize);
-    constantBufferDesc.setDefaults(Resource::Usage::ConstantBuffer);
-    constantBufferDesc.cpuAccessFlags = Resource::AccessFlag::Write;
-
-    gConstantBuffer = gRenderer->createBufferResource(
-        Resource::Usage::ConstantBuffer,
-        constantBufferDesc);
-    if(!gConstantBuffer) return FAILURE;
-#endif
-
     // Input Assembler (IA)
 
     // Input Layout
@@ -599,77 +534,16 @@ int initialize()
         shaderLibrary, "PerModel");
 
 
-    // Resource binding state
-
-#if 0
-    DescriptorSetLayout* descriptorSetLayout = nullptr;
-    {
-        DescriptorSetLayout::SlotRangeDesc slotRanges[] =
-        {
-            DescriptorSetLayout::SlotRangeDesc(DescriptorSlotType::UniformBuffer),
-        };
-
-        DescriptorSetLayout::Desc descriptorSetLayoutDesc;
-        descriptorSetLayoutDesc.slotRangeCount = 1;
-        descriptorSetLayoutDesc.slotRanges = &slotRanges[0];
-
-        descriptorSetLayout = gRenderer->createDescriptorSetLayout(descriptorSetLayoutDesc);
-        if (!descriptorSetLayout) return FAILURE;
-    }
-
-    {
-        PipelineLayout::DescriptorSetDesc descriptorSets[] =
-        {
-            PipelineLayout::DescriptorSetDesc(descriptorSetLayout),
-        };
-
-        PipelineLayout::Desc pipelineLayoutDesc;
-        PipelineLayoutDesc.renderTargetCount = 1;
-        pipelineLayoutDesc.descriptorSetCount = 1;
-        pipelineLayoutDesc.descriptorSets = &descriptorSets[0];
-
-        PipelineLayout* pipelineLayout = gRenderer->createPipelineLayout(pipelineLayoutDesc);
-        if (!pipelineLayout) return FAILURE;
-
-        gPipelineLayout = pipelineLayout;
-    }
-
-    // Descriptor Set
-    {
-        DescriptorSet* descriptorSet = gRenderer->createDescriptorSet(descriptorSetLayout);
-        if (!descriptorSet) return FAILURE;
-
-        descriptorSet->setConstantBuffer(0, 0, gConstantBuffer);
-
-        gDescriptorSet = descriptorSet;
-    }
-#endif
-
-    // Pipeline State Object (PSO)
     {
         Effect* effect = new Effect();
 
         auto& desc = effect->desc;
-//        GraphicsPipelineStateDesc desc;
-
-//        desc.pipelineLayout = gPipelineLayout;
         desc.inputLayout = inputLayout;
         desc.renderTargetCount = 1;
 
         effect->program = program;
 
         gEffect = effect;
-
-
-#if 0
-
-        // ...
-
-        PipelineState* pipelineState = gRenderer->createGraphicsPipelineState(desc);
-        if (!pipelineState) return FAILURE;
-
-        gPipelineState = pipelineState;
-#endif
     }
 
     // Load model(s)
@@ -1039,31 +913,6 @@ void renderFrame()
 
         for(auto& mesh : model->meshes)
         {
-#if 0
-            // For this example, we are updating our main constant buffer
-            // for every single mesh that we draw, because there might
-            // be a change in material color. A more optimized renderer
-            // will group shader parameters according to the rates at
-            // which they change.
-            //
-            if(Uniforms* data = (Uniforms*) gRenderer->map(gConstantBuffer, MapFlavor::WriteDiscard))
-            {
-                data->viewProjection = viewProjection;
-                data->modelTransform = modelTransform;
-                data->inverseTransposeModelTransform = inverseTransposeModelTransform;
-
-                data->lightDir = lightDir;
-                data->lightColor = lightColor;
-
-                data->materialDiffuseColor = mesh->material->diffuseColor;
-
-                gRenderer->unmap(gConstantBuffer);
-            }
-            //
-            // TODO: does changing the contents of the constant buffer
-            // mean we need to re-bind it?
-#endif
-
             // Each material will have its own parameter block
             // that we can use to bind both the material parameters
             // and the material *code* to the pipeline.
