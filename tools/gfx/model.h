@@ -8,11 +8,6 @@
 
 namespace gfx {
 
-using Slang::RefObject;
-using Slang::RefPtr;
-
-typedef SlangResult Result;
-
 struct ModelLoader
 {
     struct MaterialData

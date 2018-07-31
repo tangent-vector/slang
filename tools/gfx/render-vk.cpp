@@ -47,24 +47,25 @@ public:
     virtual void presentFrame() override;
     TextureResource::Desc getSwapChainTextureDesc() override;
 
-    virtual TextureResource* createTextureResource(Resource::Usage initialUsage, const TextureResource::Desc& desc, const TextureResource::Data* initData) override;
-    virtual BufferResource* createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& bufferDesc, const void* initData) override;
-    virtual SamplerState* createSamplerState(SamplerState::Desc const& desc) override;
+    Result createTextureResource(Resource::Usage initialUsage, const TextureResource::Desc& desc, const TextureResource::Data* initData, TextureResource** outResource) override;
+    Result createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& desc, const void* initData, BufferResource** outResource) override;
+    Result createSamplerState(SamplerState::Desc const& desc, SamplerState** outSampler) override;
 
-    virtual ResourceView* createTextureView(TextureResource* texture, ResourceView::Desc const& desc) override;
-    virtual ResourceView* createBufferView(BufferResource* texture, ResourceView::Desc const& desc) override;
+    Result createTextureView(TextureResource* texture, ResourceView::Desc const& desc, ResourceView** outView) override;
+    Result createBufferView(BufferResource* buffer, ResourceView::Desc const& desc, ResourceView** outView) override;
+
+    Result createInputLayout(const InputElementDesc* inputElements, UInt inputElementCount, InputLayout** outLayout) override;
+
+    Result createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc, DescriptorSetLayout** outLayout) override;
+    Result createPipelineLayout(const PipelineLayout::Desc& desc, PipelineLayout** outLayout) override;
+    Result createDescriptorSet(DescriptorSetLayout* layout, DescriptorSet** outDescriptorSet) override;
+
+    Result createProgram(const ShaderProgram::Desc& desc, ShaderProgram** outProgram) override;
+    Result createGraphicsPipelineState(const GraphicsPipelineStateDesc& desc, PipelineState** outState) override;
+    Result createComputePipelineState(const ComputePipelineStateDesc& desc, PipelineState** outState) override;
 
     virtual SlangResult captureScreenSurface(Surface& surface) override;
-    virtual InputLayout* createInputLayout(const InputElementDesc* inputElements, UInt inputElementCount) override;
 
-//    virtual BindingState* createBindingState(const BindingState::Desc& bindingStateDesc) override;
-    virtual DescriptorSetLayout* createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc) override;
-    virtual PipelineLayout* createPipelineLayout(const PipelineLayout::Desc& desc) override;
-    virtual DescriptorSet* createDescriptorSet(DescriptorSetLayout* layout) override;
-
-    virtual ShaderProgram* createProgram(const ShaderProgram::Desc& desc) override;
-    virtual PipelineState* createGraphicsPipelineState(const GraphicsPipelineStateDesc& desc) override;
-    virtual PipelineState* createComputePipelineState(const ComputePipelineStateDesc& desc) override;
     virtual void* map(BufferResource* buffer, MapFlavor flavor) override;
     virtual void unmap(BufferResource* buffer) override;
     virtual void setPrimitiveTopology(PrimitiveTopology topology) override;
@@ -1253,7 +1254,7 @@ void VKRenderer::_transitionImageLayout(VkImage image, VkFormat format, const Te
     m_api.vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 
-TextureResource* VKRenderer::createTextureResource(Resource::Usage initialUsage, const TextureResource::Desc& descIn, const TextureResource::Data* initData)
+Result VKRenderer::createTextureResource(Resource::Usage initialUsage, const TextureResource::Desc& descIn, const TextureResource::Data* initData, TextureResource** outResource)
 {
     TextureResource::Desc desc(descIn);
     desc.setDefaults(initialUsage);
@@ -1262,7 +1263,7 @@ TextureResource* VKRenderer::createTextureResource(Resource::Usage initialUsage,
     if (format == VK_FORMAT_UNDEFINED)
     {
         assert(!"Unhandled image format");
-        return nullptr;
+        return SLANG_FAIL;
     }
 
     const int arraySize = desc.calcEffectiveArraySize();
@@ -1305,7 +1306,7 @@ TextureResource* VKRenderer::createTextureResource(Resource::Usage initialUsage,
             default:
             {
                 assert(!"Unhandled type");
-                return nullptr;
+                return SLANG_FAIL;
             }
         }
 
@@ -1321,7 +1322,7 @@ TextureResource* VKRenderer::createTextureResource(Resource::Usage initialUsage,
         imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
         imageInfo.flags = 0; // Optional
 
-        SLANG_VK_RETURN_NULL_ON_FAIL(m_api.vkCreateImage(m_device, &imageInfo, nullptr, &texture->m_image));
+        SLANG_VK_RETURN_ON_FAIL(m_api.vkCreateImage(m_device, &imageInfo, nullptr, &texture->m_image));
     }
 
     VkMemoryRequirements memRequirements;
@@ -1341,7 +1342,7 @@ TextureResource* VKRenderer::createTextureResource(Resource::Usage initialUsage,
         allocInfo.allocationSize = memRequirements.size;
         allocInfo.memoryTypeIndex = memoryTypeIndex;
 
-        SLANG_VK_RETURN_NULL_ON_FAIL(m_api.vkAllocateMemory(m_device, &allocInfo, nullptr, &texture->m_imageMemory));
+        SLANG_VK_RETURN_ON_FAIL(m_api.vkAllocateMemory(m_device, &allocInfo, nullptr, &texture->m_imageMemory));
     }
 
     // Bind the memory to the image
@@ -1376,7 +1377,7 @@ TextureResource* VKRenderer::createTextureResource(Resource::Usage initialUsage,
         bufferSize *= arraySize;
 
         Buffer uploadBuffer;
-        SLANG_RETURN_NULL_ON_FAIL(uploadBuffer.init(m_api, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT));
+        SLANG_RETURN_ON_FAIL(uploadBuffer.init(m_api, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT));
 
         assert(mipSizes.Count() == numMipMaps);
 
@@ -1462,10 +1463,11 @@ TextureResource* VKRenderer::createTextureResource(Resource::Usage initialUsage,
         m_deviceQueue.flushAndWait();
     }
 
-    return texture.detach();
+    *outResource = texture.detach();
+    return SLANG_OK;
 }
 
-BufferResource* VKRenderer::createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& descIn, const void* initData)
+Result VKRenderer::createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& descIn, const void* initData, BufferResource** outResource)
 {
     BufferResource::Desc desc(descIn);
     desc.setDefaults(initialUsage);
@@ -1487,11 +1489,11 @@ BufferResource* VKRenderer::createBufferResource(Resource::Usage initialUsage, c
     }
 
     RefPtr<BufferResourceImpl> buffer(new BufferResourceImpl(initialUsage, desc, this));
-    SLANG_RETURN_NULL_ON_FAIL(buffer->m_buffer.init(m_api, desc.sizeInBytes, usage, reqMemoryProperties));
+    SLANG_RETURN_ON_FAIL(buffer->m_buffer.init(m_api, desc.sizeInBytes, usage, reqMemoryProperties));
 
     if ((desc.cpuAccessFlags & Resource::AccessFlag::Write) || initData)
     {
-        SLANG_RETURN_NULL_ON_FAIL(buffer->m_uploadBuffer.init(m_api, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT));
+        SLANG_RETURN_ON_FAIL(buffer->m_uploadBuffer.init(m_api, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT));
     }
 
     if (initData)
@@ -1515,7 +1517,8 @@ BufferResource* VKRenderer::createBufferResource(Resource::Usage initialUsage, c
         //flushCommandBuffer(commandBuffer);
     }
 
-    return buffer.detach();
+    *outResource = buffer.detach();
+    return SLANG_OK;
 }
 
 
@@ -1596,7 +1599,7 @@ static VkCompareOp translateComparisonFunc(ComparisonFunc func)
     }
 }
 
-SamplerState* VKRenderer::createSamplerState(SamplerState::Desc const& desc)
+Result VKRenderer::createSamplerState(SamplerState::Desc const& desc, SamplerState** outSampler)
 {
     VkSamplerCreateInfo samplerInfo = { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
 
@@ -1619,26 +1622,21 @@ SamplerState* VKRenderer::createSamplerState(SamplerState::Desc const& desc)
     samplerInfo.mipmapMode = translateMipFilterMode(desc.mipFilter);
 
     VkSampler sampler;
-    SLANG_VK_RETURN_NULL_ON_FAIL(m_api.vkCreateSampler(m_device, &samplerInfo, nullptr, &sampler));
+    SLANG_VK_RETURN_ON_FAIL(m_api.vkCreateSampler(m_device, &samplerInfo, nullptr, &sampler));
 
     RefPtr<SamplerStateImpl> samplerImpl = new SamplerStateImpl();
     samplerImpl->m_sampler = sampler;
-    return samplerImpl.detach();
+    *outSampler = samplerImpl.detach();
+    return SLANG_OK;
 }
 
-ResourceView* VKRenderer::createTextureView(TextureResource* texture, ResourceView::Desc const& desc)
+Result VKRenderer::createTextureView(TextureResource* texture, ResourceView::Desc const& desc, ResourceView** outView)
 {
-    auto resouceImpl = (TextureResourceImpl*) texture;
-
-    switch(desc.type)
-    {
-    default:
-        return nullptr;
-
-    }
+    assert(!"unimplemented");
+    return SLANG_FAIL;
 }
 
-ResourceView* VKRenderer::createBufferView(BufferResource* buffer, ResourceView::Desc const& desc)
+Result VKRenderer::createBufferView(BufferResource* buffer, ResourceView::Desc const& desc, ResourceView** outView)
 {
     auto resourceImpl = (BufferResourceImpl*) buffer;
 
@@ -1668,7 +1666,8 @@ ResourceView* VKRenderer::createBufferView(BufferResource* buffer, ResourceView:
     switch(desc.type)
     {
     default:
-        return nullptr;
+        assert(!"unhandled");
+        return SLANG_FAIL;
 
     case ResourceView::Type::UnorderedAccess:
         // Is this a formatted view?
@@ -1681,7 +1680,8 @@ ResourceView* VKRenderer::createBufferView(BufferResource* buffer, ResourceView:
             viewImpl->m_buffer = resourceImpl;
             viewImpl->offset = 0;
             viewImpl->size = size;
-            return viewImpl.detach();
+            *outView = viewImpl.detach();
+            return SLANG_OK;
         }
         //
         // If the view is formatted, then we need to handle
@@ -1698,18 +1698,19 @@ ResourceView* VKRenderer::createBufferView(BufferResource* buffer, ResourceView:
             info.range = size;
 
             VkBufferView view;
-            SLANG_VK_RETURN_NULL_ON_FAIL(m_api.vkCreateBufferView(m_device, &info, nullptr, &view));
+            SLANG_VK_RETURN_ON_FAIL(m_api.vkCreateBufferView(m_device, &info, nullptr, &view));
 
             RefPtr<TexelBufferResourceViewImpl> viewImpl = new TexelBufferResourceViewImpl();
             viewImpl->m_buffer = resourceImpl;
             viewImpl->m_view = view;
-            return viewImpl.detach();
+            *outView = viewImpl.detach();
+            return SLANG_OK;
         }
         break;
     }
 }
 
-InputLayout* VKRenderer::createInputLayout(const InputElementDesc* elements, UInt numElements)
+Result VKRenderer::createInputLayout(const InputElementDesc* elements, UInt numElements, InputLayout** outLayout)
 {
     RefPtr<InputLayoutImpl> layout(new InputLayoutImpl);
 
@@ -1728,7 +1729,7 @@ InputLayout* VKRenderer::createInputLayout(const InputElementDesc* elements, UIn
         dstDesc.format = VulkanUtil::getVkFormat(srcDesc.format);
         if (dstDesc.format == VK_FORMAT_UNDEFINED)
         {
-            return nullptr;
+            return SLANG_FAIL;
         }
 
         dstDesc.offset = uint32_t(srcDesc.offset);
@@ -1742,7 +1743,8 @@ InputLayout* VKRenderer::createInputLayout(const InputElementDesc* elements, UIn
 
     // Work out the overall size
     layout->m_vertexSize = int(vertexSize);
-    return layout.detach();
+    *outLayout = layout.detach();
+    return SLANG_OK;
 }
 
 void* VKRenderer::map(BufferResource* bufferIn, MapFlavor flavor)
@@ -2132,7 +2134,7 @@ static VkDescriptorType translateDescriptorType(DescriptorSlotType type)
     }
 }
 
-DescriptorSetLayout* VKRenderer::createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc)
+Result VKRenderer::createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc, DescriptorSetLayout** outLayout)
 {
     RefPtr<DescriptorSetLayoutImpl> descriptorSetLayoutImpl = new DescriptorSetLayoutImpl(m_api);
 
@@ -2196,10 +2198,11 @@ DescriptorSetLayout* VKRenderer::createDescriptorSetLayout(const DescriptorSetLa
     descriptorSetLayoutImpl->m_descriptorSetLayout = descriptorSetLayout;
     descriptorSetLayoutImpl->m_descriptorPool = descriptorPool;
 
-    return descriptorSetLayoutImpl.detach();
+    *outLayout = descriptorSetLayoutImpl.detach();
+    return SLANG_OK;
 }
 
-PipelineLayout* VKRenderer::createPipelineLayout(const PipelineLayout::Desc& desc)
+Result VKRenderer::createPipelineLayout(const PipelineLayout::Desc& desc, PipelineLayout** outLayout)
 {
     UInt descriptorSetCount = desc.descriptorSetCount;
 
@@ -2219,10 +2222,12 @@ PipelineLayout* VKRenderer::createPipelineLayout(const PipelineLayout::Desc& des
     RefPtr<PipelineLayoutImpl> pipelineLayoutImpl = new PipelineLayoutImpl(m_api);
     pipelineLayoutImpl->m_pipelineLayout = pipelineLayout;
     pipelineLayoutImpl->m_descriptorSetCount = descriptorSetCount;
-    return pipelineLayoutImpl.detach();
+
+    *outLayout = pipelineLayoutImpl.detach();
+    return SLANG_OK;
 }
 
-DescriptorSet* VKRenderer::createDescriptorSet(DescriptorSetLayout* layout)
+Result VKRenderer::createDescriptorSet(DescriptorSetLayout* layout, DescriptorSet** outDescriptorSet)
 {
     auto layoutImpl = (DescriptorSetLayoutImpl*)layout;
 
@@ -2237,7 +2242,8 @@ DescriptorSet* VKRenderer::createDescriptorSet(DescriptorSetLayout* layout)
     RefPtr<DescriptorSetImpl> descriptorSetImpl = new DescriptorSetImpl(this);
     descriptorSetImpl->m_layout = layoutImpl;
     descriptorSetImpl->m_descriptorSet = descriptorSet;
-    return descriptorSetImpl.detach();
+    *outDescriptorSet = descriptorSetImpl.detach();
+    return SLANG_OK;
 }
 
 void VKRenderer::DescriptorSetImpl::setConstantBuffer(UInt range, UInt index, BufferResource* buffer)
@@ -2361,7 +2367,7 @@ void VKRenderer::setDescriptorSet(PipelineType pipelineType, PipelineLayout* lay
     m_currentDescriptorSets[index] = descriptorSetImpl->m_descriptorSet;
 }
 
-ShaderProgram* VKRenderer::createProgram(const ShaderProgram::Desc& desc)
+Result VKRenderer::createProgram(const ShaderProgram::Desc& desc, ShaderProgram** outProgram)
 {
     ShaderProgramImpl* impl = new ShaderProgramImpl(desc.pipelineType);
     if( desc.pipelineType == PipelineType::Compute)
@@ -2377,10 +2383,11 @@ ShaderProgram* VKRenderer::createProgram(const ShaderProgram::Desc& desc)
         impl->m_vertex = compileEntryPoint(*vertexKernel, VK_SHADER_STAGE_VERTEX_BIT, impl->m_buffers[0]);
         impl->m_fragment = compileEntryPoint(*fragmentKernel, VK_SHADER_STAGE_FRAGMENT_BIT, impl->m_buffers[1]);
     }
-    return impl;
+    *outProgram = impl;
+    return SLANG_OK;
 }
 
-PipelineState* VKRenderer::createGraphicsPipelineState(const GraphicsPipelineStateDesc& desc)
+Result VKRenderer::createGraphicsPipelineState(const GraphicsPipelineStateDesc& desc, PipelineState** outState)
 {
     VkPipelineCache pipelineCache = VK_NULL_HANDLE;
 
@@ -2504,10 +2511,11 @@ PipelineState* VKRenderer::createGraphicsPipelineState(const GraphicsPipelineSta
     pipelineStateImpl->m_pipeline = pipeline;
     pipelineStateImpl->m_pipelineLayout = pipelineLayoutImpl;
     pipelineStateImpl->m_shaderProgram = programImpl;
-    return pipelineStateImpl.detach();
+    *outState = pipelineStateImpl.detach();
+    return SLANG_OK;
 }
 
-PipelineState* VKRenderer::createComputePipelineState(const ComputePipelineStateDesc& desc)
+Result VKRenderer::createComputePipelineState(const ComputePipelineStateDesc& desc, PipelineState** outState)
 {
     VkPipelineCache pipelineCache = VK_NULL_HANDLE;
 
@@ -2525,7 +2533,8 @@ PipelineState* VKRenderer::createComputePipelineState(const ComputePipelineState
     pipelineStateImpl->m_pipeline = pipeline;
     pipelineStateImpl->m_pipelineLayout = pipelineLayoutImpl;
     pipelineStateImpl->m_shaderProgram = programImpl;
-    return pipelineStateImpl.detach();
+    *outState = pipelineStateImpl.detach();
+    return SLANG_OK;
 }
 
 

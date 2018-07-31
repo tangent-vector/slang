@@ -33,7 +33,29 @@
 #include "gfx/window.h"
 using namespace gfx;
 
-#include <vector>
+// For the purposes of a small example, we will define the vertex data for a
+// single triangle directly in the source file. It should be easy to extend
+// this example to load data from an external source, if desired.
+//
+struct Vertex
+{
+    float position[3];
+    float color[3];
+};
+
+static const int kVertexCount = 3;
+static const Vertex kVertexData[kVertexCount] =
+{
+    { { 0,  0, 0.5 }, { 1, 0, 0 } },
+    { { 0,  1, 0.5 }, { 0, 0, 1 } },
+    { { 1,  0, 0.5 }, { 0, 1, 0 } },
+};
+
+// The example application will be implemented as a `struct`, so that
+// we can scope the resources it allocates without using global variables.
+//
+struct HelloWorld
+{
 
 // We will start with a function that will invoke the Slang compiler
 // to generate target-specific code from a shader file, and then
@@ -44,7 +66,7 @@ using namespace gfx;
 // Slang API. This function is representative of code that a user
 // might write to integrate Slang into their renderer/engine.
 //
-ShaderProgram* loadShaderProgram(Renderer* renderer)
+RefPtr<ShaderProgram> loadShaderProgram(Renderer* renderer)
 {
     // First, we need to create a "session" for interacting with the Slang
     // compiler. This scopes all of our application's interactions
@@ -159,7 +181,7 @@ ShaderProgram* loadShaderProgram(Renderer* renderer)
     programDesc.kernels = &kernelDescs[0];
     programDesc.kernelCount = 2;
 
-    ShaderProgram* shaderProgram = renderer->createProgram(programDesc);
+    auto shaderProgram = renderer->createProgram(programDesc);
 
     // Once we've used the output blobs from the Slang compiler to initialize
     // the API-specific shader program, we can release their memory.
@@ -182,26 +204,8 @@ ShaderProgram* loadShaderProgram(Renderer* renderer)
 
 // We will hard-code the size of our rendering window.
 //
-static int gWindowWidth = 1024;
-static int gWindowHeight = 768;
-
-// For the purposes of a small example, we will define the vertex data for a
-// single triangle directly in the source file. It should be easy to extend
-// this example to load data from an external source, if desired.
-//
-struct Vertex
-{
-    float position[3];
-    float color[3];
-};
-
-static const int kVertexCount = 3;
-static const Vertex kVertexData[kVertexCount] =
-{
-    { { 0,  0, 0.5 }, { 1, 0, 0 } },
-    { { 0,  1, 0.5 }, { 0, 0, 1 } },
-    { { 1,  0, 0.5 }, { 0, 1, 0 } },
-};
+int gWindowWidth = 1024;
+int gWindowHeight = 768;
 
 // We will define global variables for the various platform and
 // graphics API objects that our application needs:
@@ -212,14 +216,14 @@ static const Vertex kVertexData[kVertexCount] =
 //
 ApplicationContext* gAppContext;
 Window* gWindow;
-Renderer* gRenderer;
-BufferResource* gConstantBuffer;
+RefPtr<Renderer> gRenderer;
+RefPtr<BufferResource> gConstantBuffer;
 
-PipelineLayout* gPipelineLayout;
-PipelineState*  gPipelineState;
-DescriptorSet*  gDescriptorSet;
+RefPtr<PipelineLayout> gPipelineLayout;
+RefPtr<PipelineState>  gPipelineState;
+RefPtr<DescriptorSet>  gDescriptorSet;
 
-BufferResource* gVertexBuffer;
+RefPtr<BufferResource> gVertexBuffer;
 
 SlangResult initialize()
 {
@@ -272,12 +276,14 @@ SlangResult initialize()
         { "POSITION", 0, Format::RGB_Float32, offsetof(Vertex, position) },
         { "COLOR",    0, Format::RGB_Float32, offsetof(Vertex, color) },
     };
-    InputLayout* inputLayout = gRenderer->createInputLayout(
+    auto inputLayout = gRenderer->createInputLayout(
         &inputElements[0],
         2);
     if(!inputLayout) return SLANG_FAIL;
 
     // Vertex Buffer
+
+
 
     BufferResource::Desc vertexBufferDesc;
     vertexBufferDesc.init(kVertexCount * sizeof(Vertex));
@@ -291,12 +297,12 @@ SlangResult initialize()
 
     // Shaders (VS, PS, ...)
 
-    ShaderProgram* shaderProgram = loadShaderProgram(gRenderer);
+    RefPtr<ShaderProgram> shaderProgram = loadShaderProgram(gRenderer);
     if(!shaderProgram) return SLANG_FAIL;
 
     // Resource binding state
 
-    DescriptorSetLayout* descriptorSetLayout = nullptr;
+    RefPtr<DescriptorSetLayout> descriptorSetLayout = nullptr;
     {
         DescriptorSetLayout::SlotRangeDesc slotRanges[] =
         {
@@ -322,7 +328,7 @@ SlangResult initialize()
         pipelineLayoutDesc.descriptorSetCount = 1;
         pipelineLayoutDesc.descriptorSets = &descriptorSets[0];
 
-        PipelineLayout* pipelineLayout = gRenderer->createPipelineLayout(pipelineLayoutDesc);
+        auto pipelineLayout = gRenderer->createPipelineLayout(pipelineLayoutDesc);
         if(!pipelineLayout) return SLANG_FAIL;
 
         gPipelineLayout = pipelineLayout;
@@ -330,7 +336,7 @@ SlangResult initialize()
 
     // Descriptor Set
     {
-        DescriptorSet* descriptorSet = gRenderer->createDescriptorSet(descriptorSetLayout);
+        auto descriptorSet = gRenderer->createDescriptorSet(descriptorSetLayout);
         if(!descriptorSet) return SLANG_FAIL;
 
         descriptorSet->setConstantBuffer(0, 0, gConstantBuffer);
@@ -349,7 +355,7 @@ SlangResult initialize()
 
         // ...
 
-        PipelineState* pipelineState = gRenderer->createGraphicsPipelineState(desc);
+        auto pipelineState = gRenderer->createGraphicsPipelineState(desc);
         if(!pipelineState) return SLANG_FAIL;
 
         gPipelineState = pipelineState;
@@ -392,9 +398,7 @@ void renderFrame()
 
     gRenderer->setPrimitiveTopology(PrimitiveTopology::TriangleList);
 
-    UInt vertexStride = sizeof(Vertex);
-    UInt vertexBufferOffset = 0;
-    gRenderer->setVertexBuffers(0, 1, &gVertexBuffer, &vertexStride, &vertexBufferOffset);
+    gRenderer->setVertexBuffer(0, gVertexBuffer, sizeof(Vertex));
 
     gRenderer->setDescriptorSet(PipelineType::Graphics, gPipelineLayout, 0, gDescriptorSet);
 
@@ -410,23 +414,27 @@ void finalize()
     // TODO: Proper cleanup.
 }
 
+};
+
 // This "inner" main function is used by the platform abstraction
 // layer to deal with differences in how an entry point needs
 // to be defined for different platforms.
 //
 void innerMain(ApplicationContext* context)
 {
-    if (SLANG_FAILED(initialize()))
+    HelloWorld app;
+
+    if (SLANG_FAILED(app.initialize()))
     {
         return exitApplication(context, 1);
     }
 
     while(dispatchEvents(context))
     {
-        renderFrame();
+        app.renderFrame();
     }
 
-    finalize();
+    app.finalize();
 }
 
 // This macro instantiates an appropriate main function to

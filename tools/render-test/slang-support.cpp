@@ -11,7 +11,7 @@
 
 namespace renderer_test {
 
-ShaderProgram* ShaderCompiler::compileProgram(
+RefPtr<ShaderProgram> ShaderCompiler::compileProgram(
     ShaderCompileRequest const& request)
 {
     SlangSession* slangSession = spCreateSession(NULL);

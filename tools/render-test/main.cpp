@@ -29,6 +29,8 @@
 
 namespace renderer_test {
 
+using Slang::Result;
+
 int gWindowWidth = 1024;
 int gWindowHeight = 768;
 

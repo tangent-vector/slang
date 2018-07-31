@@ -5,6 +5,7 @@
 namespace renderer_test {
 
 using namespace Slang;
+using Slang::Result;
 
 void BindingStateImpl::apply(Renderer* renderer, PipelineType pipelineType)
 {

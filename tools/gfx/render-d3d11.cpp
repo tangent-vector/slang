@@ -58,24 +58,25 @@ public:
     virtual void presentFrame() override;
     TextureResource::Desc getSwapChainTextureDesc() override;
 
-    virtual TextureResource* createTextureResource(Resource::Usage initialUsage, const TextureResource::Desc& desc, const TextureResource::Data* initData) override;
-    virtual BufferResource* createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& bufferDesc, const void* initData) override;
-    virtual SamplerState* createSamplerState(SamplerState::Desc const& desc) override;
+    Result createTextureResource(Resource::Usage initialUsage, const TextureResource::Desc& desc, const TextureResource::Data* initData, TextureResource** outResource) override;
+    Result createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& desc, const void* initData, BufferResource** outResource) override;
+    Result createSamplerState(SamplerState::Desc const& desc, SamplerState** outSampler) override;
 
-    virtual ResourceView* createTextureView(TextureResource* texture, ResourceView::Desc const& desc) override;
-    virtual ResourceView* createBufferView(BufferResource* texture, ResourceView::Desc const& desc) override;
+    Result createTextureView(TextureResource* texture, ResourceView::Desc const& desc, ResourceView** outView) override;
+    Result createBufferView(BufferResource* buffer, ResourceView::Desc const& desc, ResourceView** outView) override;
+
+    Result createInputLayout(const InputElementDesc* inputElements, UInt inputElementCount, InputLayout** outLayout) override;
+
+    Result createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc, DescriptorSetLayout** outLayout) override;
+    Result createPipelineLayout(const PipelineLayout::Desc& desc, PipelineLayout** outLayout) override;
+    Result createDescriptorSet(DescriptorSetLayout* layout, DescriptorSet** outDescriptorSet) override;
+
+    Result createProgram(const ShaderProgram::Desc& desc, ShaderProgram** outProgram) override;
+    Result createGraphicsPipelineState(const GraphicsPipelineStateDesc& desc, PipelineState** outState) override;
+    Result createComputePipelineState(const ComputePipelineStateDesc& desc, PipelineState** outState) override;
 
     virtual SlangResult captureScreenSurface(Surface& surfaceOut) override;
-    virtual InputLayout* createInputLayout( const InputElementDesc* inputElements, UInt inputElementCount) override;
 
-//    virtual BindingState* createBindingState(const BindingState::Desc& bindingStateDesc) override;
-    virtual DescriptorSetLayout* createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc) override;
-    virtual PipelineLayout* createPipelineLayout(const PipelineLayout::Desc& desc) override;
-    virtual DescriptorSet* createDescriptorSet(DescriptorSetLayout* layout) override;
-
-    virtual ShaderProgram* createProgram(const ShaderProgram::Desc& desc) override;
-    virtual PipelineState* createGraphicsPipelineState(const GraphicsPipelineStateDesc& desc) override;
-    virtual PipelineState* createComputePipelineState(const ComputePipelineStateDesc& desc) override;
     virtual void* map(BufferResource* buffer, MapFlavor flavor) override;
     virtual void unmap(BufferResource* buffer) override;
     virtual void setPrimitiveTopology(PrimitiveTopology topology) override;
@@ -508,16 +509,18 @@ SlangResult D3D11Renderer::initialize(const Desc& desc, void* inWindowHandle)
 
         TextureResource::Desc resourceDesc;
         resourceDesc.init2D(Resource::Type::Texture2D, Format::RGBA_Unorm_UInt8, textureDesc.Width, textureDesc.Height, 1);
-        auto primaryRenderTargetTexture = this->createTextureResource(Resource::Usage::RenderTarget, resourceDesc, nullptr);
-        if(!primaryRenderTargetTexture) return SLANG_FAIL;
+
+        RefPtr<TextureResource> primaryRenderTargetTexture;
+        SLANG_RETURN_ON_FAIL(createTextureResource(Resource::Usage::RenderTarget, resourceDesc, nullptr, primaryRenderTargetTexture.writeRef()));
 
         ResourceView::Desc viewDesc;
         viewDesc.format = resourceDesc.format;
         viewDesc.type = ResourceView::Type::RenderTarget;
-        auto primaryRenderTargetView = this->createTextureView(primaryRenderTargetTexture, viewDesc);
+        RefPtr<ResourceView> primaryRenderTargetView;
+        SLANG_RETURN_ON_FAIL(createTextureView(primaryRenderTargetTexture, viewDesc, primaryRenderTargetView.writeRef()));
 
-        m_primaryRenderTargetTexture = (TextureResourceImpl*) primaryRenderTargetTexture;
-        m_primaryRenderTargetView = (RenderTargetViewImpl*) primaryRenderTargetView;
+        m_primaryRenderTargetTexture = (TextureResourceImpl*) primaryRenderTargetTexture.Ptr();
+        m_primaryRenderTargetView = (RenderTargetViewImpl*) primaryRenderTargetView.Ptr();
     }
 
 //    m_immediateContext->OMSetRenderTargets(1, m_primaryRenderTargetView->m_rtv.readRef(), nullptr);
@@ -619,7 +622,7 @@ static int _calcResourceAccessFlags(int accessFlags)
     }
 }
 
-TextureResource* D3D11Renderer::createTextureResource(Resource::Usage initialUsage, const TextureResource::Desc& descIn, const TextureResource::Data* initData)
+Result D3D11Renderer::createTextureResource(Resource::Usage initialUsage, const TextureResource::Desc& descIn, const TextureResource::Data* initData, TextureResource** outResource)
 {
     TextureResource::Desc srcDesc(descIn);
     srcDesc.setDefaults(initialUsage);
@@ -634,7 +637,7 @@ TextureResource* D3D11Renderer::createTextureResource(Resource::Usage initialUsa
     const DXGI_FORMAT format = D3DUtil::getMapFormat(srcDesc.format);
     if (format == DXGI_FORMAT_UNKNOWN)
     {
-        return nullptr;
+        return SLANG_FAIL;
     }
 
     const int bindFlags = _calcResourceBindFlags(srcDesc.bindFlags);
@@ -686,7 +689,7 @@ TextureResource* D3D11Renderer::createTextureResource(Resource::Usage initialUsa
             desc.Usage = D3D11_USAGE_DEFAULT;
 
             ComPtr<ID3D11Texture1D> texture1D;
-            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateTexture1D(&desc, subResourcesPtr, texture1D.writeRef()));
+            SLANG_RETURN_ON_FAIL(m_device->CreateTexture1D(&desc, subResourcesPtr, texture1D.writeRef()));
 
             texture->m_resource = texture1D;
             break;
@@ -714,7 +717,7 @@ TextureResource* D3D11Renderer::createTextureResource(Resource::Usage initialUsa
             }
 
             ComPtr<ID3D11Texture2D> texture2D;
-            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateTexture2D(&desc, subResourcesPtr, texture2D.writeRef()));
+            SLANG_RETURN_ON_FAIL(m_device->CreateTexture2D(&desc, subResourcesPtr, texture2D.writeRef()));
 
             texture->m_resource = texture2D;
             break;
@@ -733,28 +736,20 @@ TextureResource* D3D11Renderer::createTextureResource(Resource::Usage initialUsa
             desc.Usage = D3D11_USAGE_DEFAULT;
 
             ComPtr<ID3D11Texture3D> texture3D;
-            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateTexture3D(&desc, subResourcesPtr, texture3D.writeRef()));
+            SLANG_RETURN_ON_FAIL(m_device->CreateTexture3D(&desc, subResourcesPtr, texture3D.writeRef()));
 
             texture->m_resource = texture3D;
             break;
         }
-        default: return nullptr;
+        default:
+            return SLANG_FAIL;
     }
 
-#if 0
-    if(srcDesc.bindFlags & Resource::BindFlag::DepthStencil)
-    {
-        SLANG_RETURN_NULL_ON_FAIL(m_device->CreateDepthStencilView(
-            texture->m_resource,
-            nullptr,
-            texture->m_dsv.writeRef()));
-    }
-#endif
-
-    return texture.detach();
+    *outResource = texture.detach();
+    return SLANG_OK;
 }
 
-BufferResource* D3D11Renderer::createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& descIn, const void* initData)
+Result D3D11Renderer::createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& descIn, const void* initData, BufferResource** outResource)
 {
     BufferResource::Desc srcDesc(descIn);
     srcDesc.setDefaults(initialUsage);
@@ -814,7 +809,7 @@ BufferResource* D3D11Renderer::createBufferResource(Resource::Usage initialUsage
 
     RefPtr<BufferResourceImpl> buffer(new BufferResourceImpl(srcDesc, initialUsage));
 
-	SLANG_RETURN_NULL_ON_FAIL(m_device->CreateBuffer(&bufferDesc, initData ? &subResourceData : nullptr, buffer->m_buffer.writeRef()));
+    SLANG_RETURN_ON_FAIL(m_device->CreateBuffer(&bufferDesc, initData ? &subResourceData : nullptr, buffer->m_buffer.writeRef()));
 
     if (srcDesc.cpuAccessFlags & Resource::AccessFlag::Read)
     {
@@ -824,10 +819,11 @@ BufferResource* D3D11Renderer::createBufferResource(Resource::Usage initialUsage
         bufDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
         bufDesc.Usage = D3D11_USAGE_STAGING;
 
-        SLANG_RETURN_NULL_ON_FAIL(m_device->CreateBuffer(&bufDesc, nullptr, buffer->m_staging.writeRef()));
+        SLANG_RETURN_ON_FAIL(m_device->CreateBuffer(&bufDesc, nullptr, buffer->m_staging.writeRef()));
     }
 
-    return buffer.detach();
+    *outResource = buffer.detach();
+    return SLANG_OK;
 }
 
 D3D11_FILTER_TYPE translateFilterMode(TextureFilteringMode mode)
@@ -909,7 +905,7 @@ static D3D11_COMPARISON_FUNC translateComparisonFunc(ComparisonFunc func)
     }
 }
 
-SamplerState* D3D11Renderer::createSamplerState(SamplerState::Desc const& desc)
+Result D3D11Renderer::createSamplerState(SamplerState::Desc const& desc, SamplerState** outSampler)
 {
     D3D11_FILTER_REDUCTION_TYPE dxReduction = translateFilterReduction(desc.reductionOp);
     D3D11_FILTER dxFilter;
@@ -940,75 +936,80 @@ SamplerState* D3D11Renderer::createSamplerState(SamplerState::Desc const& desc)
     dxDesc.MaxLOD = desc.maxLOD;
 
     ComPtr<ID3D11SamplerState> sampler;
-    SLANG_RETURN_NULL_ON_FAIL(m_device->CreateSamplerState(
+    SLANG_RETURN_ON_FAIL(m_device->CreateSamplerState(
         &dxDesc,
         sampler.writeRef()));
 
     RefPtr<SamplerStateImpl> samplerImpl = new SamplerStateImpl();
     samplerImpl->m_sampler = sampler;
-    return samplerImpl.detach();
+    *outSampler = samplerImpl.detach();
+    return SLANG_OK;
 }
 
-ResourceView* D3D11Renderer::createTextureView(TextureResource* texture, ResourceView::Desc const& desc)
+Result D3D11Renderer::createTextureView(TextureResource* texture, ResourceView::Desc const& desc, ResourceView** outView)
 {
     auto resourceImpl = (TextureResourceImpl*) texture;
 
     switch (desc.type)
     {
     default:
-        return nullptr;
+        return SLANG_FAIL;
 
     case ResourceView::Type::RenderTarget:
         {
             ComPtr<ID3D11RenderTargetView> rtv;
-            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateRenderTargetView(resourceImpl->m_resource, nullptr, rtv.writeRef()));
+            SLANG_RETURN_ON_FAIL(m_device->CreateRenderTargetView(resourceImpl->m_resource, nullptr, rtv.writeRef()));
 
             RefPtr<RenderTargetViewImpl> viewImpl = new RenderTargetViewImpl();
             viewImpl->m_type = ResourceViewImpl::Type::RTV;
             viewImpl->m_rtv = rtv;
-            return viewImpl.detach();
+            *outView = viewImpl.detach();
+            return SLANG_OK;
         }
         break;
 
     case ResourceView::Type::DepthStencil:
         {
             ComPtr<ID3D11DepthStencilView> dsv;
-            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateDepthStencilView(resourceImpl->m_resource, nullptr, dsv.writeRef()));
+            SLANG_RETURN_ON_FAIL(m_device->CreateDepthStencilView(resourceImpl->m_resource, nullptr, dsv.writeRef()));
 
             RefPtr<DepthStencilViewImpl> viewImpl = new DepthStencilViewImpl();
             viewImpl->m_type = ResourceViewImpl::Type::DSV;
             viewImpl->m_dsv = dsv;
-            return viewImpl.detach();
+            *outView = viewImpl.detach();
+            return SLANG_OK;
         }
         break;
 
     case ResourceView::Type::UnorderedAccess:
         {
             ComPtr<ID3D11UnorderedAccessView> uav;
-            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateUnorderedAccessView(resourceImpl->m_resource, nullptr, uav.writeRef()));
+            SLANG_RETURN_ON_FAIL(m_device->CreateUnorderedAccessView(resourceImpl->m_resource, nullptr, uav.writeRef()));
 
             RefPtr<UnorderedAccessViewImpl> viewImpl = new UnorderedAccessViewImpl();
             viewImpl->m_type = ResourceViewImpl::Type::UAV;
             viewImpl->m_uav = uav;
-            return viewImpl.detach();
+            *outView = viewImpl.detach();
+            return SLANG_OK;
         }
         break;
 
     case ResourceView::Type::ShaderResource:
         {
             ComPtr<ID3D11ShaderResourceView> srv;
-            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateShaderResourceView(resourceImpl->m_resource, nullptr, srv.writeRef()));
+            SLANG_RETURN_ON_FAIL(m_device->CreateShaderResourceView(resourceImpl->m_resource, nullptr, srv.writeRef()));
 
             RefPtr<ShaderResourceViewImpl> viewImpl = new ShaderResourceViewImpl();
             viewImpl->m_type = ResourceViewImpl::Type::SRV;
             viewImpl->m_srv = srv;
-            return viewImpl.detach();
+            *outView = viewImpl.detach();
+            return SLANG_OK;
         }
         break;
     }
 }
 
-ResourceView* D3D11Renderer::createBufferView(BufferResource* buffer, ResourceView::Desc const& desc)
+Result D3D11Renderer::createBufferView(BufferResource* buffer, ResourceView::Desc const& desc, ResourceView** outView)
 {
     auto resourceImpl = (BufferResourceImpl*) buffer;
     auto resourceDesc = resourceImpl->getDesc();
@@ -1016,7 +1017,7 @@ ResourceView* D3D11Renderer::createBufferView(BufferResource* buffer, ResourceVi
     switch (desc.type)
     {
     default:
-        return nullptr;
+        return SLANG_FAIL;
 
     case ResourceView::Type::UnorderedAccess:
         {
@@ -1037,12 +1038,13 @@ ResourceView* D3D11Renderer::createBufferView(BufferResource* buffer, ResourceVi
             }
 
             ComPtr<ID3D11UnorderedAccessView> uav;
-            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateUnorderedAccessView(resourceImpl->m_buffer, &uavDesc, uav.writeRef()));
+            SLANG_RETURN_ON_FAIL(m_device->CreateUnorderedAccessView(resourceImpl->m_buffer, &uavDesc, uav.writeRef()));
 
             RefPtr<UnorderedAccessViewImpl> viewImpl = new UnorderedAccessViewImpl();
             viewImpl->m_type = ResourceViewImpl::Type::UAV;
             viewImpl->m_uav = uav;
-            return viewImpl.detach();
+            *outView = viewImpl.detach();
+            return SLANG_OK;
         }
         break;
 
@@ -1063,18 +1065,19 @@ ResourceView* D3D11Renderer::createBufferView(BufferResource* buffer, ResourceVi
             }
 
             ComPtr<ID3D11ShaderResourceView> srv;
-            SLANG_RETURN_NULL_ON_FAIL(m_device->CreateShaderResourceView(resourceImpl->m_buffer, &srvDesc, srv.writeRef()));
+            SLANG_RETURN_ON_FAIL(m_device->CreateShaderResourceView(resourceImpl->m_buffer, &srvDesc, srv.writeRef()));
 
             RefPtr<ShaderResourceViewImpl> viewImpl = new ShaderResourceViewImpl();
             viewImpl->m_type = ResourceViewImpl::Type::SRV;
             viewImpl->m_srv = srv;
-            return viewImpl.detach();
+            *outView = viewImpl.detach();
+            return SLANG_OK;
         }
         break;
     }
 }
 
-InputLayout* D3D11Renderer::createInputLayout(const InputElementDesc* inputElementsIn, UInt inputElementCount)
+Result D3D11Renderer::createInputLayout(const InputElementDesc* inputElementsIn, UInt inputElementCount, InputLayout** outLayout)
 {
     D3D11_INPUT_ELEMENT_DESC inputElements[16] = {};
 
@@ -1114,7 +1117,7 @@ InputLayout* D3D11Renderer::createInputLayout(const InputElementDesc* inputEleme
                 typeName = "float";
                 break;
             default:
-                return nullptr;
+                return SLANG_FAIL;
         }
 
         hlslCursor += sprintf(hlslCursor, "%s a%d : %s%d",
@@ -1126,17 +1129,18 @@ InputLayout* D3D11Renderer::createInputLayout(const InputElementDesc* inputEleme
 
     hlslCursor += sprintf(hlslCursor, "\n) : SV_Position { return 0; }");
 
-	ComPtr<ID3DBlob> vertexShaderBlob;
-	SLANG_RETURN_NULL_ON_FAIL(D3DUtil::compileHLSLShader("inputLayout", hlslBuffer, "main", "vs_5_0", vertexShaderBlob));
+    ComPtr<ID3DBlob> vertexShaderBlob;
+    SLANG_RETURN_ON_FAIL(D3DUtil::compileHLSLShader("inputLayout", hlslBuffer, "main", "vs_5_0", vertexShaderBlob));
 
     ComPtr<ID3D11InputLayout> inputLayout;
-	SLANG_RETURN_NULL_ON_FAIL(m_device->CreateInputLayout(&inputElements[0], (UINT)inputElementCount, vertexShaderBlob->GetBufferPointer(), vertexShaderBlob->GetBufferSize(),
+    SLANG_RETURN_ON_FAIL(m_device->CreateInputLayout(&inputElements[0], (UINT)inputElementCount, vertexShaderBlob->GetBufferPointer(), vertexShaderBlob->GetBufferSize(),
         inputLayout.writeRef()));
 
-	InputLayoutImpl* impl = new InputLayoutImpl;
-	impl->m_layout.swap(inputLayout);
+    RefPtr<InputLayoutImpl> impl = new InputLayoutImpl;
+    impl->m_layout.swap(inputLayout);
 
-	return impl;
+    *outLayout = impl.detach();
+    return SLANG_OK;
 }
 
 void* D3D11Renderer::map(BufferResource* bufferIn, MapFlavor flavor)
@@ -1313,18 +1317,20 @@ void D3D11Renderer::drawIndexed(UInt indexCount, UInt startIndex, UInt baseVerte
     m_immediateContext->DrawIndexed((UINT)indexCount, (UINT)startIndex, (UInt)baseVertex);
 }
 
-ShaderProgram* D3D11Renderer::createProgram(const ShaderProgram::Desc& desc)
+Result D3D11Renderer::createProgram(const ShaderProgram::Desc& desc, ShaderProgram** outProgram)
 {
     if (desc.pipelineType == PipelineType::Compute)
     {
         auto computeKernel = desc.findKernel(StageType::Compute);
 
         ComPtr<ID3D11ComputeShader> computeShader;
-        SLANG_RETURN_NULL_ON_FAIL(m_device->CreateComputeShader(computeKernel->codeBegin, computeKernel->getCodeSize(), nullptr, computeShader.writeRef()));
+        SLANG_RETURN_ON_FAIL(m_device->CreateComputeShader(computeKernel->codeBegin, computeKernel->getCodeSize(), nullptr, computeShader.writeRef()));
 
-        ShaderProgramImpl* shaderProgram = new ShaderProgramImpl();
+        RefPtr<ShaderProgramImpl> shaderProgram = new ShaderProgramImpl();
         shaderProgram->m_computeShader.swap(computeShader);
-        return shaderProgram;
+
+        *outProgram = shaderProgram.detach();
+        return SLANG_OK;
     }
     else
     {
@@ -1334,13 +1340,15 @@ ShaderProgram* D3D11Renderer::createProgram(const ShaderProgram::Desc& desc)
         ComPtr<ID3D11VertexShader> vertexShader;
         ComPtr<ID3D11PixelShader> pixelShader;
 
-        SLANG_RETURN_NULL_ON_FAIL(m_device->CreateVertexShader(vertexKernel->codeBegin, vertexKernel->getCodeSize(), nullptr, vertexShader.writeRef()));
-        SLANG_RETURN_NULL_ON_FAIL(m_device->CreatePixelShader(fragmentKernel->codeBegin, fragmentKernel->getCodeSize(), nullptr, pixelShader.writeRef()));
+        SLANG_RETURN_ON_FAIL(m_device->CreateVertexShader(vertexKernel->codeBegin, vertexKernel->getCodeSize(), nullptr, vertexShader.writeRef()));
+        SLANG_RETURN_ON_FAIL(m_device->CreatePixelShader(fragmentKernel->codeBegin, fragmentKernel->getCodeSize(), nullptr, pixelShader.writeRef()));
 
-        ShaderProgramImpl* shaderProgram = new ShaderProgramImpl();
+        RefPtr<ShaderProgramImpl> shaderProgram = new ShaderProgramImpl();
         shaderProgram->m_vertexShader.swap(vertexShader);
         shaderProgram->m_pixelShader.swap(pixelShader);
-        return shaderProgram;
+
+        *outProgram = shaderProgram.detach();
+        return SLANG_OK;
     }
 }
 
@@ -1395,7 +1403,7 @@ static D3D11_CULL_MODE translateCullMode(CullMode mode)
     }
 }
 
-PipelineState* D3D11Renderer::createGraphicsPipelineState(const GraphicsPipelineStateDesc& desc)
+Result D3D11Renderer::createGraphicsPipelineState(const GraphicsPipelineStateDesc& desc, PipelineState** outState)
 {
     auto programImpl = (ShaderProgramImpl*) desc.program;
 
@@ -1419,7 +1427,7 @@ PipelineState* D3D11Renderer::createGraphicsPipelineState(const GraphicsPipeline
         FACE(FrontFace, frontFace);
         FACE(BackFace,  backFace);
 
-        SLANG_RETURN_NULL_ON_FAIL(m_device->CreateDepthStencilState(
+        SLANG_RETURN_ON_FAIL(m_device->CreateDepthStencilState(
             &dsDesc,
             depthStencilState.writeRef()));
     }
@@ -1438,13 +1446,13 @@ PipelineState* D3D11Renderer::createGraphicsPipelineState(const GraphicsPipeline
         rsDesc.MultisampleEnable        = desc.rasterizer.multisampleEnable;
         rsDesc.AntialiasedLineEnable    = desc.rasterizer.antialiasedLineEnable;
 
-        SLANG_RETURN_NULL_ON_FAIL(m_device->CreateRasterizerState(
+        SLANG_RETURN_ON_FAIL(m_device->CreateRasterizerState(
             &rsDesc,
             rasterizerState.writeRef()));
 
     }
 
-    GraphicsPipelineStateImpl* state = new GraphicsPipelineStateImpl();
+    RefPtr<GraphicsPipelineStateImpl> state = new GraphicsPipelineStateImpl();
     state->m_program = programImpl;
     state->m_stencilRef = desc.depthStencil.stencilRef;
     state->m_depthStencilState = depthStencilState;
@@ -1452,18 +1460,22 @@ PipelineState* D3D11Renderer::createGraphicsPipelineState(const GraphicsPipeline
     state->m_pipelineLayout = (PipelineLayoutImpl*) desc.pipelineLayout;
     state->m_inputLayout = (InputLayoutImpl*) desc.inputLayout;
     state->m_rtvCount = desc.renderTargetCount;
-    return state;
+
+    *outState = state.detach();
+    return SLANG_OK;
 }
 
-PipelineState* D3D11Renderer::createComputePipelineState(const ComputePipelineStateDesc& desc)
+Result D3D11Renderer::createComputePipelineState(const ComputePipelineStateDesc& desc, PipelineState** outState)
 {
     auto programImpl = (ShaderProgramImpl*) desc.program;
     auto pipelineLayoutImpl = (PipelineLayoutImpl*) desc.pipelineLayout;
 
-    ComputePipelineStateImpl* state = new ComputePipelineStateImpl();
+    RefPtr<ComputePipelineStateImpl> state = new ComputePipelineStateImpl();
     state->m_program = programImpl;
     state->m_pipelineLayout = pipelineLayoutImpl;
-    return state;
+
+    *outState = state.detach();
+    return SLANG_OK;
 }
 
 void D3D11Renderer::dispatchCompute(int x, int y, int z)
@@ -1472,7 +1484,7 @@ void D3D11Renderer::dispatchCompute(int x, int y, int z)
     m_immediateContext->Dispatch(x, y, z);
 }
 
-DescriptorSetLayout* D3D11Renderer::createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc)
+Result D3D11Renderer::createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc, DescriptorSetLayout** outLayout)
 {
     RefPtr<DescriptorSetLayoutImpl> descriptorSetLayoutImpl = new DescriptorSetLayoutImpl();
 
@@ -1489,7 +1501,7 @@ DescriptorSetLayout* D3D11Renderer::createDescriptorSetLayout(const DescriptorSe
         {
         default:
             assert(!"invalid slot type");
-            return nullptr;
+            return SLANG_FAIL;
 
         case DescriptorSlotType::Sampler:
             rangeInfo.type = D3D11DescriptorSlotType::Sampler;
@@ -1544,10 +1556,11 @@ DescriptorSetLayout* D3D11Renderer::createDescriptorSetLayout(const DescriptorSe
         descriptorSetLayoutImpl->m_counts[ii] = counts[ii];
     }
 
-    return descriptorSetLayoutImpl.detach();
+    *outLayout = descriptorSetLayoutImpl.detach();
+    return SLANG_OK;
 }
 
-PipelineLayout* D3D11Renderer::createPipelineLayout(const PipelineLayout::Desc& desc)
+Result D3D11Renderer::createPipelineLayout(const PipelineLayout::Desc& desc, PipelineLayout** outLayout)
 {
     RefPtr<PipelineLayoutImpl> pipelineLayoutImpl = new PipelineLayoutImpl();
 
@@ -1572,10 +1585,11 @@ PipelineLayout* D3D11Renderer::createPipelineLayout(const PipelineLayout::Desc& 
 
     pipelineLayoutImpl->m_uavCount = counts[int(D3D11DescriptorSlotType::UnorderedAccessView)];
 
-    return pipelineLayoutImpl.detach();
+    *outLayout = pipelineLayoutImpl.detach();
+    return SLANG_OK;
 }
 
-DescriptorSet* D3D11Renderer::createDescriptorSet(DescriptorSetLayout* layout)
+Result D3D11Renderer::createDescriptorSet(DescriptorSetLayout* layout, DescriptorSet** outDescriptorSet)
 {
     auto layoutImpl = (DescriptorSetLayoutImpl*)layout;
 
@@ -1587,7 +1601,8 @@ DescriptorSet* D3D11Renderer::createDescriptorSet(DescriptorSetLayout* layout)
     descriptorSetImpl->m_uavs    .SetSize(layoutImpl->m_counts[int(D3D11DescriptorSlotType::UnorderedAccessView)]);
     descriptorSetImpl->m_samplers.SetSize(layoutImpl->m_counts[int(D3D11DescriptorSlotType::Sampler)]);
 
-    return descriptorSetImpl.detach();
+    *outDescriptorSet = descriptorSetImpl.detach();
+    return SLANG_OK;
 }
 
 
@@ -1616,7 +1631,7 @@ BindingState* D3D11Renderer::createBindingState(const BindingState::Desc& bindin
                 assert(srcBinding.resource && srcBinding.resource->isBuffer());
 
                 BufferResourceImpl* buffer = static_cast<BufferResourceImpl*>(srcBinding.resource.Ptr());
-                const BufferResource::Desc& bufferDesc = buffer->getDesc();
+                const BufferResource::Desc& desc = buffer->getDesc();
 
                 const int elemSize = bufferDesc.elementSize <= 0 ? 1 : bufferDesc.elementSize;
 

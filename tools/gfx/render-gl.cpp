@@ -86,23 +86,25 @@ public:
     virtual void presentFrame() override;
     TextureResource::Desc getSwapChainTextureDesc() override;
 
-    virtual TextureResource* createTextureResource(Resource::Usage initialUsage, const TextureResource::Desc& desc, const TextureResource::Data* initData) override;
-    virtual BufferResource* createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& descIn, const void* initData) override;
-    virtual SamplerState* createSamplerState(SamplerState::Desc const& desc) override;
+    Result createTextureResource(Resource::Usage initialUsage, const TextureResource::Desc& desc, const TextureResource::Data* initData, TextureResource** outResource) override;
+    Result createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& desc, const void* initData, BufferResource** outResource) override;
+    Result createSamplerState(SamplerState::Desc const& desc, SamplerState** outSampler) override;
 
-    virtual ResourceView* createTextureView(TextureResource* texture, ResourceView::Desc const& desc) override;
-    virtual ResourceView* createBufferView(BufferResource* buffer, ResourceView::Desc const& desc) override;
+    Result createTextureView(TextureResource* texture, ResourceView::Desc const& desc, ResourceView** outView) override;
+    Result createBufferView(BufferResource* buffer, ResourceView::Desc const& desc, ResourceView** outView) override;
+
+    Result createInputLayout(const InputElementDesc* inputElements, UInt inputElementCount, InputLayout** outLayout) override;
+
+    Result createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc, DescriptorSetLayout** outLayout) override;
+    Result createPipelineLayout(const PipelineLayout::Desc& desc, PipelineLayout** outLayout) override;
+    Result createDescriptorSet(DescriptorSetLayout* layout, DescriptorSet** outDescriptorSet) override;
+
+    Result createProgram(const ShaderProgram::Desc& desc, ShaderProgram** outProgram) override;
+    Result createGraphicsPipelineState(const GraphicsPipelineStateDesc& desc, PipelineState** outState) override;
+    Result createComputePipelineState(const ComputePipelineStateDesc& desc, PipelineState** outState) override;
 
     virtual SlangResult captureScreenSurface(Surface& surfaceOut) override;
-    virtual InputLayout* createInputLayout(const InputElementDesc* inputElements, UInt inputElementCount) override;
 
-    virtual DescriptorSetLayout* createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc) override;
-    virtual PipelineLayout* createPipelineLayout(const PipelineLayout::Desc& desc) override;
-    virtual DescriptorSet* createDescriptorSet(DescriptorSetLayout* layout) override;
-
-    virtual ShaderProgram* createProgram(const ShaderProgram::Desc& desc) override;
-    virtual PipelineState* createGraphicsPipelineState(const GraphicsPipelineStateDesc& desc) override;
-    virtual PipelineState* createComputePipelineState(const ComputePipelineStateDesc& desc) override;
     virtual void* map(BufferResource* buffer, MapFlavor flavor) override;
     virtual void unmap(BufferResource* buffer) override;
     virtual void setPrimitiveTopology(PrimitiveTopology topology) override;
@@ -723,7 +725,7 @@ SlangResult GLRenderer::captureScreenSurface(Surface& surfaceOut)
     return SLANG_OK;
 }
 
-TextureResource* GLRenderer::createTextureResource(Resource::Usage initialUsage, const TextureResource::Desc& descIn, const TextureResource::Data* initData)
+Result GLRenderer::createTextureResource(Resource::Usage initialUsage, const TextureResource::Desc& descIn, const TextureResource::Data* initData, TextureResource** outResource)
 {
     TextureResource::Desc srcDesc(descIn);
     srcDesc.setDefaults(initialUsage);
@@ -731,7 +733,7 @@ TextureResource* GLRenderer::createTextureResource(Resource::Usage initialUsage,
     GlPixelFormat pixelFormat = _getGlPixelFormat(srcDesc.format);
     if (pixelFormat == GlPixelFormat::Unknown)
     {
-        return nullptr;
+        return SLANG_FAIL;
     }
 
     const GlPixelFormatInfo& info = s_pixelFormatInfos[int(pixelFormat)];
@@ -847,7 +849,8 @@ TextureResource* GLRenderer::createTextureResource(Resource::Usage initialUsage,
             }
             break;
         }
-        default: return nullptr;
+        default:
+            return SLANG_FAIL;
     }
 
     glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -861,7 +864,8 @@ TextureResource* GLRenderer::createTextureResource(Resource::Usage initialUsage,
 
     texture->m_target = target;
 
-    return texture.detach();
+    *outResource = texture.detach();
+    return SLANG_OK;
 }
 
 static GLenum _calcUsage(Resource::Usage usage)
@@ -884,7 +888,7 @@ static GLenum _calcTarget(Resource::Usage usage)
     }
 }
 
-BufferResource* GLRenderer::createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& descIn, const void* initData)
+Result GLRenderer::createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& descIn, const void* initData, BufferResource** outResource)
 {
     BufferResource::Desc desc(descIn);
     desc.setDefaults(initialUsage);
@@ -899,20 +903,22 @@ BufferResource* GLRenderer::createBufferResource(Resource::Usage initialUsage, c
 
     glBufferData(target, descIn.sizeInBytes, initData, usage);
 
-	return new BufferResourceImpl(initialUsage, desc, this, bufferID, target);
+    *outResource = new BufferResourceImpl(initialUsage, desc, this, bufferID, target);
+    return SLANG_OK;
 }
 
-SamplerState* GLRenderer::createSamplerState(SamplerState::Desc const& desc)
+Result GLRenderer::createSamplerState(SamplerState::Desc const& desc, SamplerState** outSampler)
 {
     GLuint samplerID;
     glCreateSamplers(1, &samplerID);
 
     RefPtr<SamplerStateImpl> samplerImpl = new SamplerStateImpl();
     samplerImpl->m_samplerID = samplerID;
-    return samplerImpl.detach();
+    *outSampler = samplerImpl.detach();
+    return SLANG_OK;
 }
 
-ResourceView* GLRenderer::createTextureView(TextureResource* texture, ResourceView::Desc const& desc)
+Result GLRenderer::createTextureView(TextureResource* texture, ResourceView::Desc const& desc, ResourceView** outView)
 {
     auto resourceImpl = (TextureResourceImpl*) texture;
 
@@ -921,10 +927,11 @@ ResourceView* GLRenderer::createTextureView(TextureResource* texture, ResourceVi
     RefPtr<TextureViewImpl> viewImpl = new TextureViewImpl();
     viewImpl->m_resource = resourceImpl;
     viewImpl->m_textureID = resourceImpl->m_handle;
-    return viewImpl;
+    *outView = viewImpl;
+    return SLANG_OK;
 }
 
-ResourceView* GLRenderer::createBufferView(BufferResource* buffer, ResourceView::Desc const& desc)
+Result GLRenderer::createBufferView(BufferResource* buffer, ResourceView::Desc const& desc, ResourceView** outView)
 {
     auto resourceImpl = (BufferResourceImpl*) buffer;
 
@@ -933,12 +940,13 @@ ResourceView* GLRenderer::createBufferView(BufferResource* buffer, ResourceView:
     RefPtr<BufferViewImpl> viewImpl = new BufferViewImpl();
     viewImpl->m_resource = resourceImpl;
     viewImpl->m_bufferID = resourceImpl->m_handle;
-    return viewImpl;
+    *outView = viewImpl.detach();
+    return SLANG_OK;
 }
 
-InputLayout* GLRenderer::createInputLayout(const InputElementDesc* inputElements, UInt inputElementCount)
+Result GLRenderer::createInputLayout(const InputElementDesc* inputElements, UInt inputElementCount, InputLayout** outLayout)
 {
-    InputLayoutImpl* inputLayout = new InputLayoutImpl;
+    RefPtr<InputLayoutImpl> inputLayout = new InputLayoutImpl;
 
     inputLayout->m_attributeCount = inputElementCount;
     for (UInt ii = 0; ii < inputElementCount; ++ii)
@@ -951,7 +959,8 @@ InputLayout* GLRenderer::createInputLayout(const InputElementDesc* inputElements
         glAttr.offset = (GLsizei)inputAttr.offset;
     }
 
-    return (InputLayout*)inputLayout;
+    *outLayout = inputLayout.detach();
+    return SLANG_OK;
 }
 
 void* GLRenderer::map(BufferResource* bufferIn, MapFlavor flavor)
@@ -1225,7 +1234,7 @@ void GLRenderer::setDescriptorSet(PipelineType pipelineType, PipelineLayout* lay
     m_boundDescriptorSets[index] = descriptorSetImpl;
 }
 
-DescriptorSetLayout* GLRenderer::createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc)
+Result GLRenderer::createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc, DescriptorSetLayout** outLayout)
 {
     RefPtr<DescriptorSetLayoutImpl> layoutImpl = new DescriptorSetLayoutImpl();
 
@@ -1269,10 +1278,11 @@ DescriptorSetLayout* GLRenderer::createDescriptorSetLayout(const DescriptorSetLa
         layoutImpl->m_counts[ii] = counts[ii];
     }
 
-    return layoutImpl.detach();
+    *outLayout = layoutImpl.detach();
+    return SLANG_OK;
 }
 
-PipelineLayout* GLRenderer::createPipelineLayout(const PipelineLayout::Desc& desc)
+Result GLRenderer::createPipelineLayout(const PipelineLayout::Desc& desc, PipelineLayout** outLayout)
 {
     RefPtr<PipelineLayoutImpl> layoutImpl = new PipelineLayoutImpl();
 
@@ -1296,10 +1306,11 @@ PipelineLayout* GLRenderer::createPipelineLayout(const PipelineLayout::Desc& des
         layoutImpl->m_sets.Add(setInfo);
     }
 
-    return layoutImpl.detach();
+    *outLayout = layoutImpl.detach();
+    return SLANG_OK;
 }
 
-DescriptorSet* GLRenderer::createDescriptorSet(DescriptorSetLayout* layout)
+Result GLRenderer::createDescriptorSet(DescriptorSetLayout* layout, DescriptorSet** outDescriptorSet)
 {
     auto layoutImpl = (DescriptorSetLayoutImpl*) layout;
 
@@ -1325,10 +1336,11 @@ DescriptorSet* GLRenderer::createDescriptorSet(DescriptorSetLayout* layout)
         descriptorSetImpl->m_samplers.SetSize(slotCount);
     }
 
-    return descriptorSetImpl.detach();
+    *outDescriptorSet = descriptorSetImpl.detach();
+    return SLANG_OK;
 }
 
-ShaderProgram* GLRenderer::createProgram(const ShaderProgram::Desc& desc)
+Result GLRenderer::createProgram(const ShaderProgram::Desc& desc, ShaderProgram** outProgram)
 {
     auto programID = glCreateProgram();
     if(desc.pipelineType == PipelineType::Compute )
@@ -1376,13 +1388,14 @@ ShaderProgram* GLRenderer::createProgram(const ShaderProgram::Desc& desc)
         ::free(infoBuffer);
 
         glDeleteProgram(programID);
-        return nullptr;
+        return SLANG_FAIL;
     }
 
-    return new ShaderProgramImpl(this, programID);
+    *outProgram = new ShaderProgramImpl(this, programID);
+    return SLANG_OK;
 }
 
-PipelineState* GLRenderer::createGraphicsPipelineState(const GraphicsPipelineStateDesc& desc)
+Result GLRenderer::createGraphicsPipelineState(const GraphicsPipelineStateDesc& desc, PipelineState** outState)
 {
     auto programImpl        = (ShaderProgramImpl*)  desc.program;
     auto pipelineLayoutImpl = (PipelineLayoutImpl*) desc.pipelineLayout;
@@ -1392,10 +1405,11 @@ PipelineState* GLRenderer::createGraphicsPipelineState(const GraphicsPipelineSta
     pipelineStateImpl->m_program = programImpl;
     pipelineStateImpl->m_pipelineLayout = pipelineLayoutImpl;
     pipelineStateImpl->m_inputLayout = inputLayoutImpl;
-    return pipelineStateImpl.detach();
+    *outState = pipelineStateImpl.detach();
+    return SLANG_OK;
 }
 
-PipelineState* GLRenderer::createComputePipelineState(const ComputePipelineStateDesc& desc)
+Result GLRenderer::createComputePipelineState(const ComputePipelineStateDesc& desc, PipelineState** outState)
 {
     auto programImpl        = (ShaderProgramImpl*)  desc.program;
     auto pipelineLayoutImpl = (PipelineLayoutImpl*) desc.pipelineLayout;
@@ -1403,7 +1417,8 @@ PipelineState* GLRenderer::createComputePipelineState(const ComputePipelineState
     RefPtr<PipelineStateImpl> pipelineStateImpl = new PipelineStateImpl();
     pipelineStateImpl->m_program = programImpl;
     pipelineStateImpl->m_pipelineLayout = pipelineLayoutImpl;
-    return pipelineStateImpl.detach();
+    *outState = pipelineStateImpl.detach();
+    return SLANG_OK;
 }
 
 

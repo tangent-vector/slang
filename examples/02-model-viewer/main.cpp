@@ -487,7 +487,7 @@ int initialize()
         {"NORMAL",   0, Format::RGB_Float32, offsetof(Model::Vertex, normal) },
         {"UV",       0, Format::RG_Float32,  offsetof(Model::Vertex, uv) },
     };
-    InputLayout* inputLayout = gRenderer->createInputLayout(
+    auto inputLayout = gRenderer->createInputLayout(
         &inputElements[0],
         3);
     if(!inputLayout) return FAILURE;
@@ -773,7 +773,7 @@ public:
             programDesc.kernels = kernelDescs.data();
             programDesc.kernelCount = kernelDescs.size();
 
-            ShaderProgram* specializedProgram = renderer->createProgram(programDesc);
+            auto specializedProgram = renderer->createProgram(programDesc);
 
             for(auto blob : kernelBlobs)
             {

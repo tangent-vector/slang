@@ -12,6 +12,11 @@
 
 namespace gfx {
 
+using Slang::RefObject;
+using Slang::RefPtr;
+
+typedef SlangResult Result;
+
 // Had to move here, because Options needs types defined here
 typedef intptr_t Int;
 typedef uintptr_t UInt;
@@ -769,31 +774,124 @@ public:
     virtual TextureResource::Desc getSwapChainTextureDesc() = 0;
 
         /// Create a texture resource. initData holds the initialize data to set the contents of the texture when constructed.
-    virtual TextureResource* createTextureResource(Resource::Usage initialUsage, const TextureResource::Desc& desc, const TextureResource::Data* initData = nullptr) { return nullptr; }
+    virtual Result createTextureResource(Resource::Usage initialUsage, const TextureResource::Desc& desc, const TextureResource::Data* initData, TextureResource** outResource) = 0;
+
+        /// Create a texture resource. initData holds the initialize data to set the contents of the texture when constructed.
+    inline RefPtr<TextureResource> createTextureResource(Resource::Usage initialUsage, const TextureResource::Desc& desc, const TextureResource::Data* initData = nullptr)
+    {
+        RefPtr<TextureResource> resource;
+        SLANG_RETURN_NULL_ON_FAIL(createTextureResource(initialUsage, desc, initData, resource.writeRef()));
+        return resource;
+    }
+
         /// Create a buffer resource
-    virtual BufferResource* createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& desc, const void* initData = nullptr) { return nullptr; }
+    virtual Result createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& desc, const void* initData, BufferResource** outResource) = 0;
 
-    virtual SamplerState* createSamplerState(SamplerState::Desc const& desc) = 0;
+    inline RefPtr<BufferResource> createBufferResource(Resource::Usage initialUsage, const BufferResource::Desc& desc, const void* initData = nullptr)
+    {
+        RefPtr<BufferResource> resource;
+        SLANG_RETURN_NULL_ON_FAIL(createBufferResource(initialUsage, desc, initData, resource.writeRef()));
+        return resource;
+    }
 
-    virtual ResourceView* createTextureView(TextureResource* texture, ResourceView::Desc const& desc) = 0;
-    virtual ResourceView* createBufferView(BufferResource* texture, ResourceView::Desc const& desc) = 0;
+    virtual Result createSamplerState(SamplerState::Desc const& desc, SamplerState** outSampler) = 0;
+
+    inline RefPtr<SamplerState> createSamplerState(SamplerState::Desc const& desc)
+    {
+        RefPtr<SamplerState> sampler;
+        SLANG_RETURN_NULL_ON_FAIL(createSamplerState(desc, sampler.writeRef()));
+        return sampler;
+    }
+
+    virtual Result createTextureView(TextureResource* texture, ResourceView::Desc const& desc, ResourceView** outView) = 0;
+
+    inline RefPtr<ResourceView> createTextureView(TextureResource* texture, ResourceView::Desc const& desc)
+    {
+        RefPtr<ResourceView> view;
+        SLANG_RETURN_NULL_ON_FAIL(createTextureView(texture, desc, view.writeRef()));
+        return view;
+    }
+
+    virtual Result createBufferView(BufferResource* buffer, ResourceView::Desc const& desc, ResourceView** outView) = 0;
+
+    inline ResourceView* createBufferView(BufferResource* buffer, ResourceView::Desc const& desc)
+    {
+        RefPtr<ResourceView> view;
+        SLANG_RETURN_NULL_ON_FAIL(createBufferView(buffer, desc, view.writeRef()));
+        return view;
+    }
+
+    virtual Result createInputLayout(const InputElementDesc* inputElements, UInt inputElementCount, InputLayout** outLayout) = 0;
+
+    inline RefPtr<InputLayout> createInputLayout(const InputElementDesc* inputElements, UInt inputElementCount)
+    {
+        RefPtr<InputLayout> layout;
+        SLANG_RETURN_NULL_ON_FAIL(createInputLayout(inputElements, inputElementCount, layout.writeRef()));
+        return layout;
+    }
+
+    virtual Result createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc, DescriptorSetLayout** outLayout) = 0;
+
+    inline RefPtr<DescriptorSetLayout> createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc)
+    {
+        RefPtr<DescriptorSetLayout> layout;
+        SLANG_RETURN_NULL_ON_FAIL(createDescriptorSetLayout(desc, layout.writeRef()));
+        return layout;
+    }
+
+    virtual Result createPipelineLayout(const PipelineLayout::Desc& desc, PipelineLayout** outLayout) = 0;
+
+    inline RefPtr<PipelineLayout> createPipelineLayout(const PipelineLayout::Desc& desc)
+    {
+        RefPtr<PipelineLayout> layout;
+        SLANG_RETURN_NULL_ON_FAIL(createPipelineLayout(desc, layout.writeRef()));
+        return layout;
+    }
+
+    virtual Result createDescriptorSet(DescriptorSetLayout* layout, DescriptorSet** outDescriptorSet) = 0;
+
+    inline RefPtr<DescriptorSet> createDescriptorSet(DescriptorSetLayout* layout)
+    {
+        RefPtr<DescriptorSet> descriptorSet;
+        SLANG_RETURN_NULL_ON_FAIL(createDescriptorSet(layout, descriptorSet.writeRef()));
+        return descriptorSet;
+    }
+
+    virtual Result createProgram(const ShaderProgram::Desc& desc, ShaderProgram** outProgram) = 0;
+
+    inline RefPtr<ShaderProgram> createProgram(const ShaderProgram::Desc& desc)
+    {
+        RefPtr<ShaderProgram> program;
+        SLANG_RETURN_NULL_ON_FAIL(createProgram(desc, program.writeRef()));
+        return program;
+    }
+
+    virtual Result createGraphicsPipelineState(
+        const GraphicsPipelineStateDesc&    desc,
+        PipelineState**                     outState) = 0;
+
+    inline RefPtr<PipelineState> createGraphicsPipelineState(
+        const GraphicsPipelineStateDesc& desc)
+    {
+        RefPtr<PipelineState> state;
+        SLANG_RETURN_NULL_ON_FAIL(createGraphicsPipelineState(desc, state.writeRef()));
+        return state;
+    }
+
+    virtual Result createComputePipelineState(
+        const ComputePipelineStateDesc&    desc,
+        PipelineState**                     outState) = 0;
+
+    inline RefPtr<PipelineState> createComputePipelineState(
+        const ComputePipelineStateDesc& desc)
+    {
+        RefPtr<PipelineState> state;
+        SLANG_RETURN_NULL_ON_FAIL(createComputePipelineState(desc, state.writeRef()));
+        return state;
+    }
 
         /// Captures the back buffer and stores the result in surfaceOut. If the surface contains data - it will either be overwritten (if same size and format), or freed and a re-allocated.
     virtual SlangResult captureScreenSurface(Surface& surfaceOut) = 0;
-
-    virtual InputLayout* createInputLayout(const InputElementDesc* inputElements, UInt inputElementCount) = 0;
-
-//    virtual BindingState* createBindingState(const BindingState::Desc& desc) { return nullptr; }
-    virtual DescriptorSetLayout* createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc) = 0;
-    virtual PipelineLayout* createPipelineLayout(const PipelineLayout::Desc& desc) = 0;
-    virtual DescriptorSet* createDescriptorSet(DescriptorSetLayout* layout) = 0;
-
-    virtual ShaderProgram* createProgram(const ShaderProgram::Desc& desc) = 0;
-
-    virtual PipelineState* createGraphicsPipelineState(
-        const GraphicsPipelineStateDesc& desc) = 0;
-    virtual PipelineState* createComputePipelineState(
-        const ComputePipelineStateDesc& desc) = 0;
 
     virtual void* map(BufferResource* buffer, MapFlavor flavor) = 0;
     virtual void unmap(BufferResource* buffer) = 0;
