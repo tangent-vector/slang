@@ -2981,7 +2981,7 @@ DescriptorSetLayout* D3D12Renderer::createDescriptorSetLayout(const DescriptorSe
     {
         D3D12_ROOT_PARAMETER dxRootParameter = {};
         dxRootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        dxRootParameter.DescriptorTable.NumDescriptorRanges = totalResourceRangeCount;
+        dxRootParameter.DescriptorTable.NumDescriptorRanges = totalSamplerRangeCount;
         descriptorSetLayoutImpl->m_dxRootParameters.Add(dxRootParameter);
     }
 
@@ -3052,6 +3052,10 @@ DescriptorSetLayout* D3D12Renderer::createDescriptorSetLayout(const DescriptorSe
         UInt uavCounter = 0;
         UInt samplerCounter = 0;
 
+        Int resourceRangeCounter = 0;
+        Int samplerRangeCounter = 0;
+        Int combinedRangeCounter = 0;
+
         for(Int rr = 0; rr < rangeCount; ++rr)
         {
             auto rangeDesc = desc.slotRanges[rr];
@@ -3072,20 +3076,23 @@ DescriptorSetLayout* D3D12Renderer::createDescriptorSetLayout(const DescriptorSe
             default:
                 // Default case is a dedicated resource, and its index in the
                 // resource array will come after all the combined entries.
-                dxRangeIndex = combinedRangeCount + rr;
+                dxRangeIndex = combinedRangeCount + resourceRangeCounter;
+                resourceRangeCounter++;
                 break;
 
             case DescriptorSlotType::Sampler:
                 // A dedicated sampler comes after all the entries for
                 // combined texture/samplers in the sampler array.
-                dxRangeIndex = totalResourceRangeCount + combinedRangeCount + rr;
+                dxRangeIndex = totalResourceRangeCount + combinedRangeCount + samplerRangeCounter;
+                samplerRangeCounter++;
                 break;
 
             case DescriptorSlotType::CombinedImageSampler:
                 // Combined descriptors take entries at the front of
                 // the resource and sampler arrays.
-                dxRangeIndex = rr;
-                dxPairedSamplerRangeIndex = totalResourceRangeCount + rr;
+                dxRangeIndex = combinedRangeCounter;
+                dxPairedSamplerRangeIndex = totalResourceRangeCount + combinedRangeCounter;
+                combinedRangeCounter++;
                 break;
             }
 
