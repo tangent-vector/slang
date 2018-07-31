@@ -197,24 +197,39 @@ public:
         ViewType            m_type;
     };
 
-    class TextureResourceViewImpl : public ResourceView
+    class TextureResourceViewImpl : public ResourceViewImpl
     {
     public:
+        TextureResourceViewImpl()
+        {
+            m_type = ViewType::Texture;
+        }
+
         RefPtr<TextureResourceImpl> m_texture;
         VkImageView                 m_view;
         VkImageLayout               m_layout;
     };
 
-    class TexelBufferResourceViewImpl : public ResourceView
+    class TexelBufferResourceViewImpl : public ResourceViewImpl
     {
     public:
+        TexelBufferResourceViewImpl()
+        {
+            m_type = ViewType::TexelBuffer;
+        }
+
         RefPtr<BufferResourceImpl>  m_buffer;
         VkBufferView m_view;
     };
 
-    class PlainBufferResourceViewImpl : public ResourceView
+    class PlainBufferResourceViewImpl : public ResourceViewImpl
     {
     public:
+        PlainBufferResourceViewImpl()
+        {
+            m_type = ViewType::PlainBuffer;
+        }
+
         RefPtr<BufferResourceImpl>  m_buffer;
         VkDeviceSize                offset;
         VkDeviceSize                size;
@@ -2119,6 +2134,8 @@ static VkDescriptorType translateDescriptorType(DescriptorSlotType type)
 
 DescriptorSetLayout* VKRenderer::createDescriptorSetLayout(const DescriptorSetLayout::Desc& desc)
 {
+    RefPtr<DescriptorSetLayoutImpl> descriptorSetLayoutImpl = new DescriptorSetLayoutImpl(m_api);
+
     Slang::List<VkDescriptorSetLayoutBinding> dstBindings;
 
     uint32_t descriptorCountForTypes[VK_DESCRIPTOR_TYPE_RANGE_SIZE] = { 0, };
@@ -2140,6 +2157,10 @@ DescriptorSetLayout* VKRenderer::createDescriptorSetLayout(const DescriptorSetLa
         descriptorCountForTypes[dstDescriptorType] += srcRange.count;
 
         dstBindings.Add(dstBinding);
+
+        DescriptorSetLayoutImpl::RangeInfo rangeInfo;
+        rangeInfo.descriptorType = dstDescriptorType;
+        descriptorSetLayoutImpl->m_ranges.Add(rangeInfo);
     }
 
     VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
@@ -2172,9 +2193,9 @@ DescriptorSetLayout* VKRenderer::createDescriptorSetLayout(const DescriptorSetLa
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
     SLANG_VK_CHECK(m_api.vkCreateDescriptorPool(m_device, &descriptorPoolInfo, nullptr, &descriptorPool));
 
-    RefPtr<DescriptorSetLayoutImpl> descriptorSetLayoutImpl = new DescriptorSetLayoutImpl(m_api);
     descriptorSetLayoutImpl->m_descriptorSetLayout = descriptorSetLayout;
     descriptorSetLayoutImpl->m_descriptorPool = descriptorPool;
+
     return descriptorSetLayoutImpl.detach();
 }
 
@@ -2500,7 +2521,7 @@ PipelineState* VKRenderer::createComputePipelineState(const ComputePipelineState
     VkPipeline pipeline = VK_NULL_HANDLE;
     SLANG_VK_CHECK(m_api.vkCreateComputePipelines(m_device, pipelineCache, 1, &computePipelineInfo, nullptr, &pipeline));
 
-    RefPtr<PipelineStateImpl> pipelineStateImpl;
+    RefPtr<PipelineStateImpl> pipelineStateImpl = new PipelineStateImpl(m_api);
     pipelineStateImpl->m_pipeline = pipeline;
     pipelineStateImpl->m_pipelineLayout = pipelineLayoutImpl;
     pipelineStateImpl->m_shaderProgram = programImpl;
