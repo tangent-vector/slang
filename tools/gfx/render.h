@@ -574,95 +574,6 @@ public:
         SamplerState*   sampler) = 0;
 };
 
-
-#if 0
-enum class BindingType
-{
-    Unknown,
-    Sampler,
-    Buffer,
-    Texture,
-    CombinedTextureSampler,
-    CountOf,
-};
-
-class BindingState : public Slang::RefObject
-{
-public:
-        /// A register set consists of one or more contiguous indices.
-        /// To be valid index >= 0 and size >= 1
-    struct RegisterRange
-    {
-            /// True if contains valid contents
-        bool isValid() const { return size > 0; }
-            /// True if valid single value
-        bool isSingle() const { return size == 1; }
-            /// Get as a single index (must be at least one index)
-        int getSingleIndex() const { return (size == 1) ? index : -1; }
-            /// Return the first index
-        int getFirstIndex() const { return (size > 0) ? index : -1; }
-            /// True if contains register index
-        bool hasRegister(int registerIndex) const { return registerIndex >= index && registerIndex < index + size; }
-
-        static RegisterRange makeInvalid() { return RegisterRange{ -1, 0 }; }
-        static RegisterRange makeSingle(int index) { return RegisterRange{ int16_t(index), 1 }; }
-        static RegisterRange makeRange(int index, int size) { return RegisterRange{ int16_t(index), uint16_t(size) }; }
-
-        int16_t index;              ///< The base index
-        uint16_t size;              ///< The amount of register indices
-    };
-
-    struct SamplerDesc
-    {
-        bool isCompareSampler;
-    };
-
-    struct Binding
-    {
-        BindingType bindingType;                ///< Type of binding
-        int descIndex;                          ///< The description index associated with type. -1 if not used. For example if bindingType is Sampler, the descIndex is into m_samplerDescs.
-        Slang::RefPtr<Resource> resource;       ///< Associated resource. nullptr if not used
-        RegisterRange registerRange;        /// Defines the registers for binding
-    };
-
-    struct Desc
-    {
-            /// Add a resource - assumed that the binding will match the Desc of the resource
-        void addResource(BindingType bindingType, Resource* resource, const RegisterRange& registerRange);
-            /// Add a sampler
-        void addSampler(const SamplerDesc& desc, const RegisterRange& registerRange);
-            /// Add a BufferResource
-        void addBufferResource(BufferResource* resource, const RegisterRange& registerRange) { addResource(BindingType::Buffer, resource, registerRange); }
-            /// Add a texture
-        void addTextureResource(TextureResource* resource, const RegisterRange& registerRange) { addResource(BindingType::Texture, resource, registerRange); }
-            /// Add combined texture a
-        void addCombinedTextureSampler(TextureResource* resource, const SamplerDesc& samplerDesc, const RegisterRange& registerRange);
-
-            /// Returns the bind index, that has the bind flag, and indexes the specified register
-        int findBindingIndex(Resource::BindFlag::Enum bindFlag, int registerIndex) const;
-
-            /// Clear the contents
-        void clear();
-
-        Slang::List<Binding> m_bindings;                            ///< All of the bindings in order
-        Slang::List<SamplerDesc> m_samplerDescs;                    ///< Holds the SamplerDesc for the binding - indexed by the descIndex member of Binding
-
-        int m_numRenderTargets = 1;
-    };
-
-        /// Get the Desc used to create this binding
-    SLANG_FORCE_INLINE const Desc& getDesc() const { return m_desc; }
-
-    protected:
-    BindingState(const Desc& desc):
-        m_desc(desc)
-    {
-    }
-
-    Desc m_desc;
-};
-#endif
-
 enum class StencilOp : uint8_t
 {
     Keep,
@@ -814,7 +725,7 @@ public:
 
     virtual Result createBufferView(BufferResource* buffer, ResourceView::Desc const& desc, ResourceView** outView) = 0;
 
-    inline ResourceView* createBufferView(BufferResource* buffer, ResourceView::Desc const& desc)
+    inline RefPtr<ResourceView> createBufferView(BufferResource* buffer, ResourceView::Desc const& desc)
     {
         RefPtr<ResourceView> view;
         SLANG_RETURN_NULL_ON_FAIL(createBufferView(buffer, desc, view.writeRef()));

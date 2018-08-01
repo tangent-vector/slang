@@ -26,7 +26,7 @@ using namespace gfx;
 // shaders as needed.
 //
 
-struct ShaderLibrary
+struct ShaderLibrary : RefObject
 {
     std::string                 inputPath;
     RefPtr<Renderer>            renderer;
@@ -34,7 +34,7 @@ struct ShaderLibrary
     slang::ShaderReflection*    slangReflection;
 };
 
-struct EntryPointX
+struct EntryPoint : RefObject
 {
     std::string name;
     SlangStage  slangStage;
@@ -46,13 +46,13 @@ struct GenericParam
     int parameterBlockIndex;
 };
 
-struct Program
+struct Program : RefObject
 {
-    ShaderLibrary*              shaderLibrary;
-    int                         parameterBlockCount;
+    RefPtr<ShaderLibrary>   shaderLibrary;
+    int                     parameterBlockCount;
 
-    std::vector<EntryPointX*>   entryPoints;
-    std::vector<GenericParam*>  genericParams;
+    std::vector<RefPtr<EntryPoint>> entryPoints;
+    std::vector<GenericParam>       genericParams;
 };
 
 SlangSession* getSlangSession()
@@ -61,7 +61,7 @@ SlangSession* getSlangSession()
     return slangSession;
 }
 
-ShaderLibrary* loadShaderLibrary(Renderer* renderer, char const* inputPath)
+RefPtr<ShaderLibrary> loadShaderLibrary(Renderer* renderer, char const* inputPath)
 {
     auto slangSession = getSlangSession();
 
@@ -102,7 +102,7 @@ ShaderLibrary* loadShaderLibrary(Renderer* renderer, char const* inputPath)
     return library;
 }
 
-EntryPointX* loadEntryPointX(
+RefPtr<EntryPoint> loadEntryPointX(
     ShaderLibrary*  library,
     char const*     name)
 {
@@ -122,14 +122,14 @@ EntryPointX* loadEntryPointX(
     case SLANG_STAGE_FRAGMENT:  apiStage = StageType::Fragment; break;
     }
 
-    EntryPointX* entryPoint = new EntryPointX();
+    EntryPoint* entryPoint = new EntryPoint();
     entryPoint->name = name;
     entryPoint->slangStage = slangEntryPoint->getStage();
     entryPoint->apiStage = apiStage;
     return entryPoint;
 }
 
-Program* loadProgram(
+RefPtr<Program> loadProgram(
     ShaderLibrary*      library,
     int                 entryPointCount,
     const char* const*  entryPointNames)
@@ -148,11 +148,11 @@ Program* loadProgram(
     }
 
     auto genericParamCount = slangReflection->getTypeParameterCount();
-    for(int pp = 0; pp < genericParamCount; ++pp)
+    for(unsigned int pp = 0; pp < genericParamCount; ++pp)
     {
         auto slangGenericParam = slangReflection->getTypeParameterByIndex(pp);
 
-        auto genericParam = new GenericParam();
+        GenericParam genericParam  = {};
         program->genericParams.push_back(genericParam);
     }
 
@@ -162,7 +162,7 @@ Program* loadProgram(
     // generic type parameters.
     auto paramCount = slangReflection->getParameterCount();
     int parameterBlockCounter = 0;
-    for(int pp = 0; pp < paramCount; ++pp)
+    for(unsigned int pp = 0; pp < paramCount; ++pp)
     {
         auto slangParam = slangReflection->getParameterByIndex(pp);
         if(slangParam->getType()->getKind() == slang::TypeReflection::Kind::ParameterBlock)
@@ -173,7 +173,7 @@ Program* loadProgram(
             if(slangElementTypeLayout->getKind() == slang::TypeReflection::Kind::GenericTypeParameter)
             {
                 auto genericParamIndex = slangElementTypeLayout->getGenericParamIndex();
-                program->genericParams[genericParamIndex]->parameterBlockIndex = parameterBlockIndex;
+                program->genericParams[genericParamIndex].parameterBlockIndex = parameterBlockIndex;
             }
         }
     }
@@ -182,14 +182,14 @@ Program* loadProgram(
     return program;
 }
 
-Program* loadProgram(ShaderLibrary* library, char const* entryPoint0, char const* entryPoint1)
+RefPtr<Program> loadProgram(ShaderLibrary* library, char const* entryPoint0, char const* entryPoint1)
 {
     char const* entryPointNames[] = { entryPoint0, entryPoint1 };
     return loadProgram(library, 2, entryPointNames);
 }
 
-static int gWindowWidth = 1024;
-static int gWindowHeight = 768;
+int gWindowWidth = 1024;
+int gWindowHeight = 768;
 
 // For this more complex example we will be passing multiple
 // parameter blocks into the shader code, and each will
@@ -227,20 +227,20 @@ enum Status
 //
 struct ParameterBlock;
 
-struct ParameterBlockLayout
+struct ParameterBlockLayout : RefObject
 {
     Renderer*                       renderer;
     slang::TypeLayoutReflection*    slangTypeLayout;
     size_t                          primaryConstantBufferSize;
-    DescriptorSetLayout*            descriptorSetLayout;
+    RefPtr<DescriptorSetLayout>     descriptorSetLayout;
 };
 
-struct ParameterBlock
+struct ParameterBlock : RefObject
 {
-    Renderer*               renderer;
-    ParameterBlockLayout*   layout;
-    BufferResource*         primaryConstantBuffer;
-    DescriptorSet*          descriptorSet;
+    RefPtr<Renderer>                renderer;
+    RefPtr<ParameterBlockLayout>    layout;
+    RefPtr<BufferResource>          primaryConstantBuffer;
+    RefPtr<DescriptorSet>           descriptorSet;
 
     void* map();
     void unmap();
@@ -249,7 +249,7 @@ struct ParameterBlock
     T* mapAs() { return (T*)map(); }
 };
 
-ParameterBlockLayout* getParameterBlockLayout(
+RefPtr<ParameterBlockLayout> getParameterBlockLayout(
     ShaderLibrary*  library,
     char const*     name)
 {
@@ -298,7 +298,7 @@ ParameterBlockLayout* getParameterBlockLayout(
     descriptorSetLayoutDesc.slotRangeCount = slotRanges.size();
     descriptorSetLayoutDesc.slotRanges = slotRanges.data();
 
-    DescriptorSetLayout* descriptorSetLayout = renderer->createDescriptorSetLayout(descriptorSetLayoutDesc);
+    auto descriptorSetLayout = renderer->createDescriptorSetLayout(descriptorSetLayoutDesc);
 
     auto parameterBlockLayout = new ParameterBlockLayout();
     parameterBlockLayout->renderer = renderer;
@@ -308,39 +308,25 @@ ParameterBlockLayout* getParameterBlockLayout(
     return parameterBlockLayout;
 }
 
-ParameterBlock* allocatePersistentParameterBlock(
+RefPtr<ParameterBlock> allocatePersistentParameterBlock(
     ParameterBlockLayout*   layout);
 
-ParameterBlock* allocateTransientParameterBlock(
+RefPtr<ParameterBlock> allocateTransientParameterBlock(
     ParameterBlockLayout*   layout);
 
 //
-struct Effect
+struct Effect : RefObject
 {
     // The shader program entry point(s) to execute
-    Program* program;
-
-    // We store basic state in the form of a desc
-    GraphicsPipelineStateDesc desc;
+    RefPtr<Program>     program;
+    RefPtr<InputLayout> inputLayout;
+    Int                 renderTargetCount;
 };
 
-// Global variables for the various platform and graphics API objects
-// that our application needs:
-//
-ApplicationContext* gAppContext;
-Window* gWindow;
-Renderer* gRenderer;
-ResourceView* gDepthTarget;
-
-Effect* gEffect;
-
-ParameterBlockLayout* gPerViewParameterBlockLayout;
-ParameterBlockLayout* gPerModelParameterBlockLayout;
-
-struct Material
+struct Material : RefObject
 {
-    virtual ParameterBlock* createParameterBlock() = 0;
-    ParameterBlock* parameterBlock;
+    virtual RefPtr<ParameterBlock> createParameterBlock() = 0;
+    RefPtr<ParameterBlock> parameterBlock;
 };
 
 struct SimpleMaterial : Material
@@ -353,9 +339,9 @@ struct SimpleMaterial : Material
 
     Uniforms uniforms;
 
-    static ParameterBlockLayout* gParameterBlockLayout;
+    static RefPtr<ParameterBlockLayout> gParameterBlockLayout;
 
-    ParameterBlock* createParameterBlock() override
+    RefPtr<ParameterBlock> createParameterBlock() override
     {
         auto parameterBlockLayout = gParameterBlockLayout;
         auto parameterBlock = allocatePersistentParameterBlock(
@@ -371,203 +357,34 @@ struct SimpleMaterial : Material
     }
 };
 
-ParameterBlockLayout* SimpleMaterial::gParameterBlockLayout = nullptr;
+RefPtr<ParameterBlockLayout> SimpleMaterial::gParameterBlockLayout;
 
-struct Mesh
+struct Mesh : RefObject 
 {
     Material* material;
     int firstIndex;
     int indexCount;
 };
 
-struct Model
+struct Model : RefObject
 {
     typedef ModelLoader::Vertex Vertex;
 
-    BufferResource*     vertexBuffer;
-    BufferResource*     indexBuffer;
-    PrimitiveTopology   primitiveTopology;
-    int                 vertexCount;
-    int                 indexCount;
-    std::vector<Mesh*>  meshes;
+    RefPtr<BufferResource>      vertexBuffer;
+    RefPtr<BufferResource>      indexBuffer;
+    PrimitiveTopology           primitiveTopology;
+    int                         vertexCount;
+    int                         indexCount;
+    std::vector<RefPtr<Mesh>>   meshes;
 };
 
-std::vector<Model*> gModels;
-
-void loadModel(
-    Renderer*               renderer,
-    char const*             inputPath,
-    ModelLoader::LoadFlags  loadFlags = 0,
-    float                   scale = 1.0f)
-{
-    struct Callbacks : ModelLoader::ICallbacks
-    {
-        void* createMaterial(MaterialData const& data) override
-        {
-            SimpleMaterial* material = new SimpleMaterial();
-            material->uniforms.diffuseColor = data.diffuseColor;
-
-            material->parameterBlock = material->createParameterBlock();
-
-            return material;
-        }
-
-        void* createMesh(MeshData const& data) override
-        {
-            Mesh* mesh = new Mesh();
-            mesh->firstIndex = data.firstIndex;
-            mesh->indexCount = data.indexCount;
-            mesh->material = (Material*)data.material;
-            return mesh;
-        }
-
-        void* createModel(ModelData const& data) override
-        {
-            Model* model = new Model();
-            model->vertexBuffer = data.vertexBuffer;
-            model->indexBuffer = data.indexBuffer;
-            model->primitiveTopology = data.primitiveTopology;
-            model->vertexCount = data.vertexCount;
-            model->indexCount = data.indexCount;
-
-            int meshCount = data.meshCount;
-            for(int ii = 0; ii < meshCount; ++ii)
-                model->meshes.push_back((Mesh*)data.meshes[ii]);
-
-            return model;
-        }
-    };
-
-    Callbacks callbacks;
-
-    ModelLoader loader;
-    loader.renderer = renderer;
-    loader.loadFlags = loadFlags;
-    loader.scale = scale;
-    loader.callbacks = &callbacks;
-
-    Model* model = nullptr;
-    if(SLANG_FAILED(loader.load(inputPath, (void**)&model)))
-    {
-        log("failed to load '%s'\n", inputPath);
-        return;
-    }
-
-    gModels.emplace_back(model);
-}
-
-int initialize()
-{
-    // Create a window for our application to render into.
-    WindowDesc windowDesc;
-    windowDesc.title = "Model Viewer";
-    windowDesc.width = gWindowWidth;
-    windowDesc.height = gWindowHeight;
-    gWindow = createWindow(windowDesc);
-
-    // Initialize the rendering layer.
-    //
-    // Note: for now we are hard-coding logic to use the
-    // Direct3D11 back-end for the graphics API abstraction.
-    // A future version of this example may support multiple
-    // platforms/APIs.
-    //
-    gRenderer = createD3D11Renderer();
-    Renderer::Desc rendererDesc;
-    rendererDesc.width = gWindowWidth;
-    rendererDesc.height = gWindowHeight;
-    gRenderer->initialize(rendererDesc, getPlatformWindowHandle(gWindow));
-
-    // Input Assembler (IA)
-
-    // Input Layout
-
-    InputElementDesc inputElements[] = {
-        {"POSITION", 0, Format::RGB_Float32, offsetof(Model::Vertex, position) },
-        {"NORMAL",   0, Format::RGB_Float32, offsetof(Model::Vertex, normal) },
-        {"UV",       0, Format::RG_Float32,  offsetof(Model::Vertex, uv) },
-    };
-    auto inputLayout = gRenderer->createInputLayout(
-        &inputElements[0],
-        3);
-    if(!inputLayout) return FAILURE;
-
-    // Depth-Stencil Test (DS)
-    {
-        TextureResource::Desc depthBufferDesc = gRenderer->getSwapChainTextureDesc();
-        depthBufferDesc.format = Format::D_Float32;
-        depthBufferDesc.setDefaults(Resource::Usage::DepthWrite);
-
-        TextureResource* depthTexture = gRenderer->createTextureResource(
-            Resource::Usage::DepthWrite,
-            depthBufferDesc);
-        if(!depthTexture) return FAILURE;
-
-        ResourceView::Desc textureViewDesc;
-        textureViewDesc.type = ResourceView::Type::DepthStencil;
-        ResourceView* depthTarget = gRenderer->createTextureView(depthTexture, textureViewDesc);
-        if (!depthTarget) return FAILURE;
-
-        gDepthTarget = depthTarget;
-    }
-
-    // Shaders (VS, PS, ...)
-
-    ShaderLibrary* shaderLibrary = loadShaderLibrary(gRenderer, "shaders.slang");
-    if(!shaderLibrary) return FAILURE;
-
-    Program* program = loadProgram(shaderLibrary, "vertexMain", "fragmentMain");
-    if(!program) return FAILURE;
-
-//    ShaderProgram* shaderProgram = loadShaderProgram(gRenderer);
-//    if(!shaderProgram) return FAILURE;
-
-    // We need to load reflection information for the types
-    // tha are used inside of our Slang parameter blocks,
-    // so lets do that here.
-
-    gPerViewParameterBlockLayout = getParameterBlockLayout(
-        shaderLibrary, "PerView");
-    SimpleMaterial::gParameterBlockLayout = getParameterBlockLayout(
-        shaderLibrary, "SimpleMaterial");
-    gPerModelParameterBlockLayout = getParameterBlockLayout(
-        shaderLibrary, "PerModel");
-
-
-    {
-        Effect* effect = new Effect();
-
-        auto& desc = effect->desc;
-        desc.inputLayout = inputLayout;
-        desc.renderTargetCount = 1;
-
-        effect->program = program;
-
-        gEffect = effect;
-    }
-
-    // Load model(s)
-
-    loadModel(gRenderer, "CornellBox-Original.obj", ModelLoader::LoadFlag::FlipWinding);
-//    loadModel(gRenderer, "cube.obj");
-//    loadModel(gRenderer, "teapot.obj");
-    loadModel(gRenderer, "bumpy-teapot.obj", ModelLoader::LoadFlag::FlipWinding, 0.01f);
-
-    // Once we've initialized all the graphics API objects,
-    // it is time to show our application window and start rendering.
-
-    showWindow(gWindow);
-
-    return OKAY;
-}
-
-ParameterBlock* allocateParameterBlockImpl(
+RefPtr<ParameterBlock> allocateParameterBlockImpl(
     ParameterBlockLayout*   layout)
 {
     auto renderer = layout->renderer;
 
     // TODO: if there is a primary constant buffer, allocate it
-    BufferResource* primaryConstantBuffer = nullptr;
+    RefPtr<BufferResource> primaryConstantBuffer = nullptr;
     if(auto primaryConstantBufferSize = layout->primaryConstantBufferSize)
     {
         BufferResource::Desc bufferDesc;
@@ -597,13 +414,13 @@ ParameterBlock* allocateParameterBlockImpl(
     return parameterBlock;
 }
 
-ParameterBlock* allocatePersistentParameterBlock(
+RefPtr<ParameterBlock> allocatePersistentParameterBlock(
     ParameterBlockLayout*   layout)
 {
     return allocateParameterBlockImpl(layout);
 }
 
-ParameterBlock* allocateTransientParameterBlock(
+RefPtr<ParameterBlock> allocateTransientParameterBlock(
     ParameterBlockLayout*   layout)
 {
     return allocateParameterBlockImpl(layout);
@@ -628,15 +445,15 @@ struct RenderContext
 private:
     enum { kMaxParameterBlocks = 8 };
 
-    Renderer*               renderer = nullptr;
-    Effect*                 effect = nullptr;
-    ParameterBlock*         parameterBlocks[kMaxParameterBlocks];
-    ParameterBlockLayout*   parameterBlockLayouts[kMaxParameterBlocks];
+    Renderer*                       renderer = nullptr;
+    Effect*                         effect = nullptr;
+    RefPtr<ParameterBlock>          parameterBlocks[kMaxParameterBlocks];
+    RefPtr<ParameterBlockLayout>    parameterBlockLayouts[kMaxParameterBlocks];
 
     bool                    pipelineStateDirty = true;
     int                     minDirtyBlockBinding = 0;
 
-    PipelineLayout*         currentPipelineLayout = nullptr;
+    RefPtr<PipelineLayout>         currentPipelineLayout;
 
 public:
     RenderContext(Renderer* renderer)
@@ -683,7 +500,7 @@ public:
             std::vector<PipelineLayout::DescriptorSetDesc> descriptorSets;
             for(int pp = 0; pp < parameterBlockCount; ++pp)
             {
-                descriptorSets.push_back(
+                descriptorSets.emplace_back(
                     parameterBlockLayouts[pp]->descriptorSetLayout);
             }
             PipelineLayout::Desc pipelineLayoutDesc;
@@ -705,7 +522,7 @@ public:
             std::vector<const char*> genericArgs;
             for(auto gp : program->genericParams)
             {
-                int parameterBlockIndex = gp->parameterBlockIndex;
+                int parameterBlockIndex = gp.parameterBlockIndex;
                 auto typeName = parameterBlockLayouts[parameterBlockIndex]->slangTypeLayout->getName();
                 genericArgs.push_back(typeName);
             }
@@ -780,9 +597,11 @@ public:
                 blob->release();
             }
 
-            GraphicsPipelineStateDesc pipelineStateDesc = effect->desc;
+            GraphicsPipelineStateDesc pipelineStateDesc = {};
             pipelineStateDesc.program = specializedProgram;
             pipelineStateDesc.pipelineLayout = pipelineLayout;
+            pipelineStateDesc.inputLayout = effect->inputLayout;
+            pipelineStateDesc.renderTargetCount = effect->renderTargetCount;
 
             auto pipelineState = renderer->createGraphicsPipelineState(pipelineStateDesc);
 
@@ -802,6 +621,191 @@ public:
         minDirtyBlockBinding = parameterBlockCount;
     }
 };
+
+
+struct ModelViewer {
+
+// Global variables for the various platform and graphics API objects
+// that our application needs:
+//
+ApplicationContext* gAppContext;
+Window* gWindow;
+RefPtr<Renderer> gRenderer;
+RefPtr<ResourceView> gDepthTarget;
+
+RefPtr<Effect> gEffect;
+
+RefPtr<ParameterBlockLayout> gPerViewParameterBlockLayout;
+RefPtr<ParameterBlockLayout> gPerModelParameterBlockLayout;
+
+std::vector<RefPtr<Model>> gModels;
+
+void loadModel(
+    Renderer*               renderer,
+    char const*             inputPath,
+    ModelLoader::LoadFlags  loadFlags = 0,
+    float                   scale = 1.0f)
+{
+    struct Callbacks : ModelLoader::ICallbacks
+    {
+        void* createMaterial(MaterialData const& data) override
+        {
+            SimpleMaterial* material = new SimpleMaterial();
+            material->uniforms.diffuseColor = data.diffuseColor;
+
+            material->parameterBlock = material->createParameterBlock();
+
+            return material;
+        }
+
+        void* createMesh(MeshData const& data) override
+        {
+            Mesh* mesh = new Mesh();
+            mesh->firstIndex = data.firstIndex;
+            mesh->indexCount = data.indexCount;
+            mesh->material = (Material*)data.material;
+            return mesh;
+        }
+
+        void* createModel(ModelData const& data) override
+        {
+            Model* model = new Model();
+            model->vertexBuffer = data.vertexBuffer;
+            model->indexBuffer = data.indexBuffer;
+            model->primitiveTopology = data.primitiveTopology;
+            model->vertexCount = data.vertexCount;
+            model->indexCount = data.indexCount;
+
+            int meshCount = data.meshCount;
+            for(int ii = 0; ii < meshCount; ++ii)
+                model->meshes.push_back((Mesh*)data.meshes[ii]);
+
+            return model;
+        }
+    };
+
+    Callbacks callbacks;
+
+    ModelLoader loader;
+    loader.renderer = renderer;
+    loader.loadFlags = loadFlags;
+    loader.scale = scale;
+    loader.callbacks = &callbacks;
+
+    Model* model = nullptr;
+    if(SLANG_FAILED(loader.load(inputPath, (void**)&model)))
+    {
+        log("failed to load '%s'\n", inputPath);
+        return;
+    }
+
+    gModels.emplace_back(model);
+}
+
+Result initialize()
+{
+    // Create a window for our application to render into.
+    WindowDesc windowDesc;
+    windowDesc.title = "Model Viewer";
+    windowDesc.width = gWindowWidth;
+    windowDesc.height = gWindowHeight;
+    gWindow = createWindow(windowDesc);
+
+    // Initialize the rendering layer.
+    //
+    // Note: for now we are hard-coding logic to use the
+    // Direct3D11 back-end for the graphics API abstraction.
+    // A future version of this example may support multiple
+    // platforms/APIs.
+    //
+    gRenderer = createD3D11Renderer();
+    Renderer::Desc rendererDesc;
+    rendererDesc.width = gWindowWidth;
+    rendererDesc.height = gWindowHeight;
+    gRenderer->initialize(rendererDesc, getPlatformWindowHandle(gWindow));
+
+    // Input Assembler (IA)
+
+    // Input Layout
+
+    InputElementDesc inputElements[] = {
+        {"POSITION", 0, Format::RGB_Float32, offsetof(Model::Vertex, position) },
+        {"NORMAL",   0, Format::RGB_Float32, offsetof(Model::Vertex, normal) },
+        {"UV",       0, Format::RG_Float32,  offsetof(Model::Vertex, uv) },
+    };
+    auto inputLayout = gRenderer->createInputLayout(
+        &inputElements[0],
+        3);
+    if(!inputLayout) return FAILURE;
+
+    // Depth-Stencil Test (DS)
+    {
+        TextureResource::Desc depthBufferDesc = gRenderer->getSwapChainTextureDesc();
+        depthBufferDesc.format = Format::D_Float32;
+        depthBufferDesc.setDefaults(Resource::Usage::DepthWrite);
+
+        auto depthTexture = gRenderer->createTextureResource(
+            Resource::Usage::DepthWrite,
+            depthBufferDesc);
+        if(!depthTexture) return FAILURE;
+
+        ResourceView::Desc textureViewDesc;
+        textureViewDesc.type = ResourceView::Type::DepthStencil;
+        auto depthTarget = gRenderer->createTextureView(depthTexture, textureViewDesc);
+        if (!depthTarget) return FAILURE;
+
+        gDepthTarget = depthTarget;
+    }
+
+    // Shaders (VS, PS, ...)
+
+    auto shaderLibrary = loadShaderLibrary(gRenderer, "shaders.slang");
+    if(!shaderLibrary) return FAILURE;
+
+    auto program = loadProgram(shaderLibrary, "vertexMain", "fragmentMain");
+    if(!program) return FAILURE;
+
+//    ShaderProgram* shaderProgram = loadShaderProgram(gRenderer);
+//    if(!shaderProgram) return FAILURE;
+
+    // We need to load reflection information for the types
+    // tha are used inside of our Slang parameter blocks,
+    // so lets do that here.
+
+    gPerViewParameterBlockLayout = getParameterBlockLayout(
+        shaderLibrary, "PerView");
+    SimpleMaterial::gParameterBlockLayout = getParameterBlockLayout(
+        shaderLibrary, "SimpleMaterial");
+    gPerModelParameterBlockLayout = getParameterBlockLayout(
+        shaderLibrary, "PerModel");
+
+
+    {
+        RefPtr<Effect> effect = new Effect();
+
+        effect->program = program;
+        effect->inputLayout = inputLayout;
+        effect->renderTargetCount = 1;
+
+        gEffect = effect;
+    }
+
+    // Load model(s)
+
+    loadModel(gRenderer, "CornellBox-Original.obj", ModelLoader::LoadFlag::FlipWinding);
+//    loadModel(gRenderer, "cube.obj");
+//    loadModel(gRenderer, "teapot.obj");
+    loadModel(gRenderer, "bumpy-teapot.obj", ModelLoader::LoadFlag::FlipWinding, 0.01f);
+
+    // Once we've initialized all the graphics API objects,
+    // it is time to show our application window and start rendering.
+
+    showWindow(gWindow);
+
+    return OKAY;
+}
+
+
 
 void renderFrame()
 {
@@ -881,9 +885,7 @@ void renderFrame()
 
     for(auto& model : gModels)
     {
-        UInt vertexStride = sizeof(Model::Vertex);
-        UInt vertexBufferOffset = 0;
-        gRenderer->setVertexBuffers(0, 1, &model->vertexBuffer, &vertexStride, &vertexBufferOffset);
+        gRenderer->setVertexBuffer(0, model->vertexBuffer, sizeof(Model::Vertex));
 
         gRenderer->setIndexBuffer(model->indexBuffer, Format::R_UInt32);
 
@@ -940,23 +942,26 @@ void finalize()
     // TODO: Proper cleanup.
 }
 
+};
+
 // This "inner" main function is used by the platform abstraction
 // layer to deal with differences in how an entry point needs
 // to be defined for different platforms.
 //
 void innerMain(ApplicationContext* context)
 {
-    if(initialize() != OKAY)
+    ModelViewer app;
+    if(SLANG_FAILED(app.initialize()))
     {
         exitApplication(context, 1);
     }
 
     while(dispatchEvents(context))
     {
-        renderFrame();
+        app.renderFrame();
     }
 
-    finalize();
+    app.finalize();
 }
 
 // This macro instantiates an appropriate main function to

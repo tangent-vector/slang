@@ -311,8 +311,8 @@ protected:
             ResourceView*   textureView,
             SamplerState*   sampler) override;
 
-        D3D12Renderer*              m_renderer;
-        DescriptorSetLayoutImpl*    m_layout;
+        RefPtr<D3D12Renderer>           m_renderer;
+        RefPtr<DescriptorSetLayoutImpl> m_layout;
 
         D3D12DescriptorHeap*        m_resourceHeap = nullptr;
         D3D12DescriptorHeap*        m_samplerHeap = nullptr;

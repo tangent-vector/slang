@@ -92,7 +92,7 @@ RefPtr<ShaderProgram> ShaderCompiler::compileProgram(
     }
 
 
-    ShaderProgram * shaderProgram = nullptr;
+    RefPtr<ShaderProgram> shaderProgram;
     Slang::List<const char*> rawTypeNames;
     for (auto typeName : request.entryPointTypeArguments)
         rawTypeNames.Add(typeName.Buffer());

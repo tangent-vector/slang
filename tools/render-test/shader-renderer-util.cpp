@@ -146,7 +146,7 @@ static SamplerState::Desc _calcSamplerDesc(const InputSamplerDesc& srcDesc)
     return dstDesc;
 }
 
-static SamplerState* _createSamplerState(
+static RefPtr<SamplerState> _createSamplerState(
     Renderer*               renderer,
     const InputSamplerDesc& srcDesc)
 {
@@ -283,7 +283,7 @@ static SamplerState* _createSamplerState(
     descriptorSetLayoutDesc.slotRangeCount = slotRangeDescs.Count();
     descriptorSetLayoutDesc.slotRanges = slotRangeDescs.Buffer();
 
-    DescriptorSetLayout* descriptorSetLayout = renderer->createDescriptorSetLayout(descriptorSetLayoutDesc);
+    auto descriptorSetLayout = renderer->createDescriptorSetLayout(descriptorSetLayoutDesc);
     if(!descriptorSetLayout) return SLANG_FAIL;
 
     List<PipelineLayout::DescriptorSetDesc> pipelineDescriptorSets;
@@ -294,10 +294,10 @@ static SamplerState* _createSamplerState(
     pipelineLayoutDesc.descriptorSetCount = pipelineDescriptorSets.Count();
     pipelineLayoutDesc.descriptorSets = pipelineDescriptorSets.Buffer();
 
-    PipelineLayout* pipelineLayout = renderer->createPipelineLayout(pipelineLayoutDesc);
+    auto pipelineLayout = renderer->createPipelineLayout(pipelineLayoutDesc);
     if(!pipelineLayout) return SLANG_FAIL;
 
-    DescriptorSet* descriptorSet = renderer->createDescriptorSet(descriptorSetLayout);
+    auto descriptorSet = renderer->createDescriptorSet(descriptorSetLayout);
     if(!descriptorSet) return SLANG_FAIL;
 
     List<BindingStateImpl::OutputBinding> outputBindings;

@@ -185,7 +185,7 @@ RefPtr<TextureResource> loadTextureImage(
     initData.subResources = &subresourceInitData[0];
     initData.mipRowStrides = &mipRowStrides[0];
 
-    TextureResource* texture = renderer->createTextureResource(
+    auto texture = renderer->createTextureResource(
         Resource::Usage::PixelShaderResource,
         desc,
         &initData);

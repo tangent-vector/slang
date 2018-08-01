@@ -12,8 +12,8 @@ struct ModelLoader
 {
     struct MaterialData
     {
-        glm::vec3           diffuseColor;
-        TextureResource*    diffuseMap;
+        glm::vec3                   diffuseColor;
+        RefPtr<TextureResource>     diffuseMap;
     };
 
     struct Vertex
@@ -35,13 +35,13 @@ struct ModelLoader
 
     struct ModelData
     {
-        BufferResource*     vertexBuffer;
-        BufferResource*     indexBuffer;
-        PrimitiveTopology   primitiveTopology;
-        int                 vertexCount;
-        int                 indexCount;
-        int                 meshCount;
-        void* const*        meshes;
+        RefPtr<BufferResource>  vertexBuffer;
+        RefPtr<BufferResource>  indexBuffer;
+        PrimitiveTopology       primitiveTopology;
+        int                     vertexCount;
+        int                     indexCount;
+        int                     meshCount;
+        void* const*            meshes;
     };
 
     struct ICallbacks
@@ -61,10 +61,10 @@ struct ModelLoader
         FlipWinding = 1 << 0,
     };
 
-    ICallbacks* callbacks = nullptr;
-    Renderer*   renderer = nullptr;
-    LoadFlags   loadFlags = 0;
-    float       scale = 1.0f;
+    ICallbacks*         callbacks = nullptr;
+    RefPtr<Renderer>    renderer;
+    LoadFlags           loadFlags = 0;
+    float               scale = 1.0f;
 
     Result load(char const* inputPath, void** outModel);
 };
