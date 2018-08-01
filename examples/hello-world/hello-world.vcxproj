@@ -19,10 +19,10 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{6AA1E818-D6D8-30B0-DFE2-94D34B9957A9}</ProjectGuid>
+    <ProjectGuid>{5CF41E7B-4883-A844-F1A1-BC3FDD0FB9EA}</ProjectGuid>
     <IgnoreWarnCompileDuplicatedFilename>true</IgnoreWarnCompileDuplicatedFilename>
     <Keyword>Win32Proj</Keyword>
-    <RootNamespace>01-hello-world</RootNamespace>
+    <RootNamespace>hello-world</RootNamespace>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -68,29 +68,29 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
     <OutDir>..\..\bin\windows-x86\debug\</OutDir>
-    <IntDir>..\..\intermediate\windows-x86\debug\01-hello-world\</IntDir>
-    <TargetName>01-hello-world</TargetName>
+    <IntDir>..\..\intermediate\windows-x86\debug\hello-world\</IntDir>
+    <TargetName>hello-world</TargetName>
     <TargetExt>.exe</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
     <OutDir>..\..\bin\windows-x64\debug\</OutDir>
-    <IntDir>..\..\intermediate\windows-x64\debug\01-hello-world\</IntDir>
-    <TargetName>01-hello-world</TargetName>
+    <IntDir>..\..\intermediate\windows-x64\debug\hello-world\</IntDir>
+    <TargetName>hello-world</TargetName>
     <TargetExt>.exe</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
     <OutDir>..\..\bin\windows-x86\release\</OutDir>
-    <IntDir>..\..\intermediate\windows-x86\release\01-hello-world\</IntDir>
-    <TargetName>01-hello-world</TargetName>
+    <IntDir>..\..\intermediate\windows-x86\release\hello-world\</IntDir>
+    <TargetName>hello-world</TargetName>
     <TargetExt>.exe</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
     <OutDir>..\..\bin\windows-x64\release\</OutDir>
-    <IntDir>..\..\intermediate\windows-x64\release\01-hello-world\</IntDir>
-    <TargetName>01-hello-world</TargetName>
+    <IntDir>..\..\intermediate\windows-x64\release\hello-world\</IntDir>
+    <TargetName>hello-world</TargetName>
     <TargetExt>.exe</TargetExt>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">

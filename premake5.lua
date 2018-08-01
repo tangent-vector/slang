@@ -277,7 +277,7 @@ end
 -- actual projects quite simply. For example, here is the entire
 -- declaration of the "Hello, World" example project:
 --
-example "01-hello-world"
+example "hello-world"
 --
 -- Note how we are calling our custom `example()` subroutine with
 -- the same syntax sugar that Premake usually advocates for their
@@ -285,8 +285,8 @@ example "01-hello-world"
 -- a kind of specialized "subclass" of `project`
 --
 
--- Let's go ahead and set up the projects for our other examples now.
-example "02-model-viewer"
+-- Let's go ahead and set up the projects for our other example now.
+example "model-viewer"
 
 
 -- Most of the other projects have more interesting configuration going
