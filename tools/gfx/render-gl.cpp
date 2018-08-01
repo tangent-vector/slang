@@ -903,7 +903,8 @@ Result GLRenderer::createBufferResource(Resource::Usage initialUsage, const Buff
 
     glBufferData(target, descIn.sizeInBytes, initData, usage);
 
-    *outResource = new BufferResourceImpl(initialUsage, desc, this, bufferID, target);
+    RefPtr<BufferResourceImpl> resourceImpl = new BufferResourceImpl(initialUsage, desc, this, bufferID, target);
+    *outResource = resourceImpl.detach();
     return SLANG_OK;
 }
 
