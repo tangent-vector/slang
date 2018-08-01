@@ -1,7 +1,11 @@
 // main.cpp
 
 // This file implements an extremely simple example of loading and
-// executing a Slang shader program.
+// executing a Slang shader program. This is primarily an example
+// of how to use Slang as a "drop-in" replacement for an existing
+// HLSL compiler like the `D3DCompile` API. More advanced usage
+// of advanced Slang language and API features is left to the
+// next example.
 //
 // The comments in the file will attempt to explain concepts as
 // they are introduced.

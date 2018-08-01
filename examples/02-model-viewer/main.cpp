@@ -94,7 +94,7 @@ RefPtr<ShaderLibrary> loadShaderLibrary(Renderer* renderer, char const* inputPat
 
     auto slangReflection = (slang::ShaderReflection*) spGetReflection(slangRequest);
 
-    ShaderLibrary* library = new ShaderLibrary();
+    RefPtr<ShaderLibrary> library = new ShaderLibrary();
     library->renderer = renderer;
     library->inputPath = inputPath;
     library->slangRequest = slangRequest;
@@ -122,7 +122,7 @@ RefPtr<EntryPoint> loadEntryPointX(
     case SLANG_STAGE_FRAGMENT:  apiStage = StageType::Fragment; break;
     }
 
-    EntryPoint* entryPoint = new EntryPoint();
+    RefPtr<EntryPoint> entryPoint = new EntryPoint();
     entryPoint->name = name;
     entryPoint->slangStage = slangEntryPoint->getStage();
     entryPoint->apiStage = apiStage;
@@ -136,7 +136,7 @@ RefPtr<Program> loadProgram(
 {
     auto slangReflection = library->slangReflection;
 
-    Program* program = new Program();
+    RefPtr<Program> program = new Program();
     program->shaderLibrary = library;
 
     for(int ee = 0; ee < entryPointCount; ++ee)
@@ -300,7 +300,7 @@ RefPtr<ParameterBlockLayout> getParameterBlockLayout(
 
     auto descriptorSetLayout = renderer->createDescriptorSetLayout(descriptorSetLayoutDesc);
 
-    auto parameterBlockLayout = new ParameterBlockLayout();
+    RefPtr<ParameterBlockLayout> parameterBlockLayout = new ParameterBlockLayout();
     parameterBlockLayout->renderer = renderer;
     parameterBlockLayout->primaryConstantBufferSize = primaryConstantBufferSize;
     parameterBlockLayout->slangTypeLayout = typeLayout;
@@ -361,9 +361,9 @@ RefPtr<ParameterBlockLayout> SimpleMaterial::gParameterBlockLayout;
 
 struct Mesh : RefObject 
 {
-    Material* material;
-    int firstIndex;
-    int indexCount;
+    RefPtr<Material>    material;
+    int                 firstIndex;
+    int                 indexCount;
 };
 
 struct Model : RefObject
@@ -445,15 +445,15 @@ struct RenderContext
 private:
     enum { kMaxParameterBlocks = 8 };
 
-    Renderer*                       renderer = nullptr;
-    Effect*                         effect = nullptr;
+    RefPtr<Renderer>                renderer;
+    RefPtr<Effect>                  effect;
     RefPtr<ParameterBlock>          parameterBlocks[kMaxParameterBlocks];
     RefPtr<ParameterBlockLayout>    parameterBlockLayouts[kMaxParameterBlocks];
 
+    RefPtr<PipelineLayout>         currentPipelineLayout;
+
     bool                    pipelineStateDirty = true;
     int                     minDirtyBlockBinding = 0;
-
-    RefPtr<PipelineLayout>         currentPipelineLayout;
 
 public:
     RenderContext(Renderer* renderer)
@@ -699,7 +699,7 @@ void loadModel(
         return;
     }
 
-    gModels.emplace_back(model);
+    gModels.push_back(model);
 }
 
 Result initialize()
@@ -792,10 +792,10 @@ Result initialize()
 
     // Load model(s)
 
-    loadModel(gRenderer, "CornellBox-Original.obj", ModelLoader::LoadFlag::FlipWinding);
-//    loadModel(gRenderer, "cube.obj");
+    loadModel(gRenderer, "cube.obj");
+//    loadModel(gRenderer, "CornellBox-Original.obj", ModelLoader::LoadFlag::FlipWinding);
 //    loadModel(gRenderer, "teapot.obj");
-    loadModel(gRenderer, "bumpy-teapot.obj", ModelLoader::LoadFlag::FlipWinding, 0.01f);
+//    loadModel(gRenderer, "bumpy-teapot.obj", ModelLoader::LoadFlag::FlipWinding, 0.01f);
 
     // Once we've initialized all the graphics API objects,
     // it is time to show our application window and start rendering.
@@ -939,7 +939,7 @@ void renderFrame()
 
 void finalize()
 {
-    // TODO: Proper cleanup.
+    SimpleMaterial::gParameterBlockLayout = nullptr;
 }
 
 };
