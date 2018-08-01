@@ -458,8 +458,8 @@ SlangResult D3D11Renderer::initialize(const Desc& desc, void* inWindowHandle)
     {
         const HRESULT hr = D3D11CreateDeviceAndSwapChain_(
             nullptr,                    // adapter (use default)
-//            D3D_DRIVER_TYPE_REFERENCE,
-            D3D_DRIVER_TYPE_HARDWARE,
+            D3D_DRIVER_TYPE_REFERENCE,
+//            D3D_DRIVER_TYPE_HARDWARE,
             nullptr,                    // software
             deviceFlags,
             &featureLevels[ii],
@@ -483,6 +483,12 @@ SlangResult D3D11Renderer::initialize(const Desc& desc, void* inWindowHandle)
         // We must have a swap chain
         break;
     }
+
+    // TODO: Add support for debugging to help detect leaks:
+    //
+    //      ComPtr<ID3D11Debug> gDebug;
+    //      m_device->QueryInterface(IID_PPV_ARGS(gDebug.writeRef()));
+    //
 
     // After we've created the swap chain, we can request a pointer to the
     // back buffer as a D3D11 texture, and create a render-target view from it.
