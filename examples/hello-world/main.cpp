@@ -70,7 +70,7 @@ struct HelloWorld
 // Slang API. This function is representative of code that a user
 // might write to integrate Slang into their renderer/engine.
 //
-RefPtr<ShaderProgram> loadShaderProgram(Renderer* renderer)
+RefPtr<gfx::ShaderProgram> loadShaderProgram(gfx::Renderer* renderer)
 {
     // First, we need to create a "session" for interacting with the Slang
     // compiler. This scopes all of our application's interactions
@@ -78,10 +78,12 @@ RefPtr<ShaderProgram> loadShaderProgram(Renderer* renderer)
     // Slang to load and validate its standard library, so this is a
     // somewhat heavy-weight operation. When possible, an application
     // should try to re-use the same session across multiple compiles.
+    //
     SlangSession* slangSession = spCreateSession(NULL);
 
     // A compile request represents a single invocation of the compiler,
     // to process some inputs and produce outputs (or errors).
+    //
     SlangCompileRequest* slangRequest = spCreateCompileRequest(slangSession);
 
     // We would like to request a single target (output) format: DirectX shader bytecode (DXBC)
@@ -89,6 +91,7 @@ RefPtr<ShaderProgram> loadShaderProgram(Renderer* renderer)
 
     // We will specify the desired "profile" for this one target in terms of the
     // DirectX "shader model" that should be supported.
+    //
     spSetTargetProfile(slangRequest, targetIndex, spFindProfile(slangSession, "sm_4_0"));
 
     // A compile request can include one or more "translation units," which more or
@@ -98,10 +101,12 @@ RefPtr<ShaderProgram> loadShaderProgram(Renderer* renderer)
     // For this example, our code will all be in the Slang language. The user may
     // also specify HLSL input here, but that currently doesn't affect the compiler's
     // behavior much.
+    //
     int translationUnitIndex = spAddTranslationUnit(slangRequest, SLANG_SOURCE_LANGUAGE_SLANG, nullptr);
 
     // We will load source code for our translation unit from the file `shaders.slang`.
     // There are also variations of this API for adding source code from application-provided buffers.
+    //
     spAddTranslationUnitSourceFile(slangRequest, translationUnitIndex, "shaders.slang");
 
     // Next we will specify the entry points we'd like to compile.
@@ -147,6 +152,7 @@ RefPtr<ShaderProgram> loadShaderProgram(Renderer* renderer)
     // If you are using a D3D API, then your application may want to
     // take advantage of the fact taht these blobs are binary compatible
     // with the `ID3DBlob`, `ID3D10Blob`, etc. interfaces.
+    //
 
     ISlangBlob* vertexShaderBlob = nullptr;
     spGetEntryPointCodeBlob(slangRequest, vertexIndex, 0, &vertexShaderBlob);
@@ -156,13 +162,14 @@ RefPtr<ShaderProgram> loadShaderProgram(Renderer* renderer)
 
     // We extract the begin/end pointers to the output code buffers
     // using operations on the `ISlangBlob` interface.
+    //
     char const* vertexCode = (char const*) vertexShaderBlob->getBufferPointer();
     char const* vertexCodeEnd = vertexCode + vertexShaderBlob->getBufferSize();
 
     char const* fragmentCode = (char const*) fragmentShaderBlob->getBufferPointer();
     char const* fragmentCodeEnd = fragmentCode + fragmentShaderBlob->getBufferSize();
 
-    // Once we have extract the output blobs, it is safe to destroy
+    // Once we have extracted the output blobs, it is safe to destroy
     // the compile request and even the session.
     //
     spDestroyCompileRequest(slangRequest);
@@ -174,14 +181,14 @@ RefPtr<ShaderProgram> loadShaderProgram(Renderer* renderer)
     // Reminder: this section does not involve the Slang API at all.
     //
 
-    ShaderProgram::KernelDesc kernelDescs[] =
+    gfx::ShaderProgram::KernelDesc kernelDescs[] =
     {
-        { StageType::Vertex,    vertexCode,     vertexCodeEnd },
-        { StageType::Fragment,  fragmentCode,   fragmentCodeEnd },
+        { gfx::StageType::Vertex,    vertexCode,     vertexCodeEnd },
+        { gfx::StageType::Fragment,  fragmentCode,   fragmentCodeEnd },
     };
 
-    ShaderProgram::Desc programDesc;
-    programDesc.pipelineType = PipelineType::Graphics;
+    gfx::ShaderProgram::Desc programDesc;
+    programDesc.pipelineType = gfx::PipelineType::Graphics;
     programDesc.kernels = &kernelDescs[0];
     programDesc.kernelCount = 2;
 
@@ -218,20 +225,25 @@ int gWindowHeight = 768;
 // of them come from the utility library we are using to simplify
 // building an example program.
 //
-ApplicationContext* gAppContext;
-Window* gWindow;
-RefPtr<Renderer> gRenderer;
-RefPtr<BufferResource> gConstantBuffer;
+gfx::ApplicationContext*    gAppContext;
+gfx::Window*                gWindow;
+RefPtr<gfx::Renderer>       gRenderer;
+RefPtr<gfx::BufferResource> gConstantBuffer;
 
-RefPtr<PipelineLayout> gPipelineLayout;
-RefPtr<PipelineState>  gPipelineState;
-RefPtr<DescriptorSet>  gDescriptorSet;
+RefPtr<gfx::PipelineLayout> gPipelineLayout;
+RefPtr<gfx::PipelineState>  gPipelineState;
+RefPtr<gfx::DescriptorSet>  gDescriptorSet;
 
-RefPtr<BufferResource> gVertexBuffer;
+RefPtr<gfx::BufferResource> gVertexBuffer;
 
-SlangResult initialize()
+// Now that we've covered the function that actually loads and
+// compiles our Slang shade code, we can go through the rest
+// of the application code without as much commentary.
+//
+Result initialize()
 {
     // Create a window for our application to render into.
+    //
     WindowDesc windowDesc;
     windowDesc.title = "Hello, World!";
     windowDesc.width = gWindowWidth;
@@ -250,15 +262,17 @@ SlangResult initialize()
     rendererDesc.width = gWindowWidth;
     rendererDesc.height = gWindowHeight;
     {
-        const SlangResult res = gRenderer->initialize(rendererDesc, getPlatformWindowHandle(gWindow));
+        Result res = gRenderer->initialize(rendererDesc, getPlatformWindowHandle(gWindow));
         if(SLANG_FAILED(res)) return res;
     }
 
     // Create a constant buffer for passing the model-view-projection matrix.
     //
-    // TODO: A future version of this example will show how to
-    // use the Slang reflection API to query the required size
-    // for the data in this constant buffer.
+    // Note: the Slang API supports reflection which could be used
+    // to query the size of the `Uniform` constant buffer, but we
+    // will not deal with that here because Slang also supports
+    // applications that want to hard-code things like memory
+    // layout and parameter locations.
     //
     int constantBufferSize = 16 * sizeof(float);
 
@@ -272,10 +286,11 @@ SlangResult initialize()
         constantBufferDesc);
     if(!gConstantBuffer) return SLANG_FAIL;
 
-    // Input Assembler (IA)
-
-    // Input Layout
-
+    // Now we will create objects needed to configur the "input assembler"
+    // (IA) stage of the D3D pipeline.
+    //
+    // First, we create an input layout:
+    //
     InputElementDesc inputElements[] = {
         { "POSITION", 0, Format::RGB_Float32, offsetof(Vertex, position) },
         { "COLOR",    0, Format::RGB_Float32, offsetof(Vertex, color) },
@@ -285,97 +300,96 @@ SlangResult initialize()
         2);
     if(!inputLayout) return SLANG_FAIL;
 
-    // Vertex Buffer
-
-
-
+    // Next we allocate a vertex buffer for our pre-initialized
+    // vertex data.
+    //
     BufferResource::Desc vertexBufferDesc;
     vertexBufferDesc.init(kVertexCount * sizeof(Vertex));
     vertexBufferDesc.setDefaults(Resource::Usage::VertexBuffer);
-
     gVertexBuffer = gRenderer->createBufferResource(
         Resource::Usage::VertexBuffer,
         vertexBufferDesc,
         &kVertexData[0]);
     if(!gVertexBuffer) return SLANG_FAIL;
 
-    // Shaders (VS, PS, ...)
-
+    // Now we will use our `loadShaderProgram` function to load
+    // the code from `shaders.slang` into the graphics API.
+    //
     RefPtr<ShaderProgram> shaderProgram = loadShaderProgram(gRenderer);
     if(!shaderProgram) return SLANG_FAIL;
 
-    // Resource binding state
-
-    RefPtr<DescriptorSetLayout> descriptorSetLayout = nullptr;
+    // Our example graphics API usess a "modern" D3D12/Vulkan style
+    // of resource binding, so now we will dive into describing and
+    // allocating "descriptor sets."
+    //
+    // First, we need to construct a descriptor set *layout*.
+    //
+    DescriptorSetLayout::SlotRangeDesc slotRanges[] =
     {
-        DescriptorSetLayout::SlotRangeDesc slotRanges[] =
-        {
-            DescriptorSetLayout::SlotRangeDesc(DescriptorSlotType::UniformBuffer),
-        };
+        DescriptorSetLayout::SlotRangeDesc(DescriptorSlotType::UniformBuffer),
+    };
+    DescriptorSetLayout::Desc descriptorSetLayoutDesc;
+    descriptorSetLayoutDesc.slotRangeCount = 1;
+    descriptorSetLayoutDesc.slotRanges = &slotRanges[0];
+    auto descriptorSetLayout = gRenderer->createDescriptorSetLayout(descriptorSetLayoutDesc);
+    if(!descriptorSetLayout) return SLANG_FAIL;
 
-        DescriptorSetLayout::Desc descriptorSetLayoutDesc;
-        descriptorSetLayoutDesc.slotRangeCount = 1;
-        descriptorSetLayoutDesc.slotRanges = &slotRanges[0];
+    // Next we will allocate a pipeline layout, which specifies
+    // that we will render with only a single descriptor set bound.
+    //
 
-        descriptorSetLayout = gRenderer->createDescriptorSetLayout(descriptorSetLayoutDesc);
-        if(!descriptorSetLayout) return SLANG_FAIL;
-    }
-
+    PipelineLayout::DescriptorSetDesc descriptorSets[] =
     {
-        PipelineLayout::DescriptorSetDesc descriptorSets[] =
-        {
-            PipelineLayout::DescriptorSetDesc( descriptorSetLayout ),
-        };
+        PipelineLayout::DescriptorSetDesc( descriptorSetLayout ),
+    };
+    PipelineLayout::Desc pipelineLayoutDesc;
+    pipelineLayoutDesc.renderTargetCount = 1;
+    pipelineLayoutDesc.descriptorSetCount = 1;
+    pipelineLayoutDesc.descriptorSets = &descriptorSets[0];
+    auto pipelineLayout = gRenderer->createPipelineLayout(pipelineLayoutDesc);
+    if(!pipelineLayout) return SLANG_FAIL;
 
-        PipelineLayout::Desc pipelineLayoutDesc;
-        pipelineLayoutDesc.renderTargetCount = 1;
-        pipelineLayoutDesc.descriptorSetCount = 1;
-        pipelineLayoutDesc.descriptorSets = &descriptorSets[0];
+    gPipelineLayout = pipelineLayout;
 
-        auto pipelineLayout = gRenderer->createPipelineLayout(pipelineLayoutDesc);
-        if(!pipelineLayout) return SLANG_FAIL;
+    // Once we have the descriptor set layout, we can allocate
+    // and fill in a descriptor set to hold our parameters.
+    //
+    auto descriptorSet = gRenderer->createDescriptorSet(descriptorSetLayout);
+    if(!descriptorSet) return SLANG_FAIL;
 
-        gPipelineLayout = pipelineLayout;
-    }
+    descriptorSet->setConstantBuffer(0, 0, gConstantBuffer);
 
-    // Descriptor Set
-    {
-        auto descriptorSet = gRenderer->createDescriptorSet(descriptorSetLayout);
-        if(!descriptorSet) return SLANG_FAIL;
+    gDescriptorSet = descriptorSet;
 
-        descriptorSet->setConstantBuffer(0, 0, gConstantBuffer);
+    // Following the D3D12/Vulkan style of API, we need a pipeline state object
+    // (PSO) to encapsulate the configuration of the overall graphics pipeline.
+    //
+    GraphicsPipelineStateDesc desc;
+    desc.pipelineLayout = gPipelineLayout;
+    desc.inputLayout = inputLayout;
+    desc.program = shaderProgram;
+    desc.renderTargetCount = 1;
+    auto pipelineState = gRenderer->createGraphicsPipelineState(desc);
+    if(!pipelineState) return SLANG_FAIL;
 
-        gDescriptorSet = descriptorSet;
-    }
-
-    // Pipeline State Object (PSO)
-    {
-        GraphicsPipelineStateDesc desc;
-
-        desc.pipelineLayout = gPipelineLayout;
-        desc.inputLayout = inputLayout;
-        desc.program = shaderProgram;
-        desc.renderTargetCount = 1;
-
-        // ...
-
-        auto pipelineState = gRenderer->createGraphicsPipelineState(desc);
-        if(!pipelineState) return SLANG_FAIL;
-
-        gPipelineState = pipelineState;
-    }
+    gPipelineState = pipelineState;
 
     // Once we've initialized all the graphics API objects,
     // it is time to show our application window and start rendering.
-
+    //
     showWindow(gWindow);
 
     return SLANG_OK;
 }
 
+// With the initialization out of the way, we can now turn our attention
+// to the per-frame rendering logic. As with the initialization, there is
+// nothing really Slang-specific here, so the commentary doesn't need
+// to be very detailed.
+//
 void renderFrame()
 {
-    // Clear our framebuffer (color target only)
+    // We start by clearing our framebuffer, which only has a color target.
     //
     static const float kClearColor[] = { 0.25, 0.25, 0.25, 1.0 };
     gRenderer->setClearColor(kClearColor);
@@ -398,24 +412,29 @@ void renderFrame()
         gRenderer->unmap(gConstantBuffer);
     }
 
+    // Now we configure our graphics pipeline state by setting the
+    // PSO, binding our descriptor set (which references the
+    // constant buffer that we wrote to above), and setting
+    // some additional bits of state, before drawing our triangle.
+    //
     gRenderer->setPipelineState(PipelineType::Graphics, gPipelineState);
-
-    gRenderer->setPrimitiveTopology(PrimitiveTopology::TriangleList);
-
-    gRenderer->setVertexBuffer(0, gVertexBuffer, sizeof(Vertex));
-
     gRenderer->setDescriptorSet(PipelineType::Graphics, gPipelineLayout, 0, gDescriptorSet);
 
-    //
+    gRenderer->setVertexBuffer(0, gVertexBuffer, sizeof(Vertex));
+    gRenderer->setPrimitiveTopology(PrimitiveTopology::TriangleList);
 
     gRenderer->draw(3);
 
+    // With that, we are done drawing for one frame, and ready for the next.
+    //
     gRenderer->presentFrame();
 }
 
 void finalize()
 {
-    // TODO: Proper cleanup.
+    // All of our graphics API objects are reference-counted,
+    // so there isn't any additional cleanup work that needs
+    // to be done in this simple example.
 }
 
 };
@@ -426,6 +445,10 @@ void finalize()
 //
 void innerMain(ApplicationContext* context)
 {
+    // We construct an instance of our example application
+    // `struct` type, and then walk through the lifecyle
+    // of the application.
+
     HelloWorld app;
 
     if (SLANG_FAILED(app.initialize()))
