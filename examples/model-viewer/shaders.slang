@@ -22,6 +22,7 @@
 struct PerView
 {
     float4x4    viewProjection;
+    float3      eyePosition;
 
     float3      lightDir;
     float3      lightColor;
@@ -38,6 +39,12 @@ struct PerModel
 };
 ParameterBlock<PerModel>    gModelParams;
 
+struct SurfaceGeometry
+{
+    float3 position;
+    float3 normal;
+    float2 uv;
+};
 
 // Next, we are going to demonstrate a simplistic interface
 // for surface materials. As written, materials can only
@@ -45,9 +52,15 @@ ParameterBlock<PerModel>    gModelParams;
 // of a surface; a more advanced example would fold
 // the entire BRDF into the material interface.
 //
+interface IBRDF
+{
+    float3 evaluate(float3 wi, float3 wo, float3 N);
+};
 interface IMaterial
 {
-    float3 getDiffuseColor();
+    associatedtype BRDF : IBRDF;
+
+    BRDF prepare(SurfaceGeometry geometry);
 };
 
 // In order for our shader to be able to take a material
@@ -74,13 +87,36 @@ ParameterBlock<TMaterial>   gMaterial;
 // of the `IMaterial` interface, which is a simple material
 // with a uniform diffuse color:
 //
+struct BlinnPhong : IBRDF
+{
+    float3 kd;
+    float3 ks;
+    float specularity;
+
+    float3 evaluate(float3 V, float3 L, float3 N)
+    {
+        float nDotL = saturate(dot(N, L));
+        float3 H = normalize(L + V);
+        float nDotH = saturate(dot(N, H));
+
+        return kd*nDotL + ks*pow(nDotH, specularity);
+    }
+};
 struct SimpleMaterial : IMaterial
 {
-    float3 diffuseColor;
+    typedef BlinnPhong BRDF;
 
-    float3 getDiffuseColor()
+    float3 diffuseColor;
+    float3 specularColor;
+    float specularity;
+
+    BlinnPhong prepare(SurfaceGeometry geometry)
     {
-        return diffuseColor;
+        BlinnPhong brdf;
+        brdf.kd = diffuseColor;
+        brdf.ks = specularColor;
+        brdf.specularity = specularity;
+        return brdf;
     }
 };
 //
@@ -167,11 +203,18 @@ VertexStageOutput vertexMain(
 float4 fragmentMain(
     CoarseVertex coarseVertex : CoarseVertex) : SV_Target
 {
-    float3 N = normalize(coarseVertex.worldNormal);
+    SurfaceGeometry g;
+    g.position = coarseVertex.worldPosition;
+    g.normal = normalize(coarseVertex.worldNormal);
+    g.uv = coarseVertex.uv;
+
+    TMaterial.BRDF brdf = gMaterial.prepare(g);
+
+    float3 V = normalize(gViewParams.eyePosition - g.position);
     float3 L = normalize(gViewParams.lightDir);
 
     float4 color;
-    color.xyz = gMaterial.getDiffuseColor() * max(0, dot(N, L));
+    color.xyz = gViewParams.lightColor * brdf.evaluate(V, L, g.normal);
     color.w = 1.0f;
 
     return color;
