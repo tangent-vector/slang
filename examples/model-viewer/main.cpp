@@ -602,7 +602,9 @@ struct SimpleMaterial : Material
     struct Uniforms
     {
         glm::vec3   diffuseColor;
-        float       pad;
+        float       pad0;
+        glm::vec3   specularColor;
+        float       specularity;
     };
     Uniforms uniforms;
 
@@ -681,6 +683,8 @@ RefPtr<Model> loadModel(
         {
             SimpleMaterial* material = new SimpleMaterial();
             material->uniforms.diffuseColor = data.diffuseColor;
+            material->uniforms.specularColor = data.specularColor;
+            material->uniforms.specularity = data.specularity;
 
             material->parameterBlock = material->createParameterBlock();
 
@@ -1005,13 +1009,6 @@ struct ShaderCache : RefObject
     // The shader cache is mostly just a dictionary mapping
     // variant keys to the associated variant, generated on-demand.
     //
-    // TODO: A more advanced application might support removing
-    // entries from the shader cache when effects get unloaded,
-    // or in order to respond to operations like a "hot reload"
-    // key in a development build (e.g., just clear the
-    // cache of variants and allow the ordinary loading logic
-    // to re-populate it).
-    //
     Dictionary<VariantKey, RefPtr<EffectVariant> > variants;
 
     // Getting a variant is just a matter of looking for an
@@ -1032,6 +1029,16 @@ struct ShaderCache : RefObject
 
         variants.Add(key, variant);
         return variant;
+    }
+
+    // We support clearign the shader cache, which can serve
+    // as a kind of "hot reload" action, because subsequent
+    // rendering work will need to re-compile shader variants
+    // from scratch.
+    //
+    void clear()
+    {
+        variants.Clear();
     }
 };
 
@@ -1305,17 +1312,107 @@ struct PerView
 {
     glm::mat4x4 viewProjection;
 
-    glm::vec3   lightDir;
+    glm::vec3   eyePosition;
     float       pad0;
 
-    glm::vec3   lightColor;
+    glm::vec3   lightDir;
     float       pad1;
+
+    glm::vec3   lightColor;
+    float       pad2;
 };
 struct PerModel
 {
     glm::mat4x4 modelTransform;
     glm::mat4x4 inverseTransposeModelTransform;
 };
+
+// Our "simulation" state consists of just a few values.
+//
+uint64_t lastTime = 0;
+
+glm::vec3 lightDir = normalize(glm::vec3(10, 10, 10));
+glm::vec3 lightColor = glm::vec3(1, 1, 1);
+
+glm::vec3 cameraPosition = glm::vec3(1.75, 1.25, 5);
+glm::quat cameraOrientation = glm::quat(1, glm::vec3(0));
+
+float translationScale = 0.5f;
+float rotationScale = 0.025f;
+
+
+// In order to control camera movement, we will
+// use good old WASD
+bool wPressed = false;
+bool aPressed = false;
+bool sPressed = false;
+bool dPressed = false;
+
+bool isMouseDown = false;
+float lastMouseX;
+float lastMouseY;
+
+void handleEvent(Event const& event)
+{
+    switch( event.code )
+    {
+    case EventCode::KeyDown:
+    case EventCode::KeyUp:
+        {
+            bool isDown = event.code == EventCode::KeyDown;
+            switch(event.u.key)
+            {
+            default:
+                break;
+
+            case KeyCode::W: wPressed = isDown; break;
+            case KeyCode::A: aPressed = isDown; break;
+            case KeyCode::S: sPressed = isDown; break;
+            case KeyCode::D: dPressed = isDown; break;
+            }
+        }
+        break;
+
+    case EventCode::MouseDown:
+        {
+            isMouseDown = true;
+            lastMouseX = event.u.mouse.x;
+            lastMouseY = event.u.mouse.y;
+        }
+        break;
+
+    case EventCode::MouseMoved:
+        {
+            if( isMouseDown )
+            {
+                float deltaX = event.u.mouse.x - lastMouseX;
+                float deltaY = event.u.mouse.y - lastMouseY;
+
+                cameraOrientation = glm::rotate(cameraOrientation, -deltaX * rotationScale, glm::vec3(0,1,0));
+                cameraOrientation = glm::rotate(cameraOrientation, -deltaY * rotationScale, glm::vec3(1,0,0));
+
+                cameraOrientation = normalize(cameraOrientation);
+
+                lastMouseX = event.u.mouse.x;
+                lastMouseY = event.u.mouse.y;
+            }
+        }
+        break;
+
+    case EventCode::MouseUp:
+        isMouseDown = false;
+        break;
+
+    default:
+        break;
+    }
+}
+
+static void _handleEvent(Event const& event)
+{
+    ModelViewer* app = (ModelViewer*) getUserData(event.window);
+    app->handleEvent(event);
+}
 
 // The overall initialization logic is quite similar to
 // the earlier example. The biggest difference is that we
@@ -1329,6 +1426,8 @@ Result initialize()
     windowDesc.title = "Model Viewer";
     windowDesc.width = gWindowWidth;
     windowDesc.height = gWindowHeight;
+    windowDesc.eventHandler = &_handleEvent;
+    windowDesc.userData = this;
     gWindow = createWindow(windowDesc);
 
     gRenderer = createD3D11Renderer();
@@ -1423,7 +1522,8 @@ Result initialize()
     // Support for loading more interesting/complex models will be added
     // to this example over time (although model loading is *not* the focus).
     //
-    loadAndAddModel("cube.obj", ModelLoader::LoadFlag::FlipWinding);
+    loadAndAddModel("cube.obj");
+//    loadAndAddModel("assets/breakfast_room/breakfast_room.obj", ModelLoader::LoadFlag::FlipWinding);
 
     // We will do some GUI rendering in this app, using "Dear, IMGUI",
     // so we need to do the appropriate initialization work here.
@@ -1445,47 +1545,55 @@ void renderFrame()
     // In order to see that things are rendering properly we need some
     // kind of animation, so we will compute a crude delta-time value here.
     //
-    static uint64_t lastTime = getCurrentTime();
+    if(!lastTime) lastTime = getCurrentTime();
     uint64_t currentTime = getCurrentTime();
-    float deltaTime = float(currentTime - lastTime) / float(getTimerFrequency());
+    float deltaTime = double(currentTime - lastTime) / double(getTimerFrequency());
     lastTime = currentTime;
+
+
 
     // We will use the GLM library to do the matrix math required
     // to set up our various transformation matrices.
     //
     glm::mat4x4 identity = glm::mat4x4(1.0f);
-
     glm::mat4x4 projection = glm::perspective(
         glm::radians(60.0f),
         float(gWindowWidth) / float(gWindowHeight),
         0.1f,
         1000.0f);
 
+//    glm::vec3 forward = conjugate(cameraOrientation) * glm::vec3(0, 0, -1) * cameraOrientation;
+//    glm::vec3 right = conjugate(cameraOrientation) * glm::vec3(1, 0, 0) * cameraOrientation;
+
+    glm::mat3x3 cameraOrientationMat(cameraOrientation);
+
+//    glm::vec3 forward = camerOrientationmMat * glm::vec3(0, 0, -1);
+//    glm::vec3 right = camerOrientationmMat * glm::vec3(1, 0, 0);
+    glm::vec3 forward = -cameraOrientationMat[2];
+    glm::vec3 right = cameraOrientationMat[0];
+
+    glm::vec3 movement = glm::vec3(0);
+    if(wPressed) movement += forward;
+    if(sPressed) movement -= forward;
+    if(aPressed) movement -= right;
+    if(dPressed) movement += right;
+
+    cameraPosition += deltaTime * translationScale * movement;
+
     glm::mat4x4 view = identity;
-    view = glm::lookAt(
-        glm::vec3(4, 5, -5),
-        glm::vec3(0),
-        glm::vec3(0, 1, 0));
+    view *= glm::mat4x4(inverse(cameraOrientation));
+    view = glm::translate(view, -cameraPosition);
 
     glm::mat4x4 viewProjection = projection * view;
 
-    // We set up a light source with a simple animation applied
-    // to its direction.
-    //
-    glm::vec3 lightDir = normalize(glm::vec3(10, 10, -10));
-    glm::vec3 lightColor = glm::vec3(1, 1, 1);
-    static float angle = 0.0f;
-    angle += 0.5f * deltaTime;
-    glm::mat4x4 lightTransform = identity;
-    lightTransform = rotate(lightTransform, angle, glm::vec3(0, 1, 0));
-    lightDir = glm::vec3(lightTransform * glm::vec4(lightDir, 0));
+    lightDir = normalize(lightDir);
 
     // Some of the basic rendering setup is identical to the previous example.
     //
+    gRenderer->setDepthStencilTarget(gDepthTarget);
     static const float kClearColor[] = { 0.25, 0.25, 0.25, 1.0 };
     gRenderer->setClearColor(kClearColor);
     gRenderer->clearFrame();
-    gRenderer->setDepthStencilTarget(gDepthTarget);
     gRenderer->setPrimitiveTopology(PrimitiveTopology::TriangleList);
 
     // Now we will start in on the more interesting rendering logic,
@@ -1513,6 +1621,7 @@ void renderFrame()
     if(auto perView = viewParameterBlock->mapAs<PerView>())
     {
         perView->viewProjection = viewProjection;
+        perView->eyePosition = cameraPosition;
         perView->lightDir = lightDir;
         perView->lightColor = lightColor;
 
@@ -1595,16 +1704,26 @@ void renderFrame()
         }
     }
 
-#if 0
-    ImGui::Begin("Model Viewer");
+    ImGui::Begin("Slang Model Viewer Example");
     ImGui::Text("Average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-    if (ImGui::Button("Load Model"))
+    if (ImGui::Button("Reload Shaders"))
     {
-        // need to do a file open box, and then try to open the resulting file
-
+        shaderCache->clear();
     }
+    if( ImGui::CollapsingHeader("Light") )
+    {
+        ImGui::SliderFloat3("direction", &lightDir[0], -1, 1);
+        ImGui::ColorEdit3("color", &lightColor[0]);
+    }
+    if (ImGui::CollapsingHeader("Camera"))
+    {
+        ImGui::InputFloat3("position", &cameraPosition[0]);
+        ImGui::InputFloat3("orientation[0]", &cameraOrientationMat[0][0]);
+        ImGui::InputFloat3("orientation[1]", &cameraOrientationMat[1][0]);
+        ImGui::InputFloat3("orientation[2]", &cameraOrientationMat[2][0]);
+    }
+
     ImGui::End();
-#endif
 
     gui->endFrame();
     gRenderer->presentFrame();

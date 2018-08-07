@@ -22,6 +22,7 @@
 struct PerView
 {
     float4x4    viewProjection;
+    float3      eyePosition;
 
     float3      lightDir;
     float3      lightColor;
@@ -38,16 +39,120 @@ struct PerModel
 };
 ParameterBlock<PerModel>    gModelParams;
 
+// We are now going to define a simple model for surface material shading.
+//
+// The first building block in our model will be the representation of
+// the geometry attributes of a surface as fed into the material.
+//
+struct SurfaceGeometry
+{
+    float3 position;
+    float3 normal;
 
-// Next, we are going to demonstrate a simplistic interface
-// for surface materials. As written, materials can only
-// determine how to compute the diffuse color component
-// of a surface; a more advanced example would fold
-// the entire BRDF into the material interface.
+    // TODO: tangent vectors would be the natural next thing to add here,
+    // and would be required for anisotropic materials. However, the
+    // simplistic model loading code we are currently using doesn't
+    // produce tangents...
+    //
+    //      float3 tangentU;
+    //      float3 tangentV;
+
+    // We store a single UV parameterization in these geometry attributes.
+    // A more complex renderer might need support for multiple UV sets,
+    // and indeed it might choose to use interfaces and generics to capture
+    // the different requirements that different materials impose on
+    // the available surface attributes. We won't go to that kind of
+    // trouble for such a simple example.
+    //
+    float2 uv;
+};
+//
+// Next, we want to define the fundamental concept of a refletance
+// function, so that we can use it as a building block for other
+// parts of the system. This is a case where we are trying to
+// show how a proper physically-based renderer (PBR) might
+// decompose the problem using Slang, even though our simple
+// example is *not* physically based.
+//
+interface IBRDF
+{
+    // Technically, a BRDF is only a function of the incident
+    // (`wi`) and exitant (`wo`) directions, but for simplicity
+    // we are passing in the surface normal (`N`) as well.
+    //
+    float3 evaluate(float3 wo, float3 wi, float3 N);
+};
+//
+// We can now define various implemntations of the `IBRDF` interface
+// that represent different reflectance functions we want to support.
+// For now we keep things simple by defining about the simplest
+// reflectance function we can think of: the Blinn-Phong reflectance
+// model:
+//
+struct BlinnPhong : IBRDF
+{
+    // Blinn-Phong needs diffuse and specular reflectances, plus
+    // a specular exponent value (which relates to "roughness"
+    // in more modern physically-based models).
+    //
+    float3 kd;
+    float3 ks;
+    float specularity;
+
+    // Here we implement the one requirement of the `IBRDF` interface
+    // for our concrete implementation, using a textbook definition
+    // of Blinng-Phong shading.
+    //
+    // Note: our "BRDF" definition here folds the N-dot-L term into
+    // the evlauation of the reflectance function in case there are
+    // useful algebraic simplifications this enables.
+    //
+    float3 evaluate(float3 V, float3 L, float3 N)
+    {
+        float nDotL = saturate(dot(N, L));
+        float3 H = normalize(L + V);
+        float nDotH = saturate(dot(N, H));
+
+        return kd*nDotL + ks*pow(nDotH, specularity);
+    }
+};
+//
+// It is important to note that a reflectance function is *not*
+// a "material." In most cases, a material will have spatially-varying
+// properties so that it cannot be summarized as a single `IBRDF`
+// instance.
+//
+// Thus a "material" is a value that can produce a BRDF for any point
+// on a surface (e.g., by sampling texture maps, etc.).
 //
 interface IMaterial
 {
-    float3 getDiffuseColor();
+    // Different concrete material implementations might yield BRDF
+    // values with different types. E.g., one material might yield
+    // reflectance functions using `BlinnPhong` while another uses
+    // a much more complicated/accurate representation.
+    //
+    // We encapsulate the choice of BRDF parameters/evaluation in
+    // our material interface with an "associated type." In the
+    // simplest terms, think of this as an interface requirement
+    // that is a type, instead of a method.
+    //
+    // (If you are C++-minded, you might think of this as akin to
+    // how every container provided an `iterator` type, but different
+    // containers may have different types of iterators)
+    //
+    associatedtype BRDF : IBRDF;
+
+    // For our simple example program, it is enough for a material to
+    // be able to return a BRDF given a point on the surface.
+    //
+    // A more complex implementation of material shading might also
+    // have the material return updated surface geometry to reflect
+    // the result of normal mapping, occlusion mapping, etc. or
+    // return an opacity/coverage value for partially transparent
+    // surfaces.
+    //
+    BRDF prepare(SurfaceGeometry geometry);
 };
 
 // In order for our shader to be able to take a material
@@ -70,17 +175,49 @@ type_param TMaterial : IMaterial;
 //
 ParameterBlock<TMaterial>   gMaterial;
 
-// For now, we will define only a single implementation
-// of the `IMaterial` interface, which is a simple material
-// with a uniform diffuse color:
+// We will now define a trivial first implementation of the material
+// interface, which uses our Blinn-Phong BRDF with uniform values
+// for its parameters.
+//
+// Note that this implemetnation is being provided *after* the
+// shader parameter `gMaterial` is declared, so that there is no
+// assumption in the shader code that `gMaterial` will be plugged
+// in using an instance of `SimpleMaterial`
+//
 //
 struct SimpleMaterial : IMaterial
 {
+    // We declare the properties we need as fields of the material type.
+    // When `SimpleMaterial` is used for `TMaterial` above, then
+    // `gMaterial` will be a `ParameterBlock<SimpleMaterial>`, and these
+    // parameters will be allocated to a constant buffer that is part of
+    // that parameter block.
+    //
+    // TODO: A future version of this example will include texture parameters
+    // here to show that they are declared just like simple uniforms.
+    //
     float3 diffuseColor;
+    float3 specularColor;
+    float specularity;
 
-    float3 getDiffuseColor()
+    // To satisfy the requirements of the `IMaterial` interface, our
+    // material type needs to provide a suitable `BRDF` type. We
+    // do this by using a simple `typedef`, although a nested
+    // `struct` type can also satisfy an assocaited type requirement.
+    //
+    // A future version of the Slang compiler may allow the "right"
+    // associated type definition to be inferred from the signature
+    // of the `prepare()` method below.
+    //
+    typedef BlinnPhong BRDF;
+
+    BlinnPhong prepare(SurfaceGeometry geometry)
     {
-        return diffuseColor;
+        BlinnPhong brdf;
+        brdf.kd = diffuseColor;
+        brdf.ks = specularColor;
+        brdf.specularity = specularity;
+        return brdf;
     }
 };
 //
@@ -167,12 +304,44 @@ VertexStageOutput vertexMain(
 float4 fragmentMain(
     CoarseVertex coarseVertex : CoarseVertex) : SV_Target
 {
-    float3 N = normalize(coarseVertex.worldNormal);
+    // We start by using our interpolated vertex attributes
+    // to construct the local surface geometry that we will
+    // use for material evaluation.
+    //
+    SurfaceGeometry g;
+    g.position = coarseVertex.worldPosition;
+    g.normal = normalize(coarseVertex.worldNormal);
+    g.uv = coarseVertex.uv;
+
+    float3 V = normalize(gViewParams.eyePosition - g.position);
+
+    // Next we prepare the material, which involves running
+    // any "pattern generation" logic of the material (e.g.,
+    // sampling and blending texture layers), to produce
+    // a BRDF suitable for evaluating under illumination
+    // from different light sources.
+    //
+    // Note that the return type here is `TMaterial.BRDF`,
+    // which is the `BRDF` type *assocaited* with the (unknown)
+    // `TMaterial` type. When `TMaterial` gets substituted for
+    // a concrete type later (e.g., `SimpleMaterial`) this
+    // will resolve to a concrete type too (e.g., `SimpleMaterial.BRDF`
+    // which is an alias for `BlinnPhong`).
+    //
+    TMaterial.BRDF brdf = gMaterial.prepare(g);
+
+    // We now begin the light integration step of our surface
+    // shader. For this simple example we currently only take
+    // the contribution of a single directional light, but
+    // this shows the basic idiom for how the evaluation of
+    // surface material appearance has been separated into
+    // the light independent pattern generation step and the
+    // light-dependent BRDF evaluation step.
+    //
+    float3 color = 0;
+
     float3 L = normalize(gViewParams.lightDir);
+    color += gViewParams.lightColor * brdf.evaluate(V, L, g.normal);
 
-    float4 color;
-    color.xyz = gMaterial.getDiffuseColor() * max(0, dot(N, L));
-    color.w = 1.0f;
-
-    return color;
+    return float4(color, 1);
 }
