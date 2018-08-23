@@ -386,7 +386,7 @@ struct IRNotePatchConstantFunc: IRInst
 {
     IRInst* getFunc() { return getOperand(0); }
     IR_LEAF_ISA(NotePatchConstantFunc)
-}; 
+};
 
 // An IR `var` instruction conceptually represents
 // a stack allocation of some memory.
@@ -689,6 +689,8 @@ struct IRBuilder
         IRInst* const*  operands);
     IRType* getType(
         IROp            op);
+    IRKind* getKind(
+        IROp            op);
 
 
     IRWitnessTable* lookupWitnessTable(Name* mangledName);
@@ -696,7 +698,7 @@ struct IRBuilder
     IRBlock* createBlock();
     IRBlock* emitBlock();
 
-    
+
 
     IRParam* createParam(
         IRType* type);

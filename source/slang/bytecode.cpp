@@ -340,6 +340,27 @@ void encodeOperand(
 
 bool opHasResult(IRInst* inst)
 {
+    // Certain operations can be referenced even though they
+    // don't have a type at the level that our IR type
+    // system traks.
+    //
+    switch(inst->op)
+    {
+    case kIROp_TypeKind:
+    case kIROp_GenericKind:
+        return true;
+
+    default:
+        break;
+    }
+
+    // Otherwise, any instruction without a type must
+    // have no result, because we interpret a null
+    // type as being equivalent to the `Void` type.
+    //
+    // TODO: We should really use an explicit `Void`
+    // in all cases rather than rely on this hack.
+    //
     auto type = inst->getDataType();
     if (!type) return false;
 
@@ -390,6 +411,8 @@ void generateBytecodeForInst(
         }
         break;
 
+    case kIROp_TypeKind:
+    case kIROp_GenericKind:
     case kIROp_ReturnVoid:
         // Trivial encoding here
         encodeUInt(context, inst->op);
@@ -845,6 +868,44 @@ void generateBytecodeNodeForIRParentRec(
     {
         // The case when we don't have basic blocks is simpler, because
         // we really just want to emit the child instructions as-is.
+        //
+        // The only thing to be careful with is that we need to
+        // assing IDs to all of the instructions before we emit them,
+        // especially for cases where there might be circular references.
+        //
+        UInt regCounter = 0;
+        for( auto ii = inst->getFirstChild(); ii; ii = ii->getNextInst() )
+        {
+            if(!opHasResult(ii))
+                continue;
+
+            regCounter++;
+        }
+        UInt regCount = regCounter;
+
+        // Okay, we've counted how many registers we need,
+        // and now we can allocate the contiguous array we will use.
+        context->registers.SetSize(regCount);
+        bcFunc->registerCount = regCount;
+
+        // Now we will loop over things again to fill in the information
+        // on all these registers.
+        regCounter = 0;
+        for( auto ii = inst->getFirstChild(); ii; ii = ii->getNextInst() )
+        {
+            if(!opHasResult(ii))
+                continue;
+
+            Int localID = regCounter++;
+            context->mapInstToLocalID.Add(ii, localID);
+
+            context->registers[localID].op = ii->op;
+            context->registers[localID].previousVarIndexPlusOne = (uint32_t)localID;
+
+            // Note: there is an assumption here that a type must precede any instruction of that type...
+            context->registers[localID].typeID = ii->getFullType() ? getLocalID(context, ii->getFullType()) : 0;
+        }
+
         for( auto ii = inst->getFirstChild(); ii; ii = ii->getNextInst() )
         {
             generateBytecodeForInst(context, ii);

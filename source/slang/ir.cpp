@@ -1237,6 +1237,16 @@ namespace Slang
             lists);
     }
 
+    IRKind* IRBuilder::getKind(
+        IROp            op)
+    {
+        return (IRKind*) findOrEmitHoistableInst(
+            this,
+            nullptr,
+            op,
+            0,
+            nullptr);
+    }
 
     IRType* IRBuilder::getType(
         IROp            op,
@@ -1245,7 +1255,7 @@ namespace Slang
     {
         return (IRType*) findOrEmitHoistableInst(
             this,
-            nullptr,
+            getTypeKind(),
             op,
             operandCount,
             operands);
@@ -1285,12 +1295,12 @@ namespace Slang
 
     IRTypeKind* IRBuilder::getTypeKind()
     {
-        return (IRTypeKind*)getType(kIROp_TypeKind);
+        return (IRTypeKind*)getKind(kIROp_TypeKind);
     }
 
     IRGenericKind* IRBuilder::getGenericKind()
     {
-        return (IRGenericKind*)getType(kIROp_GenericKind);
+        return (IRGenericKind*)getKind(kIROp_GenericKind);
     }
 
     IRPtrType*  IRBuilder::getPtrType(IRType* valueType)
@@ -1385,7 +1395,7 @@ namespace Slang
     {
         return (IRFuncType*) findOrEmitHoistableInst(
             this,
-            nullptr,
+            getTypeKind(),
             kIROp_FuncType,
             resultType,
             paramCount,
@@ -2097,7 +2107,7 @@ namespace Slang
         auto inst = createInst<IRReturnVal>(
             this,
             kIROp_ReturnVal,
-            nullptr,
+            getVoidType(),
             val);
         addInst(inst);
         return inst;
@@ -2108,7 +2118,7 @@ namespace Slang
         auto inst = createInst<IRReturnVoid>(
             this,
             kIROp_ReturnVoid,
-            nullptr);
+            getVoidType());
         addInst(inst);
         return inst;
     }
@@ -2118,7 +2128,7 @@ namespace Slang
         auto inst = createInst<IRUnreachable>(
             this,
             kIROp_unreachable,
-            nullptr);
+            getVoidType());
         addInst(inst);
         return inst;
     }
@@ -2128,7 +2138,7 @@ namespace Slang
         auto inst = createInst<IRDiscard>(
             this,
             kIROp_discard,
-            nullptr);
+            getVoidType());
         addInst(inst);
         return inst;
     }
@@ -2140,7 +2150,7 @@ namespace Slang
         auto inst = createInst<IRUnconditionalBranch>(
             this,
             kIROp_unconditionalBranch,
-            nullptr,
+            getVoidType(),
             pBlock);
         addInst(inst);
         return inst;
@@ -2169,7 +2179,7 @@ namespace Slang
         auto inst = createInst<IRLoop>(
             this,
             kIROp_loop,
-            nullptr,
+            getVoidType(),
             argCount,
             args);
         addInst(inst);
@@ -2187,7 +2197,7 @@ namespace Slang
         auto inst = createInst<IRConditionalBranch>(
             this,
             kIROp_conditionalBranch,
-            nullptr,
+            getVoidType(),
             argCount,
             args);
         addInst(inst);
@@ -2206,7 +2216,7 @@ namespace Slang
         auto inst = createInst<IRIfElse>(
             this,
             kIROp_ifElse,
-            nullptr,
+            getVoidType(),
             argCount,
             args);
         addInst(inst);
@@ -2242,7 +2252,7 @@ namespace Slang
         auto inst = createInstWithTrailingArgs<IRSwitch>(
             this,
             kIROp_switch,
-            nullptr,
+            getVoidType(),
             fixedArgCount,
             fixedArgs,
             caseArgCount,
@@ -2256,7 +2266,7 @@ namespace Slang
         IRGlobalGenericParam* irGenericParam = createInst<IRGlobalGenericParam>(
             this,
             kIROp_GlobalGenericParam,
-            nullptr);
+            getTypeKind());
         addGlobalValue(this, irGenericParam);
         return irGenericParam;
     }
@@ -2268,7 +2278,7 @@ namespace Slang
         auto inst = createInst<IRBindGlobalGenericParam>(
             this,
             kIROp_BindGlobalGenericParam,
-            nullptr,
+            getVoidType(),
             param,
             val);
         addInst(inst);
