@@ -107,7 +107,9 @@ struct VMFunc
 
     SlangBCBlock* getBCBlock(UInt index)
     {
-        return moduleFile->getBCBlock(bcFunc->firstBlockIndex + index);
+        auto blocks = (SlangBCBlock*)((char*)bcFunc
+            + bcFunc->blocksOffset);
+        return blocks + index;
     }
 };
 
@@ -320,22 +322,34 @@ VMSizeAlign getVMSymbolSize(BCSymbol* symbol)
 //    return getType(vmModule, vmModule->bcModule->symbols[globalID]->typeID);
 //}
 
-BCReg* getRegister(SlangBCIRSectionHeader* bcIR, UInt index)
+SlangBCBlock* getBlock(SlangBCIRNode const* bcFunc, UInt index)
 {
-    return (BCReg*)((char*)bcIR
-        + bcIR->registersOffset
-        + index * bcIR->registerSize);
+    return (SlangBCBlock*)((char*)bcFunc
+        + bcFunc->blocksOffset) + index;
 }
 
-SlangBCUpValue* getUpValue(SlangBCIRSectionHeader* bcIR, UInt index)
+SlangBCCode* getCode(SlangBCIRNode const* bcFunc)
 {
-    return (SlangBCUpValue*)((char*)bcIR
-        + bcIR->upValuesOffset
-        + index * bcIR->upValueSize);
+    return (SlangBCCode*)((char*)bcFunc
+        + getBlock(bcFunc, 0)->codeOffset);
+}
+
+SlangBCRegister* getRegister(SlangBCIRNode const* bcFunc, UInt index)
+{
+    return (SlangBCRegister*)((char*)bcFunc
+        + bcFunc->registersOffset
+        + index * sizeof(SlangBCRegister));
+}
+
+SlangBCUpValue* getUpValue(SlangBCIRNode const* bcFunc, UInt index)
+{
+    return (SlangBCUpValue*)((char*)bcFunc
+        + bcFunc->upValuesOffset
+        + index * sizeof(SlangBCUpValue));
 }
 
 VMFunc* loadVMFunc(
-    SlangBCIRSectionHeader* bcIR,
+    SlangBCIRSectionHeader* /*bcIR*/,
     BCFunc*                 bcFunc,
     VMFrame*                parentFrame)
 {
@@ -357,7 +371,7 @@ VMFunc* loadVMFunc(
     UInt offset = sizeof(VMFrame);
     for( UInt rr = 0; rr < regCount; ++rr )
     {
-        BCReg* bcReg = getRegister(bcIR, bcFunc->firstRegisterIndex + rr);
+        BCReg* bcReg = getRegister(bcFunc, rr);
         auto bcTypeID = bcReg->typeID;
 
         // We expect the type to come from the outer module, so
@@ -379,7 +393,7 @@ VMFunc* loadVMFunc(
 
     for( UInt uu = 0; uu < upValueCount; ++uu )
     {
-        SlangBCUpValue* bcUpValue = getUpValue(bcIR, bcFunc->firstUpValueIndex + uu);
+        SlangBCUpValue* bcUpValue = getUpValue(bcFunc,uu);
         auto upValueID = bcUpValue->id;
         vmFunc->upValues[uu].ptr = getOperandPtrImpl(parentFrame, upValueID);
         vmFunc->upValues[uu].type = getOperandTypeImpl(parentFrame, upValueID);
@@ -392,8 +406,7 @@ VMFrame* createFrame(VMFunc* vmFunc)
 {
     VMFrame* vmFrame = (VMFrame*) malloc(vmFunc->frameSize);
     vmFrame->func = vmFunc;
-    vmFrame->ip = vmFunc->moduleFile->getBCCode()
-        + vmFunc->getBCBlock(0)->codeOffset;
+    vmFrame->ip = getCode(vmFunc->bcFunc);
     return vmFrame;
 }
 
@@ -623,7 +636,10 @@ VMModuleFile* loadVMModuleInstance(
 
     vmModuleFile->vm = vm;
     vmModuleFile->bcIR = bcIR;
-    vmModuleFile->bcCode
+
+    // TODO: need to implement the rest of this loading logic
+
+    throw 99;
 
     /*
     UInt bcModuleCount = bcHeader->moduleCount;
@@ -678,6 +694,10 @@ void* findGlobalSymbolPtr(
     // symbols, looking for one that gives us a name
     // match.
 
+    (void)module;
+    (void)name;
+    throw 99;
+#if 0
     BCModule* bcModule = module->bcModule;
     UInt symbolCount = bcModule->symbolCount;
     for(UInt ss = 0; ss < symbolCount; ++ss)
@@ -693,6 +713,7 @@ void* findGlobalSymbolPtr(
     }
 
     return nullptr;
+#endif
 }
 
 VMThread* createThread(
@@ -881,7 +902,7 @@ void resumeThread(
                     void* argPtr = decodeOperandPtr<void>(frame, &ip);
                     void* regPtr = getRegPtrImpl(newFrame, aa);
 
-                    VMType regType = func->regs[aa].type;
+                    VMType regType = func->registers[aa].type;
                     memcpy(regPtr, argPtr, regType.getSize());
                 }
 
@@ -961,14 +982,14 @@ void resumeThread(
                 Int destinationBlockIndex = decodeSInt(&ip);
 
                 auto func = frame->func;
-                auto& destinationBlock = func->bcFunc->blocks[destinationBlockIndex];
+                auto bcDestinationBlock = getBlock(func->bcFunc, destinationBlockIndex);
 
                 // We may be passing arguments through to the destination
                 // block, so any remaining operands of the branch instruction
                 // need to be used to fill in the parameter registers of
                 // the destination block.
 
-                UInt paramCount = destinationBlock.paramCount;
+                UInt paramCount = bcDestinationBlock->paramCount;
 
                 // There might be additional operands, because some branches
                 // also include information on merge points and break/continue labels.
@@ -982,7 +1003,7 @@ void resumeThread(
                     decodeOperandPtr<void>(frame, &ip);
                 }
 
-                auto baseRegIndex = destinationBlock.params - func->bcFunc->regs;
+                auto baseRegIndex = bcDestinationBlock->firstParamIndex;
                 for( UInt pp = 0; pp < paramCount; ++pp )
                 {
                     auto regIndex = baseRegIndex + pp;
@@ -990,13 +1011,13 @@ void resumeThread(
                     void* argPtr = decodeOperandPtr<void>(frame, &ip);
                     void* regPtr = getRegPtrImpl(frame, regIndex);
 
-                    VMType regType = func->regs[regIndex].type;
+                    VMType regType = func->registers[regIndex].type;
                     memcpy(regPtr, argPtr, regType.getSize());
                 }
 
                 // Now simply jump to the destination block.
                 //
-                ip = destinationBlock.code;
+                ip = getCode(func->bcFunc) + bcDestinationBlock->codeOffset;
             }
             break;
 
@@ -1016,13 +1037,14 @@ void resumeThread(
                     decodeOperandPtr<void>(frame, &ip);
                 }
 
-                Int destinationBlock = *condition ? trueBlockID : falseBlockID;
+                Int destinationBlockIndex = *condition ? trueBlockID : falseBlockID;
+                auto bcDestinationBlock = getBlock(frame->func->bcFunc, destinationBlockIndex);
 
                 // TODO: we need to deal with the case of
                 // passing arguments to the block, which
                 // means copying between the registers...
                 //
-                ip = frame->func->bcFunc->blocks[destinationBlock].code;
+                ip = getCode(frame->func->bcFunc) + bcDestinationBlock->codeOffset;
             }
             break;
 
