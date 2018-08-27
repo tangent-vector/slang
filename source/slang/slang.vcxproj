@@ -172,6 +172,9 @@
   <ItemGroup>
     <ClInclude Include="..\..\slang-bytecode.h" />
     <ClInclude Include="..\..\slang.h" />
+    <ClInclude Include="bc-impl.h" />
+    <ClInclude Include="bc-to-ast.h" />
+    <ClInclude Include="bc-to-ir.h" />
     <ClInclude Include="bytecode.h" />
     <ClInclude Include="compiler.h" />
     <ClInclude Include="core.meta.slang.h" />
@@ -223,6 +226,9 @@
     <ClInclude Include="vm.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="ast-to-bc.cpp" />
+    <ClCompile Include="bc-to-ast.cpp" />
+    <ClCompile Include="bc-to-ir.cpp" />
     <ClCompile Include="bytecode.cpp" />
     <ClCompile Include="check.cpp" />
     <ClCompile Include="compiler.cpp" />
@@ -235,6 +241,7 @@
     <ClCompile Include="ir-restructure-scoping.cpp" />
     <ClCompile Include="ir-restructure.cpp" />
     <ClCompile Include="ir-ssa.cpp" />
+    <ClCompile Include="ir-to-bc.cpp" />
     <ClCompile Include="ir-validate.cpp" />
     <ClCompile Include="ir.cpp" />
     <ClCompile Include="legalize-types.cpp" />

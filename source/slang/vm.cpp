@@ -137,30 +137,29 @@ struct VMModule : VMFrame
 
 UInt decodeUInt(BCOp** ioPtr)
 {
-    BCOp* ptr = *ioPtr;
+    BCOp*& ptr = *ioPtr;
+    UInt b0 = *ptr++;
 
-    UInt value = *ptr++;
-    if( value < 128 )
+    if((b0 & 1) == 0)
     {
-        *ioPtr = ptr;
-        return value;
+        UInt val = b0 >> 1;
+        return val;
     }
-
-    // Slower path for variable-length encoding
-
-    UInt result = 0;
-    for(;;)
+    else if((b0 & 3) == 1)
     {
-        value = value & 0x7F;
-        result = (result << 7) | value;
+        UInt b1 = *ptr++;
 
-        if(value < 127)
-        {
-            *ioPtr = ptr;
-            return value;
-        }
+        UInt val = ((b1 << 8) | b0) >> 2;
+        return val;
+    }
+    else
+    {
+        UInt b1 = *ptr++;
+        UInt b2 = *ptr++;
+        UInt b3 = *ptr++;
 
-        value = *ptr++;
+        UInt val = ((b3 << 24) | (b2 << 16) | (b1 << 8) | b0) >> 3;
+        return val;
     }
 }
 
@@ -321,32 +320,6 @@ VMSizeAlign getVMSymbolSize(BCSymbol* symbol)
 //{
 //    return getType(vmModule, vmModule->bcModule->symbols[globalID]->typeID);
 //}
-
-SlangBCBlock* getBlock(SlangBCIRNode const* bcFunc, UInt index)
-{
-    return (SlangBCBlock*)((char*)bcFunc
-        + bcFunc->blocksOffset) + index;
-}
-
-SlangBCCode* getCode(SlangBCIRNode const* bcFunc)
-{
-    return (SlangBCCode*)((char*)bcFunc
-        + getBlock(bcFunc, 0)->codeOffset);
-}
-
-SlangBCRegister* getRegister(SlangBCIRNode const* bcFunc, UInt index)
-{
-    return (SlangBCRegister*)((char*)bcFunc
-        + bcFunc->registersOffset
-        + index * sizeof(SlangBCRegister));
-}
-
-SlangBCUpValue* getUpValue(SlangBCIRNode const* bcFunc, UInt index)
-{
-    return (SlangBCUpValue*)((char*)bcFunc
-        + bcFunc->upValuesOffset
-        + index * sizeof(SlangBCUpValue));
-}
 
 VMFunc* loadVMFunc(
     SlangBCIRSectionHeader* /*bcIR*/,

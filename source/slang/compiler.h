@@ -448,11 +448,19 @@ namespace Slang
         UInt addTarget(
             CodeGenTarget   target);
 
-        RefPtr<ModuleDecl> loadModule(
+        /// Load a module from serialized data in `binaryBlob`.
+        RefPtr<LoadedModule> loadBinaryModule(
+            Name*               name,
+            String const&       path,
+            ISlangBlob*         binaryBlob,
+            SourceLoc const&    loc);
+
+        /// Load a module from source code in `sourceBlob`.
+        RefPtr<ModuleDecl> loadSourceModule(
             Name*               name,
             String const&       path,
             ISlangBlob*         sourceBlob,
-            SourceLoc const& loc);
+            SourceLoc const&    loc);
 
         void loadParsedModule(
             RefPtr<TranslationUnitRequest> const&   translationUnit,

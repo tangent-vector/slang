@@ -119,7 +119,7 @@ struct SlangBCStringTableEntry
     uint32_t size;
 };
 
-/* Header for a reflection section.
+/** Header for a reflection section.
 */
 struct SlangBCReflectionSectonHeader
 {
@@ -127,8 +127,17 @@ struct SlangBCReflectionSectonHeader
     uint32_t entryCount;
     uint32_t entrySize;
 
-    uint32_t publicEntryCount;
-    uint32_t reflectionEntryCount;
+    // TODO: eventually we want to support tools that can strip out reflection
+    // nodes not required for runtime reflection, or those that are not required
+    // to expose the public interface of a module to subsequent compilation.
+    //
+    // These might be best handled by sorting the entries so that the first K
+    // entries are those required for a sepecific purpose, and entries after
+    // that point can be safely stripped. Doing that would require some careful
+    // thought about layout, however, so we put it off for now.
+    //
+//    uint32_t publicEntryCount;
+//    uint32_t reflectionEntryCount;
 };
 
 struct SlangBCReflectionEntry
@@ -141,12 +150,21 @@ struct SlangBCReflectionEntry
 */
 enum
 {
+    SLANG_BC_REFLECTION_TAG_NONE = 0,
+
+    SLANG_BC_REFLECTION_TAG_MODULE,
+
     SLANG_BC_REFLECTION_TAG_VAR,
     SLANG_BC_REFLECTION_TAG_PARAM,
-    SLANG_BC_REFLECTION_TAG_STRUCT,
+    SLANG_BC_REFLECTION_TAG_FIELD,
+    SLANG_BC_REFLECTION_TAG_GENERIC_VALUE_PARAM,
+
     SLANG_BC_REFLECTION_TAG_FUNC,
+    SLANG_BC_REFLECTION_TAG_CONSTRUCTOR,
     SLANG_BC_REFLECTION_TAG_INTERFACE,
     SLANG_BC_REFLECTION_TAG_GENERIC,
+
+    SLANG_BC_REFLECTION_TAG_STRUCT,
 
     SLANG_BC_REFLECTION_TAG_VECTOR_TYPE,
     SLANG_BC_REFLECTION_TAG_MATRIX_TYPE,
@@ -163,8 +181,20 @@ struct SlangBCReflectionNode
 
 struct SlangBCReflectionDecl
 {
-    uint32_t tag;
+    SlangBCReflectionNode asNode;
     int32_t parent;
+};
+
+struct SlangBCReflectionVarNode
+{
+    SlangBCReflectionDecl asDecl;
+};
+
+struct SlangBCReflectionContainerNode
+{
+    SlangBCReflectionDecl asDecl;
+
+    // TODO: child nodes
 };
 
 /** Opcodes for bytecode functions.
@@ -195,6 +225,9 @@ struct SlangBCIRNode
 {
     uint32_t op;
     int32_t typeID;
+
+    uint32_t codeSize;
+    uint32_t codeOffset;
 
     uint32_t registerCount;
     uint32_t registersOffset;

@@ -206,9 +206,9 @@ namespace Slang
 
 #ifdef _DEBUG
 #define SLANG_INTERNAL_ERROR(sink, pos) \
-    (sink)->diagnose(Slang::SourceLoc(__LINE__, 0, 0, __FILE__), Slang::Diagnostics::internalCompilerError)
+    (sink)->diagnose(pos, Slang::Diagnostics::internalCompilerError)
 #define SLANG_UNIMPLEMENTED(sink, pos, what) \
-    (sink)->diagnose(Slang::SourceLoc(__LINE__, 0, 0, __FILE__), Slang::Diagnostics::unimplemented, what)
+    (sink)->diagnose(pos, Slang::Diagnostics::unimplemented, what)
 
 #else
 #define SLANG_INTERNAL_ERROR(sink, pos) \

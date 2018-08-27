@@ -429,6 +429,12 @@ standardProject "slangc"
 -- need to figure out how to replicate this incantation in premake.
 --
 
+tool "slang-dump"
+    uuid "7FE98065-26CE-450A-909C-4B2E67634401"
+    includedirs { "." }
+    links { "core", "slang" }
+
+
 --
 -- Now that we've gotten all the simple projects out of the way, it is time
 -- to get into the more serious build steps.

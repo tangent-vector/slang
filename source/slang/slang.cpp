@@ -1,13 +1,16 @@
 ﻿#include "../../slang.h"
 
 #include "../core/slang-io.h"
-#include "parameter-binding.h"
+
+#include "bc-to-ast.h"
+#include "bc-to-ir.h"
 #include "lower-to-ir.h"
-#include "../slang/parser.h"
-#include "../slang/preprocessor.h"
-#include "../slang/reflection.h"
+#include "parameter-binding.h"
+#include "parser.h"
+#include "preprocessor.h"
+#include "reflection.h"
 #include "syntax-visitors.h"
-#include "../slang/type-layout.h"
+#include "type-layout.h"
 
 // Used to print exception type names in internal-compiler-error messages
 #include <typeinfo>
@@ -235,7 +238,7 @@ public:
     // ISlangBlob
     SLANG_NO_THROW void const* SLANG_MCALL getBufferPointer() SLANG_OVERRIDE { return m_string.Buffer(); }
     SLANG_NO_THROW size_t SLANG_MCALL getBufferSize() SLANG_OVERRIDE { return m_string.Length(); }
-    
+
     explicit StringBlob(String const& string)
         : m_string(string)
     {}
@@ -303,10 +306,15 @@ SlangResult CompileRequest::loadFile(String const& path, ISlangBlob** outBlob)
 
     try
     {
-        String sourceString = File::ReadAllText(path);
-        ComPtr<ISlangBlob> sourceBlob = createStringBlob(sourceString);
-        *outBlob = sourceBlob.detach();
-
+        // TODO: This allocates twice: once for the output of `ReadAllBytes`,
+        // and then again when we create the `RawBlob` value.
+        //
+        // We should ideally be doing the file read directly into the
+        // memory that will be used for the blob.
+        //
+        List<uint8_t> data = File::ReadAllBytes(path);
+        ComPtr<ISlangBlob> blob = createRawBlob(data.Buffer(), data.Count());
+        *outBlob = blob.detach();
         return SLANG_OK;
     }
     catch(...)
@@ -711,7 +719,7 @@ void CompileRequest::loadParsedModule(
     loadedModulesList.Add(loadedModule);
 }
 
-RefPtr<ModuleDecl> CompileRequest::loadModule(
+RefPtr<ModuleDecl> CompileRequest::loadSourceModule(
     Name*               name,
     String const&       path,
     ISlangBlob*         sourceBlob,
@@ -760,6 +768,137 @@ RefPtr<ModuleDecl> CompileRequest::loadModule(
     return translationUnit->SyntaxNode;
 }
 
+RefPtr<LoadedModule> CompileRequest::loadBinaryModule(
+    Name*               name,
+    String const&       path,
+    ISlangBlob*         binaryBlob,
+    SourceLoc const&    /*srcLoc*/)
+{
+    // Note: we add the loaded module to our name->module listing
+    // before doing semantic checking, so that if it tries to
+    // recursively `import` itself, we can detect it.
+    RefPtr<LoadedModule> loadedModule = new LoadedModule();
+    mapPathToLoadedModule.Add(path, loadedModule);
+    mapNameToLoadedModules.Add(name, loadedModule);
+
+    int errorCountBefore = mSink.GetErrorCount();
+    loadedModule->moduleDecl = loadBinaryModuleAST(this, binaryBlob);
+    loadedModule->irModule = loadBinaryModuleIR(this, binaryBlob);
+    int errorCountAfter = mSink.GetErrorCount();
+
+    if (errorCountAfter != errorCountBefore)
+    {
+        // There must have been an error in the loaded module.
+    }
+    loadedModulesList.Add(loadedModule);
+    return loadedModule;
+}
+
+/// Try to import a binary Slang module from `fileName`.
+static RefPtr<ModuleDecl> tryImportBinaryModule(
+    CompileRequest*     compileRequest,
+    Name*               name,
+    SourceLoc const&    loc,
+    String const&       fileName)
+{
+    // Try to resolve the file to a full path using our
+    // ordinary include-handling logic.
+
+    IncludeHandlerImpl includeHandler;
+    includeHandler.request = compileRequest;
+
+    auto expandedLoc = compileRequest->getSourceManager()->expandSourceLoc(loc);
+    String pathIncludedFrom = expandedLoc.getSpellingPath();
+
+    String foundPath;
+    ComPtr<ISlangBlob> foundBinaryBlob;
+    IncludeResult includeResult = includeHandler.TryToFindIncludeFile(fileName, pathIncludedFrom, &foundPath, foundBinaryBlob.writeRef());
+    switch( includeResult )
+    {
+    case IncludeResult::NotFound:
+    case IncludeResult::Error:
+        // Note: we do *not* issue an error in this case, because failure
+        // to locate a binary module does not indicate full compilation
+        // failure. Instead, the compiler will go on to look for a
+        // source file matching the module name and try that.
+        //
+        // TODO: for this function to work as a stand-alone utility, this
+        // error reporting behavior should probably be controller by
+        // the caller, rather than the callee.
+        //
+        return nullptr;
+
+    default:
+        break;
+    }
+
+    // Maybe this was loaded previously at a different relative name?
+    RefPtr<LoadedModule> loadedModule;
+    if (compileRequest->mapPathToLoadedModule.TryGetValue(foundPath, loadedModule))
+        return loadedModule->moduleDecl;
+
+
+
+    // We've found a file that we can load for the given module, so
+    // go ahead and perform the module-load action
+    loadedModule = compileRequest->loadBinaryModule(
+        name,
+        foundPath,
+        foundBinaryBlob,
+        loc);
+    return loadedModule->moduleDecl;
+}
+
+
+/// Import a module of Slang source code from `fileName`.
+static RefPtr<ModuleDecl> importSourceModule(
+    CompileRequest*     compileRequest,
+    Name*               name,
+    SourceLoc const&    loc,
+    String const&       fileName)
+{
+    // Try to resolve the file to a full path using our
+    // ordinary include-handling logic.
+
+    IncludeHandlerImpl includeHandler;
+    includeHandler.request = compileRequest;
+
+    auto expandedLoc = compileRequest->getSourceManager()->expandSourceLoc(loc);
+    String pathIncludedFrom = expandedLoc.getSpellingPath();
+
+    String foundPath;
+    ComPtr<ISlangBlob> foundSourceBlob;
+    IncludeResult includeResult = includeHandler.TryToFindIncludeFile(fileName, pathIncludedFrom, &foundPath, foundSourceBlob.writeRef());
+    switch( includeResult )
+    {
+    case IncludeResult::NotFound:
+    case IncludeResult::Error:
+        {
+            compileRequest->mSink.diagnose(loc, Diagnostics::cannotFindFile, fileName);
+
+            compileRequest->mapNameToLoadedModules[name] = nullptr;
+            return nullptr;
+        }
+        break;
+
+    default:
+        break;
+    }
+
+    // Maybe this was loaded previously at a different relative name?
+    RefPtr<LoadedModule> loadedModule;
+    if (compileRequest->mapPathToLoadedModule.TryGetValue(foundPath, loadedModule))
+        return loadedModule->moduleDecl;
+
+    // We've found a file that we can load for the given module, so
+    // go ahead and perform the module-load action
+    return compileRequest->loadSourceModule(
+        name,
+        foundPath,
+        foundSourceBlob,
+        loc);
+}
+
 RefPtr<ModuleDecl> CompileRequest::findOrImportModule(
     Name*               name,
     SourceLoc const&    loc)
@@ -796,51 +935,21 @@ RefPtr<ModuleDecl> CompileRequest::findOrImportModule(
 
         sb.Append(c);
     }
-    sb.Append(".slang");
+    String filePathStem = sb.ProduceString();
 
-    String fileName = sb.ProduceString();
+    // First, we will try to look for a file with a name like `m.slang-module`,
+    // and load a binary module from that path.
+    if(auto importedBinaryModule = tryImportBinaryModule(this, name, loc, filePathStem + ".slang-module"))
+        return importedBinaryModule;
 
-    // Next, try to find the file of the given name,
-    // using our ordinary include-handling logic.
-
-    IncludeHandlerImpl includeHandler;
-    includeHandler.request = this;
-
-    auto expandedLoc = getSourceManager()->expandSourceLoc(loc);
-
-    String pathIncludedFrom = expandedLoc.getSpellingPath();
-
-    String foundPath;
-    ComPtr<ISlangBlob> foundSourceBlob;
-    IncludeResult includeResult = includeHandler.TryToFindIncludeFile(fileName, pathIncludedFrom, &foundPath, foundSourceBlob.writeRef());
-    switch( includeResult )
-    {
-    case IncludeResult::NotFound:
-    case IncludeResult::Error:
-        {
-            this->mSink.diagnose(loc, Diagnostics::cannotFindFile, fileName);
-
-            mapNameToLoadedModules[name] = nullptr;
-            return nullptr;
-        }
-        break;
-
-    default:
-        break;
-    }
-
-    // Maybe this was loaded previously at a different relative name?
-    if (mapPathToLoadedModule.TryGetValue(foundPath, loadedModule))
-        return loadedModule->moduleDecl;
-
-
-    // We've found a file that we can load for the given module, so
-    // go ahead and perform the module-load action
-    return loadModule(
-        name,
-        foundPath,
-        foundSourceBlob,
-        loc);
+    // If we fail to load a binary module, then we fall back to loading
+    // the module from source code.
+    //
+    // TODO: there is room to be a lot smarter about all of this, including
+    // things like checking timestamps and/or checksums to decide whether
+    // to rebuild a binary module when both source and binary are available.
+    //
+    return importSourceModule(this, name, loc, filePathStem + ".slang");
 }
 
 Decl * CompileRequest::lookupGlobalDecl(Name * name)
@@ -1340,7 +1449,7 @@ SLANG_API SlangResult spCompile(
     //
     // TODO: Consider supporting Windows "Structured Exception Handling"
     // so that we can also recover from a wider class of crashes.
-    SlangResult res = SLANG_FAIL; 
+    SlangResult res = SLANG_FAIL;
     try
     {
         res = req->executeActions();

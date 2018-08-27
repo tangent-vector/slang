@@ -53,11 +53,66 @@ inline void* getSectionData(
     return (char*)header + entry.offsetInFile;
 }
 
+//
+
+inline SlangBCReflectionNode* getNode(SlangBCReflectionSectonHeader const* bcHeader, UInt index)
+{
+    auto entry = (SlangBCReflectionEntry*)((char*)bcHeader
+        + bcHeader->entryTableOffset
+        + index * bcHeader->entrySize);
+
+    return (SlangBCReflectionNode*)((char*)bcHeader
+        + entry->offset);
+}
+
+//
+
+inline SlangBCBlock* getBlock(SlangBCIRNode const* bcFunc, UInt index)
+{
+    auto blocks = (SlangBCBlock*)((char*)bcFunc
+        + bcFunc->blocksOffset);
+    return blocks + index;
+}
+
+inline SlangBCCode* getCode(SlangBCIRNode const* bcFunc)
+{
+    return (SlangBCCode*)((char*)bcFunc
+        + bcFunc->codeOffset);
+}
+
+inline SlangBCRegister* getRegister(SlangBCIRNode const* bcFunc, UInt index)
+{
+    return (SlangBCRegister*)((char*)bcFunc
+        + bcFunc->registersOffset
+        + index * sizeof(SlangBCRegister));
+}
+
+inline SlangBCUpValue* getUpValue(SlangBCIRNode const* bcFunc, UInt index)
+{
+    return (SlangBCUpValue*)((char*)bcFunc
+        + bcFunc->upValuesOffset
+        + index * sizeof(SlangBCUpValue));
+}
+
+//
+
+
+
+
+//
+
+
 class CompileRequest;
 void generateBytecodeForCompileRequest(
     CompileRequest* compileReq);
 
 }
+
+
+
+
+
+
 
 
 #endif

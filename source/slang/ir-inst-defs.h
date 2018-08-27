@@ -20,6 +20,9 @@
 
 INST(Nop, nop, 0, 0)
 
+/* Pseudo-terminator to mark end of instructions in a non-basic-block container when serialized. */
+INST(End, end, 0, 0)
+
 /* Types */
 
     /* Basic Types */
@@ -129,7 +132,7 @@ INST(Nop, nop, 0, 0)
                     INST(ParameterBlockType, ParameterBlock, 1, 0)
                     INST(GLSLShaderStorageBufferType, GLSLShaderStorageBuffer, 0, 0)
                 INST_RANGE(UniformParameterGroupType, ConstantBufferType, GLSLShaderStorageBufferType)
-            
+
                 /* VaryingParameterGroupType */
                     INST(GLSLInputParameterGroupType, GLSLInputParameterGroup, 0, 0)
                     INST(GLSLOutputParameterGroupType, GLSLOutputParameterGroup, 0, 0)
