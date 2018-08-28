@@ -7,9 +7,13 @@
 namespace Slang
 {
 
+struct ASTSection;
+
 struct ASTNodeBuilder : RefObject
 {
     uint32_t tag;
+    UInt nodeIndex;
+    RefPtr<ASTSection> section;
 
     virtual void writeData(BCWriter& writer) = 0;
 };
@@ -22,6 +26,8 @@ struct ASTSection : BCSectionBuilder
     }
 
     List<RefPtr<ASTNodeBuilder>> nodes;
+
+    RefPtr<BCStringTableBuilder> stringTable;
 
     void writeData(BCWriter& writer)
     {
@@ -61,10 +67,13 @@ struct ASTToBCContext
 
 struct DeclNodeBuilder : ASTNodeBuilder
 {
+    RefPtr<Decl> decl;
+
     void writeDeclNode(BCWriter& writer, BCWriteOffset<SlangBCReflectionDecl> const& bcNode)
     {
         (void)writer;
         bcNode->asNode.tag = tag;
+        bcNode->name = section->stringTable->addString(decl->getName());
     }
 };
 
@@ -92,6 +101,17 @@ struct ContainerDeclNodeBuilder : DeclNodeBuilder
         BCWriteOffset<SlangBCReflectionContainerNode> const& bcNode)
     {
         writeDeclNode(writer, bcNode.as<SlangBCReflectionDecl>());
+
+        auto memberCount = memberNodes.Count();
+        auto bcMemberIndices = writer.reserve<uint32_t>(memberCount);
+
+        bcNode->memberCount = memberCount;
+        bcNode->memberIndicesOffset = bcMemberIndices.offset;
+
+        for(UInt mm = 0; mm < memberCount; ++mm)
+        {
+            bcMemberIndices[mm] = memberNodes[mm]->nodeIndex;
+        }
     }
 
     void writeData(BCWriter& writer)
@@ -121,14 +141,20 @@ void addNode(
     ASTToBCContext* context,
     ASTNodeBuilder* node)
 {
-    context->shared->astSection->nodes.Add(node);
+    auto section = context->shared->astSection;
+    node->section = section;
+
+    UInt nodeIndex = section->nodes.Count();
+    node->nodeIndex = nodeIndex;
+    section->nodes.Add(node);
 }
 
 template<typename T>
-T* addNode(ASTToBCContext* context, uint32_t tag)
+T* addNode(ASTToBCContext* context, Decl* decl, uint32_t tag)
 {
     auto node = new T();
     node->tag = tag;
+    node->decl = decl;
     addNode(context, node);
     return node;
 }
@@ -218,7 +244,7 @@ struct ASTToBCDeclVisitor : DeclVisitor<ASTToBCDeclVisitor, DeclNodeBuilder*>
 #define CASE(NAME, TAG, NODECLASS, POPULATEFUNC)    \
     DeclNodeBuilder* visit##NAME(NAME* decl) {      \
         auto node = addNode<NODECLASS>(context,     \
-            SLANG_BC_REFLECTION_TAG_##TAG);         \
+            decl, SLANG_BC_REFLECTION_TAG_##TAG);   \
         POPULATEFUNC(context, decl, node);          \
         return node; }
 
@@ -267,6 +293,7 @@ void generateBytecodeSectionsForAST(
     BCFileBuilder*  fileBuilder)
 {
     auto astSection = fileBuilder->addSection<ASTSection>(".ast");
+    astSection->stringTable = astSection->addChildSection<BCStringTableBuilder>(".strings");
 
     SharedASTToBCContext sharedContextStorage;
     auto sharedContext = &sharedContextStorage;

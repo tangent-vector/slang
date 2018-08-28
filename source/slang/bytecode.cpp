@@ -8,6 +8,87 @@
 
 namespace Slang {
 
+//
+
+int32_t findSection(
+    SlangBCFileHeader*  bcFile,
+    uint32_t            sectionType,
+    int32_t             firstSection)
+{
+    int32_t sectionIndex = firstSection;
+    while(sectionIndex >= 0)
+    {
+        auto& sectionEntry = getSectionTableEntry(bcFile, sectionIndex);
+        if(sectionEntry.type == sectionType)
+            return sectionIndex;
+    }
+    return -1;
+}
+
+int32_t findChildSection(
+    SlangBCFileHeader*  bcFile,
+    int32_t             parentSection,
+    uint32_t            sectionType)
+{
+    return findSection(bcFile, sectionType,
+        getSectionTableEntry(bcFile, parentSection).firstChild);
+}
+
+
+//
+
+struct FlattenedSectionInfo
+{
+    RefPtr<BCSectionBuilder>    builder;
+    Int                         firstChild;
+    Int                         nextSibling;
+};
+
+static Int collectFlattenedSections(
+    RefPtr<BCSectionBuilder>    sectionBuilder,
+    List<FlattenedSectionInfo>& ioFlattenedSections);
+
+static Int collectFlattenedSections(
+    List<RefPtr<BCSectionBuilder>>  sectionBuilders,
+    List<FlattenedSectionInfo>&     ioFlattenedSections)
+{
+    Int count = sectionBuilders.Count();
+
+    if(count == 0)
+        return -1;
+
+    Int firstIndex = collectFlattenedSections(sectionBuilders[0], ioFlattenedSections);
+
+    Int prevIndex = firstIndex;
+    for(Int ii = 1; ii < count; ++ii)
+    {
+        Int index = collectFlattenedSections(sectionBuilders[ii], ioFlattenedSections);
+        ioFlattenedSections[prevIndex].nextSibling = index;
+        prevIndex = index;
+    }
+
+    return firstIndex;
+}
+
+static Int collectFlattenedSections(
+    RefPtr<BCSectionBuilder>    sectionBuilder,
+    List<FlattenedSectionInfo>& ioFlattenedSections)
+{
+    FlattenedSectionInfo info;
+    info.builder = sectionBuilder;
+    info.firstChild = -1;
+    info.nextSibling = -1;
+
+    Int index = ioFlattenedSections.Count();
+    ioFlattenedSections.Add(info);
+
+    ioFlattenedSections[index].firstChild = collectFlattenedSections(
+        sectionBuilder->childSections,
+        ioFlattenedSections);
+
+    return index;
+}
+
 void generateBytecodeContainer(
     BCFileBuilder*      fileBuilder,
     CompileRequest*     compileReq)
@@ -24,14 +105,19 @@ void generateBytecodeContainer(
     bcHeader->minorVersion = 0;
 
     // We need a section for the string table of section names.
-    UInt sectionNameTableSectionIndex = fileBuilder->sections.Count();
     RefPtr<BCStringTableBuilder> sectionNameTable = new BCStringTableBuilder();
-    sectionNameTable->name = ".shstrtab";
+    sectionNameTable->name = ".strings";
 
-    List<RefPtr<BCSectionBuilder>> sections = fileBuilder->sections;
-    sections.Add(sectionNameTable);
+    List<RefPtr<BCSectionBuilder>> topLevelSections = fileBuilder->sections;
+    topLevelSections.Add(sectionNameTable);
 
-    UInt sectionCount = sections.Count();
+    List<FlattenedSectionInfo> flattenedSections;
+    collectFlattenedSections(topLevelSections, flattenedSections);
+
+    UInt sectionCount = flattenedSections.Count();
+
+    // We expect our string table section to always be last in the list
+    UInt sectionNameTableSectionIndex = sectionCount-1;
 
     auto bcSectionTable = writer.reserve<SlangBCSectionTableEntry>(sectionCount);
 
@@ -42,7 +128,8 @@ void generateBytecodeContainer(
 
     for(UInt ii = 0; ii < sectionCount; ++ii)
     {
-        auto section = sections[ii];
+        auto sectionInfo = flattenedSections[ii];
+        auto section = sectionInfo.builder;
         uint32_t nameIndex = sectionNameTable->addString(section->name);
 
         writer.padToAlignment(section->alignment);
@@ -61,6 +148,8 @@ void generateBytecodeContainer(
         bcEntry.size = sectionSize;
         bcEntry.type = section->type;
         bcEntry.flags = section->flags;
+        bcEntry.firstChild = sectionInfo.firstChild;
+        bcEntry.nextSibling = sectionInfo.nextSibling;
     }
 }
 

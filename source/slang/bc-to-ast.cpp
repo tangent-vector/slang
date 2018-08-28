@@ -10,7 +10,8 @@ namespace Slang
         CompileRequest*         compileRequest;
         ISlangBlob*             blob;
 
-        SlangBCReflectionSectonHeader* bcAST;
+        SlangBCReflectionSectonHeader*      bcAST;
+        SlangBCStringTableSectionHeader*    bcSymbolNameTable;
     };
 
     DiagnosticSink* getSink(
@@ -40,33 +41,65 @@ namespace Slang
         }
     }
 
+    void fillInDecl(
+        BCToASTContext*     context,
+        BCReflectionNode*   bcNode,
+        Decl*               decl);
+
     void fillInDeclCommon(
         BCToASTContext*         context,
         SlangBCReflectionDecl*  bcDecl,
         Decl*                   decl)
     {
-        (void)context;
-        (void)bcDecl;
-        (void)decl;
-        // TODO: name
+        decl->nameAndLoc.name = context->compileRequest->getNamePool()->getName(
+            getString(context->bcSymbolNameTable, bcDecl->name));
+
         // TODO: modifiers
         // TODO: parent
     }
 
     void fillInContainerDeclCommon(
-        BCToASTContext*         context,
-        SlangBCReflectionDecl*  bcDecl,
-        ContainerDecl*          decl)
+        BCToASTContext*                 context,
+        SlangBCReflectionContainerNode* bcDecl,
+        ContainerDecl*                  decl)
     {
-        fillInDeclCommon(context, bcDecl, decl);
+        fillInDeclCommon(context, &bcDecl->asDecl, decl);
+
+        uint32_t* memberIndices = (uint32_t*)((char*)bcDecl
+            + bcDecl->memberIndicesOffset);
+
+        UInt memberCount = bcDecl->memberCount;
+        for(UInt mm = 0; mm < memberCount; ++mm)
+        {
+            UInt memberIndex = memberIndices[mm];
+            BCReflectionNode* bcMemberNode = getNode(
+                context->bcAST,
+                memberIndex);
+
+            auto memberDecl = createDecl(context, bcMemberNode);
+            fillInDecl(context, bcMemberNode, memberDecl);
+
+            decl->Members.Add(memberDecl);
+            memberDecl->ParentDecl = decl;
+        }
     }
 
     void fillInModuleDecl(
-        BCToASTContext*         context,
-        SlangBCReflectionDecl*  bcDecl,
-        ModuleDecl*             decl)
+        BCToASTContext*                 context,
+        SlangBCReflectionContainerNode* bcDecl,
+        ModuleDecl*                     decl)
     {
         fillInContainerDeclCommon(context, bcDecl, decl);
+    }
+
+    void fillInVarDecl(
+        BCToASTContext*             context,
+        SlangBCReflectionVarNode*   bcDecl,
+        VarDeclBase*                decl)
+    {
+        fillInDeclCommon(context, &bcDecl->asDecl, decl);
+
+        // TODO: type, etc.
     }
 
     void fillInDecl(
@@ -78,7 +111,13 @@ namespace Slang
         {
         case SLANG_BC_REFLECTION_TAG_MODULE:
             {
-                fillInModuleDecl(context, (SlangBCReflectionDecl*)bcNode, (ModuleDecl*)decl);
+                fillInModuleDecl(context, (SlangBCReflectionContainerNode*)bcNode, (ModuleDecl*)decl);
+            }
+            break;
+
+        case SLANG_BC_REFLECTION_TAG_PARAM:
+            {
+                fillInVarDecl(context, (SlangBCReflectionVarNode*)bcNode, (ParamDecl*)decl);
             }
             break;
 
@@ -99,28 +138,26 @@ namespace Slang
         context->compileRequest = compileRequest;
         context->blob = blob;
 
-        UInt sectionCount = bcFileHeader->sectionTableEntryCount;
-        SlangBCReflectionSectonHeader* bcAST = nullptr;
-        for(UInt ii = 0; ii < sectionCount; ++ii)
-        {
-            auto sectionTableEntry = getSectionTableEntry(bcFileHeader, ii);
-            if(sectionTableEntry.type != SLANG_BC_SECTION_TYPE_REFLECTION)
-                continue;
 
-            // Okay, we have an IR section, and we should try to load it.
-
-            bcAST = (SlangBCReflectionSectonHeader*) getSectionData(bcFileHeader, sectionTableEntry);
-
-            // We are breaking out of our search as soon as we find an IR
-            // section, even if it isn't the only one. Is this reasonable?
-            break;
-        }
-        if(!bcAST)
+        int32_t bcASTSectionIndex = findSection(bcFileHeader, SLANG_BC_SECTION_TYPE_REFLECTION);
+        if(bcASTSectionIndex < 0)
         {
             getSink(context)->diagnose(SourceLoc(), Diagnostics::unexpected, "invalid Slang bytecode file");
             return nullptr;
         }
+        auto bcAST = (SlangBCReflectionSectonHeader*) getSectionData(bcFileHeader, bcASTSectionIndex);
+
+        auto bcSymbolNameTableIndex = findChildSection(bcFileHeader, bcASTSectionIndex, SLANG_BC_SECTION_TYPE_STRING_TABLE);
+        if(bcSymbolNameTableIndex < 0)
+        {
+            getSink(context)->diagnose(SourceLoc(), Diagnostics::unexpected, "invalid Slang bytecode file");
+            return nullptr;
+        }
+        auto bcSymbolNameTable = (SlangBCStringTableSectionHeader*)getSectionData(bcFileHeader, bcSymbolNameTableIndex);
+
         context->bcAST = bcAST;
+        context->bcSymbolNameTable = bcSymbolNameTable;
+
 
         // Assume that entry #0 in the reflection section represents the whole module
 

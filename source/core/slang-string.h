@@ -213,6 +213,10 @@ namespace Slang
         UnownedTerminatedStringSlice(char const* b)
             : UnownedStringSlice(b, b + strlen(b))
         {}
+
+        UnownedTerminatedStringSlice(char const* b, char const* e)
+            : UnownedStringSlice(b, e)
+        {}
     };
 
     struct StringSlice

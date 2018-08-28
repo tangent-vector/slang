@@ -53,6 +53,15 @@ inline void* getSectionData(
     return (char*)header + entry.offsetInFile;
 }
 
+inline void* getSectionData(
+    SlangBCFileHeader*  header,
+    int32_t             index)
+{
+    return getSectionData(
+        header,
+        getSectionTableEntry(header, index));
+}
+
 //
 
 inline SlangBCReflectionNode* getNode(SlangBCReflectionSectonHeader const* bcHeader, UInt index)
@@ -93,6 +102,36 @@ inline SlangBCUpValue* getUpValue(SlangBCIRNode const* bcFunc, UInt index)
         + bcFunc->upValuesOffset
         + index * sizeof(SlangBCUpValue));
 }
+
+inline UnownedTerminatedStringSlice getString(
+    SlangBCStringTableSectionHeader const*  bcStringTable,
+    Int                                     index)
+{
+    auto empty = UnownedTerminatedStringSlice("");
+    if(!bcStringTable) return empty;
+    if(index < 0 || index > (Int)bcStringTable->entryCount) return empty;
+
+    auto entry = (SlangBCStringTableEntry*)((char*)bcStringTable
+        + bcStringTable->entryTableOffset
+        + index * bcStringTable->entrySize);
+
+    char const* begin = ((char*)bcStringTable
+        + entry->offset);
+    char const* end = begin + entry->size;
+
+    return UnownedTerminatedStringSlice(begin, end);
+}
+
+int32_t findSection(
+    SlangBCFileHeader*  bcFile,
+    uint32_t            sectionType,
+    int32_t             firstSection = 0);
+
+int32_t findChildSection(
+    SlangBCFileHeader*  bcFile,
+    int32_t             parentSection,
+    uint32_t            sectionType);
+
 
 //
 

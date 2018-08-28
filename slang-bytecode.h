@@ -25,7 +25,7 @@ struct SlangBCFileHeader
 {
     /* Pre-defined "magic" that must appear at the start of a binary module.
     */
-    char magic[16];
+    unsigned char magic[16];
 
     /* Major version number for the file format of this file.
     */
@@ -86,6 +86,12 @@ struct SlangBCSectionTableEntry
 
     /* Required alignment of the section, in bytes */
     uint32_t alignment;
+
+    /* First "child" section of this section, or -1 for no children. */
+    int32_t firstChild;
+
+    /* Next sibling section (same parent) of this section, or -1 for end of list */
+    int32_t nextSibling;
 
     /* General type of section, from the `SLANG_BC_SECTION_TYPE_*` enumerants. */
     uint16_t type;
@@ -183,6 +189,7 @@ struct SlangBCReflectionDecl
 {
     SlangBCReflectionNode asNode;
     int32_t parent;
+    int32_t name;
 };
 
 struct SlangBCReflectionVarNode
@@ -194,7 +201,8 @@ struct SlangBCReflectionContainerNode
 {
     SlangBCReflectionDecl asDecl;
 
-    // TODO: child nodes
+    uint32_t memberCount;
+    uint32_t memberIndicesOffset;
 };
 
 /** Opcodes for bytecode functions.
