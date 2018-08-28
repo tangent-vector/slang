@@ -195,6 +195,7 @@ struct SlangBCReflectionDecl
 struct SlangBCReflectionVarNode
 {
     SlangBCReflectionDecl asDecl;
+    int32_t typeID;
 };
 
 struct SlangBCReflectionContainerNode
@@ -203,6 +204,12 @@ struct SlangBCReflectionContainerNode
 
     uint32_t memberCount;
     uint32_t memberIndicesOffset;
+};
+
+struct SlangBCReflectionFuncNode
+{
+    SlangBCReflectionContainerNode asContainer;
+    int32_t resultTypeID;
 };
 
 /** Opcodes for bytecode functions.

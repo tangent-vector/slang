@@ -108,6 +108,14 @@ struct BCWriter
     {
         baseOffset = offset.baseOffset + offset.offset;
     }
+
+    template<typename T>
+    BCWriteOffset<T> reserveBase(UInt count = 1)
+    {
+        auto offset = reserve<T>(count);
+        setBaseOffset(offset);
+        return offset;
+    }
 };
 
 inline BCWriteOffsetBase::BCWriteOffsetBase(BCWriter* writer, size_t offset)

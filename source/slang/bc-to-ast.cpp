@@ -102,6 +102,16 @@ namespace Slang
         // TODO: type, etc.
     }
 
+    void fillInFuncDecl(
+        BCToASTContext*             context,
+        SlangBCReflectionFuncNode*  bcDecl,
+        FuncDecl*                   decl)
+    {
+        fillInContainerDeclCommon(context, &bcDecl->asContainer, decl);
+
+        // TODO: handle result type here
+    }
+
     void fillInDecl(
         BCToASTContext*     context,
         BCReflectionNode*   bcNode,
@@ -118,6 +128,12 @@ namespace Slang
         case SLANG_BC_REFLECTION_TAG_PARAM:
             {
                 fillInVarDecl(context, (SlangBCReflectionVarNode*)bcNode, (ParamDecl*)decl);
+            }
+            break;
+
+        case SLANG_BC_REFLECTION_TAG_FUNC:
+            {
+                fillInFuncDecl(context, (SlangBCReflectionFuncNode*)bcNode, (FuncDecl*)decl);
             }
             break;
 

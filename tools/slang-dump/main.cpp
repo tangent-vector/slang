@@ -133,7 +133,12 @@ void dumpReflectionNodeCommon(
     char const*             tagName,
     SlangBCReflectionNode*  node)
 {
-    printf("[%d] %s {}\n", index, tagName);
+    printf("[%d] %s {", index, tagName);
+}
+
+void dumpReflectionNodeEnd()
+{
+    printf("}\n");
 }
 
 void dumpReflectionDeclCommon(
@@ -142,7 +147,7 @@ void dumpReflectionDeclCommon(
     char const*                 tagName,
     SlangBCReflectionDecl*      node)
 {
-    printf("[%d] %s \"%s\" {}\n", index, tagName, getString(context->symbolNameStringTable, node->name));
+    printf("[%d] %s \"%s\" {", index, tagName, getString(context->symbolNameStringTable, node->name));
 }
 
 void dumpReflectionVarNode(
@@ -152,6 +157,7 @@ void dumpReflectionVarNode(
     SlangBCReflectionVarNode*   node)
 {
     dumpReflectionDeclCommon(context, index, tagName, &node->asDecl);
+    dumpReflectionNodeEnd();
 }
 
 void dumpReflectionContainerNode(
@@ -161,7 +167,21 @@ void dumpReflectionContainerNode(
     SlangBCReflectionContainerNode*  node)
 {
     dumpReflectionDeclCommon(context, index, tagName, &node->asDecl);
+
+    printf(" children:[");
+    uint32_t* childIndices = (uint32_t*)((char*)node
+        + node->memberIndicesOffset);
+    uint32_t memberCount = node->memberCount;
+    for( uint32_t mm = 0; mm < memberCount; ++mm )
+    {
+        if(mm) printf(",");
+        printf("%d", childIndices[mm]);
+    }
+    printf("]");
+
     // TODO: list children
+
+    dumpReflectionNodeEnd();
 }
 
 void dumpReflectionNode(

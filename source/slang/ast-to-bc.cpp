@@ -15,7 +15,7 @@ struct ASTNodeBuilder : RefObject
     UInt nodeIndex;
     RefPtr<ASTSection> section;
 
-    virtual void writeData(BCWriter& writer) = 0;
+    virtual BCWriteOffsetBase writeData(BCWriter& writer) = 0;
 };
 
 struct ASTSection : BCSectionBuilder
@@ -44,10 +44,12 @@ struct ASTSection : BCSectionBuilder
 
         for(UInt nn = 0; nn < nodeCount; ++nn)
         {
-            auto nodeOffset = writer.tell();
-            bcNodeOffsets[nn] = nodeOffset;
+            BCWriter subWriter;
+            subWriter.baseOffset = writer.baseOffset;
+            subWriter.outData = writer.outData;
 
-            nodes[nn]->writeData(writer);
+            auto nodeOffset = nodes[nn]->writeData(subWriter);
+            bcNodeOffsets[nn] = nodeOffset - bcSectionHeader;
         }
     }
 };
@@ -85,10 +87,11 @@ struct VarDeclNodeBuilder : DeclNodeBuilder
         writeDeclNode(writer, bcNode.as<SlangBCReflectionDecl>());
     }
 
-    void writeData(BCWriter& writer)
+    BCWriteOffsetBase writeData(BCWriter& writer)
     {
-        auto bcNode = writer.reserve<SlangBCReflectionVarNode>();
+        auto bcNode = writer.reserveBase<SlangBCReflectionVarNode>();
         writeVarNode(writer, bcNode);
+        return bcNode;
     }
 };
 
@@ -114,16 +117,25 @@ struct ContainerDeclNodeBuilder : DeclNodeBuilder
         }
     }
 
-    void writeData(BCWriter& writer)
+    BCWriteOffsetBase writeData(BCWriter& writer)
     {
-        auto bcNode = writer.reserve<SlangBCReflectionContainerNode>();
+        auto bcNode = writer.reserveBase<SlangBCReflectionContainerNode>();
         writeContainerNode(writer, bcNode);
+        return bcNode;
     }
 };
 
 struct FuncDeclNodeBuilder : ContainerDeclNodeBuilder
 {
-};
+    BCWriteOffsetBase writeData(BCWriter& writer)
+    {
+        auto bcNode = writer.reserveBase<SlangBCReflectionFuncNode>();
+        writeContainerNode(writer, bcNode.as<SlangBCReflectionContainerNode>());
+
+        // TODO: write result type
+
+        return bcNode;
+    }};
 
 struct ModuleDeclNodeBuilder : ContainerDeclNodeBuilder
 {
