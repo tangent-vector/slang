@@ -2,6 +2,7 @@
 #include "bc-to-ast.h"
 
 #include "bytecode.h"
+#include "bc-impl.h"
 
 namespace Slang
 {
@@ -12,6 +13,11 @@ namespace Slang
 
         SlangBCReflectionSectonHeader*      bcAST;
         SlangBCStringTableSectionHeader*    bcSymbolNameTable;
+
+        Dictionary<Int, RefPtr<Decl>> mapNodeIDToDecl;
+        Dictionary<Int, RefPtr<Type>> mapNodeIDToType;
+
+        List<RefPtr<DeferredAction>>        deferredActions;
     };
 
     DiagnosticSink* getSink(
@@ -20,31 +26,64 @@ namespace Slang
         return &context->compileRequest->mSink;
     }
 
-    RefPtr<Decl> createDecl(
-        BCToASTContext*     context,
-        BCReflectionNode*   bcNode)
+    Session* getSession(
+        BCToASTContext* context)
     {
-        switch(bcNode->tag)
-        {
-        case SLANG_BC_REFLECTION_TAG_MODULE:
-            return new ModuleDecl();
-
-        case SLANG_BC_REFLECTION_TAG_FUNC:
-            return new FuncDecl();
-
-        case SLANG_BC_REFLECTION_TAG_PARAM:
-            return new ParamDecl();
-
-        default:
-            getSink(context)->diagnose(SourceLoc(), Diagnostics::unexpected, "invalid Slang bytecode file");
-            return nullptr;
-        }
+        return context->compileRequest->mSession;
     }
 
-    void fillInDecl(
-        BCToASTContext*     context,
-        BCReflectionNode*   bcNode,
-        Decl*               decl);
+    void addDeferredAction(BCToASTContext* context, RefPtr<DeferredAction> const& action)
+    {
+        context->deferredActions.Add(action);
+    }
+
+    template<typename T>
+    void addDeferredAction(BCToASTContext* context, T const& action)
+    {
+        RefPtr<DeferredAction> actionObj = new DeferredActionImpl<T>(action);
+        addDeferredAction(context, actionObj);
+    }
+
+//
+
+    RefPtr<Decl> getDecl(
+        BCToASTContext* context,
+        Int             nodeID);
+
+    // Types
+
+    RefPtr<Type> createTypeForNode(
+        BCToASTContext* context,
+        Int            nodeID)
+    {
+        auto node = getNode(context->bcAST, nodeID);
+
+        auto tag = node->tag;
+
+        if( (tag >= SLANG_BC_REFLECTION_TAG_DECL_BEGIN) && (tag < SLANG_BC_REFLECTION_TAG_DECL_END) )
+        {
+            auto decl = getDecl(context, nodeID);
+            return DeclRefType::Create(getSession(context), makeDeclRef(decl.Ptr()));
+        }
+
+        getSink(context)->diagnose(SourceLoc(), Diagnostics::unexpected, "unhandled type case");
+        return nullptr;
+    }
+
+    RefPtr<Type> getType(
+        BCToASTContext* context,
+        Int             nodeID)
+    {
+        RefPtr<Type> type;
+        if(context->mapNodeIDToType.TryGetValue(nodeID, type))
+            return type;
+
+        type = createTypeForNode(context, nodeID);
+        context->mapNodeIDToType.Add(nodeID, type);
+        return type;
+    }
+
+    // Declarations
 
     void fillInDeclCommon(
         BCToASTContext*         context,
@@ -65,19 +104,15 @@ namespace Slang
     {
         fillInDeclCommon(context, &bcDecl->asDecl, decl);
 
-        uint32_t* memberIndices = (uint32_t*)((char*)bcDecl
+        int32_t* memberIndices = (int32_t*)((char*)bcDecl
             + bcDecl->memberIndicesOffset);
 
         UInt memberCount = bcDecl->memberCount;
         for(UInt mm = 0; mm < memberCount; ++mm)
         {
-            UInt memberIndex = memberIndices[mm];
-            BCReflectionNode* bcMemberNode = getNode(
-                context->bcAST,
-                memberIndex);
+            Int memberIndex = memberIndices[mm];
 
-            auto memberDecl = createDecl(context, bcMemberNode);
-            fillInDecl(context, bcMemberNode, memberDecl);
+            auto memberDecl = getDecl(context, memberIndex);
 
             decl->Members.Add(memberDecl);
             memberDecl->ParentDecl = decl;
@@ -99,7 +134,7 @@ namespace Slang
     {
         fillInDeclCommon(context, &bcDecl->asDecl, decl);
 
-        // TODO: type, etc.
+        decl->type.type = getType(context, bcDecl->typeID);
     }
 
     void fillInFuncDecl(
@@ -109,7 +144,7 @@ namespace Slang
     {
         fillInContainerDeclCommon(context, &bcDecl->asContainer, decl);
 
-        // TODO: handle result type here
+        decl->ReturnType.type = getType(context, bcDecl->resultTypeID);
     }
 
     void fillInDecl(
@@ -141,6 +176,99 @@ namespace Slang
             break;
         }
     }
+
+    RefPtr<VarDeclBase> createVarDecl(
+        BCToASTContext*     context,
+        BCReflectionNode*   bcNode,
+        RefPtr<VarDeclBase> decl)
+    {
+        addDeferredAction(context, [=]{ fillInVarDecl(context, (SlangBCReflectionVarNode*)bcNode, decl);});
+        return decl;
+    }
+
+    RefPtr<AggTypeDeclBase> createAggTypeDecl(
+        BCToASTContext*                 context,
+        SlangBCReflectionContainerNode* bcNode,
+        RefPtr<AggTypeDeclBase>         decl)
+    {
+        addDeferredAction(context, [=]{ fillInContainerDeclCommon(context, bcNode, decl);});
+        return decl;
+    }
+
+    RefPtr<Decl> importDecl(
+        BCToASTContext*         context,
+        Int                     nodeID,
+        SlangBCReflectionDecl*  bcDecl)
+    {
+        // We are expected to find a matching declaration via import
+        switch( bcDecl->asNode.tag )
+        {
+        case SLANG_BC_REFLECTION_TAG_MODULE:
+            break;
+
+        default:
+            {
+                // TODO: need to grab a reference to
+                // the parent of this node, so that we
+                // can use it as a container decl for lookup...
+            }
+            break;
+        }
+    }
+
+    RefPtr<Decl> createDecl(
+        BCToASTContext* context,
+        Int             nodeID)
+    {
+        auto bcNode = (SlangBCReflectionDecl*) getNode(context->bcAST, nodeID);
+
+        if( nodeID < 0 )
+        {
+            return importDecl(context, nodeID, bcNode);
+        }
+
+        switch(bcNode->asNode.tag)
+        {
+        case SLANG_BC_REFLECTION_TAG_MODULE:
+            {
+                RefPtr<ModuleDecl> decl = new ModuleDecl();
+                addDeferredAction(context, [=]{ fillInModuleDecl(context, (SlangBCReflectionContainerNode*)bcNode, decl);});
+                return decl;
+            }
+
+        case SLANG_BC_REFLECTION_TAG_FUNC:
+            {
+                RefPtr<FuncDecl> decl = new FuncDecl();
+                addDeferredAction(context, [=]{ fillInFuncDecl(context, (SlangBCReflectionFuncNode*)bcNode, decl);});
+                return decl;
+            }
+
+        case SLANG_BC_REFLECTION_TAG_PARAM:
+            return createVarDecl(context, bcNode, new ParamDecl());
+
+        case SLANG_BC_REFLECTION_TAG_STRUCT:
+            return createAggTypeDecl(context, (SlangBCReflectionContainerNode*)bcNode, new StructDecl());
+
+        default:
+            getSink(context)->diagnose(SourceLoc(), Diagnostics::unexpected, "invalid Slang bytecode file");
+            return nullptr;
+        }
+    }
+
+    RefPtr<Decl> getDecl(
+        BCToASTContext* context,
+        Int             nodeID)
+    {
+        RefPtr<Decl> decl;
+        if(context->mapNodeIDToDecl.TryGetValue(nodeID, decl))
+            return decl;
+
+        decl = createDecl(context, nodeID);
+        context->mapNodeIDToDecl.Add(nodeID, decl);
+        return decl;
+    }
+
+    //
 
     RefPtr<ModuleDecl> loadBinaryModuleAST(
         CompileRequest* compileRequest,
@@ -183,9 +311,18 @@ namespace Slang
         // TODO: even better than that would be to only populate thigns on-demand,
         // as lookup operations get performed.
         //
-        auto bcModule = getNode(bcAST, 0);
-        auto moduleDecl = createDecl(context, bcModule).As<ModuleDecl>();
-        fillInDecl(context, bcModule, moduleDecl);
+        auto moduleDecl = createDecl(context, 0).As<ModuleDecl>();
+
+        while( context->deferredActions.Count() )
+        {
+            List<RefPtr<DeferredAction>> deferredActions;
+            deferredActions.SwapWith(context->deferredActions);
+
+            for( auto action : deferredActions )
+            {
+                action->execute();
+            }
+        }
 
         return moduleDecl;
     }

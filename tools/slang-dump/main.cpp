@@ -38,6 +38,9 @@ char const* getString(
 {
     if(!stringTable) return "";
 
+    if(index < 0  || index >= stringTable->entryCount)
+        return "";
+
     auto entry = (SlangBCStringTableEntry*)((char*)stringTable
         + stringTable->entryTableOffset
         + index * stringTable->entrySize);
@@ -129,7 +132,7 @@ void dumpStringTableSection(
 
 void dumpReflectionNodeCommon(
     ASTDumpContext*         context,
-    uint32_t                index,
+    int32_t                index,
     char const*             tagName,
     SlangBCReflectionNode*  node)
 {
@@ -143,7 +146,7 @@ void dumpReflectionNodeEnd()
 
 void dumpReflectionDeclCommon(
     ASTDumpContext*         context,
-    uint32_t                    index,
+    int32_t                    index,
     char const*                 tagName,
     SlangBCReflectionDecl*      node)
 {
@@ -152,17 +155,18 @@ void dumpReflectionDeclCommon(
 
 void dumpReflectionVarNode(
     ASTDumpContext*         context,
-    uint32_t                    index,
+    int32_t                    index,
     char const*                 tagName,
     SlangBCReflectionVarNode*   node)
 {
     dumpReflectionDeclCommon(context, index, tagName, &node->asDecl);
+    printf(" type:%d", node->typeID);
     dumpReflectionNodeEnd();
 }
 
-void dumpReflectionContainerNode(
+void dumpReflectionContainerNodeCommon(
     ASTDumpContext*         context,
-    uint32_t                index,
+    int32_t                index,
     char const*             tagName,
     SlangBCReflectionContainerNode*  node)
 {
@@ -178,15 +182,34 @@ void dumpReflectionContainerNode(
         printf("%d", childIndices[mm]);
     }
     printf("]");
+}
 
-    // TODO: list children
+void dumpReflectionContainerNode(
+    ASTDumpContext*         context,
+    int32_t                index,
+    char const*             tagName,
+    SlangBCReflectionContainerNode*  node)
+{
+    dumpReflectionContainerNodeCommon(context, index, tagName, node);
+    dumpReflectionNodeEnd();
+}
+
+void dumpReflectionFuncNode(
+    ASTDumpContext*             context,
+    int32_t                    index,
+    char const*                 tagName,
+    SlangBCReflectionFuncNode*  node)
+{
+    dumpReflectionContainerNodeCommon(context, index, tagName, &node->asContainer);
+
+    printf(" resultType:%d", node->resultTypeID);
 
     dumpReflectionNodeEnd();
 }
 
 void dumpReflectionNode(
     ASTDumpContext*         context,
-    uint32_t                index,
+    int32_t                index,
     SlangBCReflectionNode*  node)
 {
     switch(node->tag)
@@ -195,8 +218,16 @@ void dumpReflectionNode(
         dumpReflectionContainerNode(context, index, "Module", (SlangBCReflectionContainerNode*)node);
         break;
 
+    case SLANG_BC_REFLECTION_TAG_IMPORTED_MODULE:
+        dumpReflectionContainerNode(context, index, "Imported Module", (SlangBCReflectionContainerNode*)node);
+        break;
+
     case SLANG_BC_REFLECTION_TAG_FUNC:
-        dumpReflectionContainerNode(context, index, "Func", (SlangBCReflectionContainerNode*)node);
+        dumpReflectionFuncNode(context, index, "Func", (SlangBCReflectionFuncNode*)node);
+        break;
+
+    case SLANG_BC_REFLECTION_TAG_STRUCT:
+        dumpReflectionContainerNode(context, index, "Struct", (SlangBCReflectionContainerNode*)node);
         break;
 
     case SLANG_BC_REFLECTION_TAG_CONSTRUCTOR:
@@ -220,7 +251,7 @@ void dumpReflectionNode(
         break;
 
     default:
-        printf("[%d] { tag = %d }\n", index, node->tag);
+        printf("[%d] { tag = 0x%x }\n", index, node->tag);
         break;
     }
 }
@@ -239,8 +270,8 @@ void dumpReflectionSection(
 
 
     auto sectionHeader = (SlangBCReflectionSectonHeader*)sectionData;
-    auto entryCount = sectionHeader->entryCount;
 
+    auto entryCount = sectionHeader->entryCount;
     for(uint32_t ii = 0; ii < entryCount; ++ii)
     {
         auto entry = (SlangBCReflectionEntry*)((char*)sectionHeader
@@ -250,6 +281,19 @@ void dumpReflectionSection(
             + entry->offset);
 
         dumpReflectionNode(astContext, ii, node);
+    }
+
+    auto importCount = sectionHeader->importCount;
+    if(importCount) printf("imports:\n");
+    for(uint32_t ii = 0; ii < importCount; ++ii)
+    {
+        auto entry = (SlangBCReflectionEntry*)((char*)sectionHeader
+            + sectionHeader->importTableOffset
+            + ii * sectionHeader->entrySize);
+        auto node = (SlangBCReflectionNode*)((char*)sectionHeader
+            + entry->offset);
+
+        dumpReflectionNode(astContext, (int32_t)~ii, node);
     }
 }
 

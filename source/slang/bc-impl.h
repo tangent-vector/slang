@@ -257,6 +257,26 @@ struct BCFileBuilder
     }
 };
 
+struct DeferredAction : RefObject
+{
+    virtual void execute() = 0;
+};
+
+template<typename T>
+struct DeferredActionImpl : DeferredAction
+{
+    DeferredActionImpl(T const& action)
+        : impl(action)
+    {}
+
+    T impl;
+
+    void execute() override
+    {
+        impl();
+    }
+};
+
 //
 
 void generateBytecodeSectionsForAST(

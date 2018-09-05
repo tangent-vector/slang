@@ -133,6 +133,9 @@ struct SlangBCReflectionSectonHeader
     uint32_t entryCount;
     uint32_t entrySize;
 
+    uint32_t importTableOffset;
+    uint32_t importCount;
+
     // TODO: eventually we want to support tools that can strip out reflection
     // nodes not required for runtime reflection, or those that are not required
     // to expose the public interface of a module to subsequent compilation.
@@ -156,26 +159,67 @@ struct SlangBCReflectionEntry
 */
 enum
 {
+    // 0x0xxxxxxx : reserved
     SLANG_BC_REFLECTION_TAG_NONE = 0,
 
-    SLANG_BC_REFLECTION_TAG_MODULE,
+    // 0x1xxxxxxx : declarations (non-container, non-type)
 
-    SLANG_BC_REFLECTION_TAG_VAR,
-    SLANG_BC_REFLECTION_TAG_PARAM,
-    SLANG_BC_REFLECTION_TAG_FIELD,
-    SLANG_BC_REFLECTION_TAG_GENERIC_VALUE_PARAM,
+    // 0x10xxxxxx : variable declarations
+    SLANG_BC_REFLECTION_TAG_VAR                 = 0x10000000,
+    SLANG_BC_REFLECTION_TAG_PARAM               = 0x10100000,
+    SLANG_BC_REFLECTION_TAG_FIELD               = 0x10200000,
+    SLANG_BC_REFLECTION_TAG_GENERIC_VALUE_PARAM = 0x10300000,
 
-    SLANG_BC_REFLECTION_TAG_FUNC,
-    SLANG_BC_REFLECTION_TAG_CONSTRUCTOR,
-    SLANG_BC_REFLECTION_TAG_INTERFACE,
-    SLANG_BC_REFLECTION_TAG_GENERIC,
+    // 0x2xxxxxxx : declarations (container, non-type)
+    SLANG_BC_REFLECTION_TAG_DECL_BEGIN  = 0x20000000,
+    SLANG_BC_REFLECTION_TAG_DECL_END    = 0x50000000,
 
-    SLANG_BC_REFLECTION_TAG_STRUCT,
+    // 0x200xxxxx : generic declarations
+    SLANG_BC_REFLECTION_TAG_GENERIC             = 0x20000000,
 
-    SLANG_BC_REFLECTION_TAG_VECTOR_TYPE,
-    SLANG_BC_REFLECTION_TAG_MATRIX_TYPE,
-    SLANG_BC_REFLECTION_TAG_ARRAY_TYPE,
-    SLANG_BC_REFLECTION_TAG_UNBOUNDED_ARRAY_TYPE,
+    // 0x201xxxxx : module declarations
+    SLANG_BC_REFLECTION_TAG_MODULE              = 0x20100000,
+    SLANG_BC_REFLECTION_TAG_IMPORTED_MODULE     = 0x20110000,
+
+
+    // 0x21xxxxxx : callable (function-like) declarations
+    SLANG_BC_REFLECTION_TAG_FUNC                = 0x21000000,
+    SLANG_BC_REFLECTION_TAG_CONSTRUCTOR         = 0x21100000,
+
+
+    // 0x3xxxxxxx : type declarations (container)
+
+    // 0x30xxxxxx : aggregate type declarations (struct-like)
+    SLANG_BC_REFLECTION_TAG_STRUCT              = 0x30000000,
+    SLANG_BC_REFLECTION_TAG_INTERFACE           = 0x30100000,
+
+    // 0x4xxxxxxx : type declarations (non-container)
+
+    // 0x40xxxxxx : basic scalar types
+
+
+    // 0x5xxxxxxx : types (non-declaration)
+
+    // 0x500xxxxx : basic scalar types
+    SLANG_BC_REFLECTION_TAG_VOID_TYPE               = 0x50000000,
+
+    // 0x51xxxxxx : array types
+    SLANG_BC_REFLECTION_TAG_ARRAY_TYPE              = 0x51000000,
+    SLANG_BC_REFLECTION_TAG_UNBOUNDED_ARRAY_TYPE    = 0x51100000,
+
+    // 0x7xxxxxx : specializations
+
+    // 0x701xxxxx : vector types
+    SLANG_BC_REFLECTION_TAG_VECTOR_TYPE             = 0x70100000,
+
+    // 0x702xxxxx : matrix types
+    SLANG_BC_REFLECTION_TAG_MATRIX_TYPE             = 0x70200000,
+
+
+    SLANG_BC_REFLECTION_TAG_GENERIC_SPECIALIZATION  = 0x71000000,
+
+    // 
+
 };
 
 struct SlangBCReflectionNode

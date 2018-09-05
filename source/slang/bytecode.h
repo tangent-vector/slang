@@ -64,14 +64,29 @@ inline void* getSectionData(
 
 //
 
-inline SlangBCReflectionNode* getNode(SlangBCReflectionSectonHeader const* bcHeader, UInt index)
+inline SlangBCReflectionNode* getNode(SlangBCReflectionSectonHeader const* bcHeader, Int index)
 {
-    auto entry = (SlangBCReflectionEntry*)((char*)bcHeader
-        + bcHeader->entryTableOffset
-        + index * bcHeader->entrySize);
+    if( index >= 0 )
+    {
+        auto entry = (SlangBCReflectionEntry*)((char*)bcHeader
+            + bcHeader->entryTableOffset
+            + index * bcHeader->entrySize);
 
-    return (SlangBCReflectionNode*)((char*)bcHeader
-        + entry->offset);
+        return (SlangBCReflectionNode*)((char*)bcHeader
+            + entry->offset);
+    }
+    else
+    {
+        index = ~index;
+
+        auto entry = (SlangBCReflectionEntry*)((char*)bcHeader
+            + bcHeader->importTableOffset
+            + index * bcHeader->entrySize);
+
+        return (SlangBCReflectionNode*)((char*)bcHeader
+            + entry->offset);
+    }
+
 }
 
 //
