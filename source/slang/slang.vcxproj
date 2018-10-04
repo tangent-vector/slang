@@ -182,6 +182,7 @@
     <ClInclude Include="glsl.meta.slang.h" />
     <ClInclude Include="hlsl.meta.slang.h" />
     <ClInclude Include="ir-constexpr.h" />
+    <ClInclude Include="ir-definite-initialization.h" />
     <ClInclude Include="ir-dominators.h" />
     <ClInclude Include="ir-inst-defs.h" />
     <ClInclude Include="ir-insts.h" />
@@ -229,6 +230,7 @@
     <ClCompile Include="dxc-support.cpp" />
     <ClCompile Include="emit.cpp" />
     <ClCompile Include="ir-constexpr.cpp" />
+    <ClCompile Include="ir-definite-initialization.cpp" />
     <ClCompile Include="ir-dominators.cpp" />
     <ClCompile Include="ir-legalize-types.cpp" />
     <ClCompile Include="ir-restructure-scoping.cpp" />

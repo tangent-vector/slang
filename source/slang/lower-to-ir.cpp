@@ -5,6 +5,7 @@
 
 #include "ir.h"
 #include "ir-constexpr.h"
+#include "ir-definite-initialization.h"
 #include "ir-insts.h"
 #include "ir-ssa.h"
 #include "ir-validate.h"
@@ -5565,6 +5566,7 @@ IRModule* generateIRForTranslationUnit(
 
     // TODO: give error messages if any `undefined` or
     // `unreachable` instructions remain.
+    checkDefiniteInitialization(module, &compileRequest->mSink);
 
     // TODO: consider doing some more aggressive optimizations
     // (in particular specialization of generics) here, so

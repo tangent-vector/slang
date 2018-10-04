@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="Header Files">
@@ -45,6 +45,9 @@
     <ClInclude Include="ir-constexpr.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="ir-definite-initialization.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="ir-dominators.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -58,6 +61,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ir-restructure.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ir-serialize.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ir-ssa.h">
@@ -156,9 +162,6 @@
     <ClInclude Include="vm.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="ir-serialize.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="bytecode.cpp">
@@ -182,6 +185,9 @@
     <ClCompile Include="ir-constexpr.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ir-definite-initialization.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="ir-dominators.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -192,6 +198,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ir-restructure.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ir-serialize.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ir-ssa.cpp">
@@ -261,9 +270,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="vm.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="ir-serialize.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
