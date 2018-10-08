@@ -832,7 +832,7 @@ static LegalVal legalizeInst(
             args,
             inst->getOperandCount());
 
-    case kIROp_undefined:
+    case kIROp_Undefined:
         return LegalVal();
     default:
         // TODO: produce a user-visible diagnostic here

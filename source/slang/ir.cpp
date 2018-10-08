@@ -471,6 +471,43 @@ namespace Slang
         return (IRBlock*)use->get();
     }
 
+    UInt IRUnconditionalBranch::getArgCount()
+    {
+        switch(op)
+        {
+        case kIROp_unconditionalBranch:
+            return getOperandCount() - 1;
+
+        case kIROp_loop:
+            return getOperandCount() - 3;
+
+        default:
+            SLANG_UNEXPECTED("unhandled unconditional branch opcode");
+            UNREACHABLE_RETURN(0);
+        }
+    }
+
+    IRUse* IRUnconditionalBranch::getArgs()
+    {
+        switch(op)
+        {
+        case kIROp_unconditionalBranch:
+            return getOperands() + 1;
+
+        case kIROp_loop:
+            return getOperands() + 3;
+
+        default:
+            SLANG_UNEXPECTED("unhandled unconditional branch opcode");
+            UNREACHABLE_RETURN(0);
+        }
+    }
+
+    IRInst* IRUnconditionalBranch::getArg(UInt index)
+    {
+        return getArgs()[index].usedValue;
+    }
+
     IRParam* IRGlobalValueWithParams::getFirstParam()
     {
         auto entryBlock = getFirstBlock();
@@ -1640,7 +1677,7 @@ namespace Slang
     {
         auto inst = createInst<IRUndefined>(
             this,
-            kIROp_undefined,
+            kIROp_Undefined,
             type);
 
         addInst(inst);

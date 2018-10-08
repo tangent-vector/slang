@@ -3824,7 +3824,7 @@ struct EmitVisitor
             emit(";\n");
             break;
 
-        case kIROp_undefined:
+        case kIROp_Undefined:
             {
                 auto type = inst->getDataType();
                 emitIRType(ctx, type, getIRName(inst));

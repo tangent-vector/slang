@@ -628,6 +628,20 @@ IRInst* readVarRec(
 
             auto type = var->getDataType()->getValueType();
             val = blockInfo->builder.emitUndefined(type);
+
+            // Record information about the variable onto the `undefined`
+            // so that we can correctly produce diagnostics messages if/when
+            // this `undefined` instruction turns out to be used.
+            //
+            val->sourceLoc = var->sourceLoc;
+            if( auto highLevelDeclDecoration = var->findDecoration<IRHighLevelDeclDecoration>() )
+            {
+                blockInfo->builder.addHighLevelDeclDecoration(val, highLevelDeclDecoration->decl);
+            }
+            if( auto nameHintDecoration = var->findDecoration<IRNameHintDecoration>() )
+            {
+                blockInfo->builder.addDecoration<IRNameHintDecoration>(val)->name = nameHintDecoration->name;
+            }
         }
         else if (!multiplePreds)
         {

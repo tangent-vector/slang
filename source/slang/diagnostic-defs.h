@@ -364,6 +364,7 @@ DIAGNOSTIC(40008, Error, invalidLValueForRefParameter, "the form of this l-value
 
 DIAGNOSTIC(41000, Warning, unreachableCode, "unreachable code detected")
 
+DIAGNOSTIC(41000, Warning, useOfUndefinedVariable, "variable '$0' may be used when uninitialized");
 
 //
 // 5xxxx - Target code generation.

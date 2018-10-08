@@ -184,6 +184,9 @@ struct IRStore : IRInst
 {
     IRUse ptr;
     IRUse val;
+
+    IRInst* getAddr() { return getOperand(0); }
+    IRInst* getVal()  { return getOperand(1); }
 };
 
 struct IRFieldExtract : IRInst
@@ -236,12 +239,18 @@ struct IRUnconditionalBranch : IRTerminatorInst
     IRUse block;
 
     IRBlock* getTargetBlock() { return (IRBlock*)block.get(); }
+
+    UInt getArgCount();
+    IRUse* getArgs();
+    IRInst* getArg(UInt index);
+
+    IR_PARENT_ISA(UnconditionalBranch);
 };
 
 // Special cases of unconditional branch, to handle
 // structured control flow:
-struct IRBreak : IRUnconditionalBranch {};
-struct IRContinue : IRUnconditionalBranch {};
+//struct IRBreak : IRUnconditionalBranch {};
+//struct IRContinue : IRUnconditionalBranch {};
 
 // The start of a loop is a special control-flow
 // instruction, that records relevant information
@@ -443,6 +452,7 @@ struct IRWitnessTable : IRGlobalValue
 // used when undefined.
 struct IRUndefined : IRInst
 {
+    IR_LEAF_ISA(Undefined)
 };
 
 // A global-scope generic parameter (a type parameter, a

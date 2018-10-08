@@ -189,7 +189,7 @@ INST_RANGE(ParentInst, StructType, Block)
     INST(StringLit, string_constant, 0, 0)
 INST_RANGE(Constant, boolConst, StringLit)
 
-INST(undefined, undefined, 0, 0)
+INST(Undefined, undefined, 0, 0)
 
 INST(Specialize, specialize, 2, 0)
 INST(lookup_interface_method, lookup_interface_method, 2, 0)
@@ -294,11 +294,13 @@ INST(SwizzledStore, swizzledStore, 2, 0)
     INST(ReturnVal, return_val, 1, 0)
     INST(ReturnVoid, return_void, 1, 0)
 
-    // unconditionalBranch <target>
-    INST(unconditionalBranch, unconditionalBranch, 1, 0)
+    /* IRUnconditionalBranch */
+        // unconditionalBranch <target>
+        INST(unconditionalBranch, unconditionalBranch, 1, 0)
 
-    // loop <target> <breakLabel> <continueLabel>
-    INST(loop, loop, 3, 0)
+        // loop <target> <breakLabel> <continueLabel>
+        INST(loop, loop, 3, 0)
+    INST_RANGE(UnconditionalBranch, unconditionalBranch, loop)
 
     // conditionalBranch <condition> <trueBlock> <falseBlock>
     INST(conditionalBranch, conditionalBranch, 3, 0)
