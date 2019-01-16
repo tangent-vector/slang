@@ -1,0 +1,70 @@
+\chapter{Lexical Structure}
+
+\section{Source Units}
+
+A \definition{source unit} of comprises a sequence of zero or more \definition{characters} which for the purposes of this section are defined as Unicode scalars (code points).
+Implementations \may accept source units stored as files on disk, strings in memory, or any appropriate implementation-specified means.
+
+\section{Encoding}
+
+When encoding is required, source units units \should be encoded using UTF-8.
+Implementations \may support additional implementation-specified encodings.
+
+\section{Whitespace}
+
+\definition{Horizontal whitespace} consists of space (U+0020) and horizontal tab (U+0009).
+
+A \definition{line break} consists of a line feed (U+000A), carriage return (U+000D) or a carriage return followed by a line feed (U+000D, U+000A).
+Line breaks are used as line separators rather than terminators; it not necessary for a source unit to end with a line break.
+
+\section{Escaped Line Breaks}
+
+An \definition{escaped line break} comprises a backslash (\lstinline|\\|, U+????) followed by a line break.
+
+\section{Comments}
+
+A \definition{comment} is either a line comment or a block comment.
+
+A \definition{line comment} comprises two forward slashes (\lstinline{/}, U+????), followed by zero or more code points that do not contain a line break. A line comment extends up to, but not including, a subsequent line break or the end of the source unit.
+
+A \definition{block comment} begins with a forward slash (\lstinline{/}, U+????) followed by an asterisk (\lstinline|*|, U+????). A block comment is terminated by the next instance of an asterisk followed by a forward slash (\lstinline|*/|).
+A block comment contains all code points between where it begins and where it terminates, including any line breaks.
+Block comments do not nest.
+It is an error if a block comment is not terminated.
+
+\section{Phases}
+
+Compilation proceeds \emph{as if} the following steps are executed in order:
+
+\begin{enumerate}
+	\item Line numbering (for subsequent diagnostic messages) is noted based on the locations of line breaks
+	\item Escaped line breaks are eliminated. No new code points are inserted to replace them. Any new escaped line breaks introduced by this step are not eliminated.
+	\item All comments are replaced with a single space (U+0020).
+	\item Preprocessing is done, resulting in a sequence of tokens
+	\item Subsequent processing is performed on the sequence of tokens
+\end{enumerate}
+
+\section{Identifiers}
+
+An \definition{identifier} begins with an uppercase or lowercase ASCII letter \lstinline|A| through \lstinline|Z|, or an underscore (\lstinline|_|).
+After the first character, ASCII digits \lstinline|0| through \lstinline|9| are also allowed.
+
+The identifier consisting of a single underscore (\lstinline|_|) is reserved by the implementation.
+
+Otherwise, there are no fixed keywords or reserved words.
+Words that name built-in language syntax can also be used as user-defined identifiers and will shadow the built-in definition in the scope of their definition.
+
+\section{Literals}
+
+\subsection{Integer Literals}
+
+\subsection{Floating-Point Literals}
+
+\subsection{String Literals}
+
+\subsection{Character Literals}
+
+\section{Operators and Punctuation}
+
+
+

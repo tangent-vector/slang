@@ -1,0 +1,151 @@
+\chapter{Types}
+
+\section{Terminology}
+
+A \definition{scalar} type is one that represents a single value rather than a composite.
+
+An \definition{numeric} type is one that can be used for traditional mathematical operations like addition, subtraction, etc.
+
+An \definition{integer} type is a numeric type that can only take on integer values.
+An \definition{unsigned integer} type can only take on non-negative values.
+A \definition{signed integer} type uses two's complement notation to represent signed and unsigned values.
+
+A \definition{floating-point} type is a numeric type that uses a sign bit, exponent, and mantissa to represent values that can include non-integer real values, positive/negative infinity, and also special not-a-number values.
+
+\section{Layout}
+
+The layout of a type when stored in memory may depend on the compilation target and how the type is used.
+For example, different targets may lay out constant buffer memory differently from one another, and on a single target types in constant buffer memory may be laid out differently from types in structured buffers.
+
+\section{Void Type}
+
+The \lstinline|void| contains no data and has a single unnamed value.
+The \lstinline|void| type is not a scalar type.
+
+\section{Scalar Types}
+\label{sec:scalar-types}
+
+Scalar types must be atomically loadable and storable.
+That is, loading a scalar type from memory must depend only on the bits in memory that define its value, and storing a scalar type to memory must not have an observable effect on other bits in memory.
+
+
+\subsection{Boolean Type}
+
+The \lstinline|bool| type represents a conditional value that can take on the values \lstinline|true| and \lstinline|false|.
+
+\subsection{Scalar Integer Types}
+
+The following scalar integer types are supported:
+
+\begin{tabular}{lr}
+\lstinline|int8_t|   &  8-bit signed integer   \\
+\lstinline|int16_t|  & 16-bit signed integer   \\
+\lstinline|int|      & 32-bit signed integer   \\
+\lstinline|int64_t|  & 64-bit signed integer   \\
+\lstinline|uint8_t|  &  8-bit unsigned integer \\
+\lstinline|uint16_t| & 16-bit unsigned integer \\
+\lstinline|uint|     & 32-bit unsigned integer \\
+\lstinline|uint64_t| & 64-bit unsigned integer \\
+\end{tabular}
+
+\subsection{Scalar Floating-Point Types}
+
+The following scalar floating-point types are supported:
+
+\begin{tabular}{lr}
+\lstinline|half| & 16-bit half-precision floating-point \\
+\lstinline|float| & 32-bit single-precision floating-point \\
+\lstinline|double| & 64-bit double-precision floating-point \\
+\end{tabular}
+
+\section{Vector Types}
+
+A \definition{vector type} consists of a fixed number of \definition{components} of some scalar type.
+A vector type is formed by \lstinline|vector<T,N>| where \lstinline|T| is a scalar type and \lstinline|N| is a constant integer.
+The type \lstinline|T| is called the \definition{element type} or \definition{component type} of the vector, and \lstinline|N| is called the \definition{element count} or \definition{component count}.
+
+A vector type is numeric, integer, signed integer, unsigned integer, and/or floating point if and only if its element type is.
+
+The element count of a vector type must be greater than or equal to two, and less than or equal to 4.
+
+For each of the scalar types defined in \label{sec:scalar-types}, there exist type aliases of the form \lstinline|<scalar type name><digit>| where \lstinline|<digit>| is one of \lstinline|2|, \lstinline|3|, or \lstinline|4|.
+
+\section{Matrix Types}
+
+A \definition{matrix type} is formed by \lstinline|matrix<T,R,C>| where \lstinline|T| is a scalar type and \lstinline|R| and \lstinline|C| are constant integers.
+The matrix type \lstinline|matrix<T,R,C>| consists of \lstinline|R| \definition{rows} of type \lstinline|vector<T,C>| (the \definition{row type} of the matrix type).
+The type \lstinline|T| is called the \definition{element type} of the matrix, \lstinline|R| is called the \definition{row count}, and \lstinline|C| is called the column count.
+
+The row count and column count of a matrix type must be greater than or equal to two, and less than or equal to 4.
+
+For each of the scalar types defined in \label{sec:scalar-types}, there exist type aliases of the form \lstinline|<scalar type name><row-digit>x<col-digit>| where \lstinline|<row-digit>| and \lstinline|<col-digit>| are each one of \lstinline|2|, \lstinline|3|, or \lstinline|4|.
+
+\section{Structure Types}
+
+A \definition{structure type} is introduced using a structure declaration (Section~\ref{sec:struct-declaration}).
+For example:
+
+\begin{lstlisting}
+struct Sphere
+{
+    float3 position;
+    float  radius;
+}
+\end{lstlisting}
+
+In this example, \lstinline|Sphere| is the name of a user-defined structure type.
+Variables declared in a struct declaration (in this case, \lstinline|position| and \lstinline|radius|) are \definition{member variables} (also: \definition{fields}).
+A structure type may contain zero or more member variables.
+
+\section{Enumeration Types}
+
+An \definition{enumeration type} is introduced using an enumeration declaration (Section~\ref{sec:enum-declaration}).
+For example:
+
+\begin{lstlisting}
+enum ColorCompoment
+{
+    Red,
+    Green,
+    Blue,
+}
+\end{lstlisting}
+
+In this example, \lstinline|ColorComponent| is the name of a user-defined enumeration type.
+An enumeration type may contain zero or more \definition{cases}.
+In this example, \lstinline|Red|, \lstinline|Green|, and \lstinline|Blue| are the cases of the type \lstinline|ColorComponent|).
+
+\section{Arrays}
+
+An \definition{array type} is either a sized array type or an unsized array type.
+
+A \definition{sized array type} can be written \lstinline|T[N]| where \lstinline|T| is a type and \lstinline|N| is a constant integer.
+The type \lstinline|T| is the \definition{element type} of the sized array type, and \lstinline|N| is the \definition{element count}.
+
+The element count of a sized array type must be greater than or equal to zero.
+
+An \definition{sized array type} can be written \lstinline|T[]| where \lstinline|T| is a type.
+The type \lstinline|T| is the \definition{element type} of the unsized array type.
+
+\section{Opaque Types}
+
+The Slang library defines a number of \definition{opaque types} such as \lstinline|Texture2D|.
+
+\section{Type Aliases}
+
+A \definition{type alias} is introduced with a \lstinline|typedef| declaration.
+For example:
+
+\begin{lstlisting}
+typedef float RadianAngle;
+\end{lstlisting}
+
+In this example, the identifier \lstinline|RadianAngle| has been declared to be an alias for \lstinline|float|.
+
+A type alias is semantically equivalent to the type it is an alias of.
+Implementations may elect to use type aliases in diagnostic messages if they can improve clarity.
+
+\section{Generic Type Parameters}
+
+\section{Associated Types}
+

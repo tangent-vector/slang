@@ -1,0 +1,39 @@
+\documentclass{book}
+
+\usepackage{xspace}
+\usepackage{xcolor}
+\usepackage{listings}
+
+
+\newcommand{\definition}[1] {\emph{#1}}
+
+\newcommand{\must}{\textbf{must}\xspace}
+\newcommand{\should}{\textbf{should}\xspace}
+\newcommand{\may}{\textbf{may}\xspace}
+
+\lstset{basicstyle=\ttfamily}
+\definecolor{codebg}{rgb}{0.8,0.8,0.8}
+
+\newcommand{\code}[1]{\lstinline|{#1}|}
+
+\title{Slang Language and Library Reference}
+
+\begin{document}
+\maketitle
+\tableofcontents
+
+\include{introduction}
+\include{lexical}
+\include{preprocessor}
+\include{types}
+\include{expressions}
+\include{statements}
+\include{declarations}
+
+
+
+\chapter{Pipeline Model}
+
+\chapter{Library Functions}
+
+\end{document}
