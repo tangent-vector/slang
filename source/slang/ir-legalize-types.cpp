@@ -1623,7 +1623,8 @@ static LegalVal declareVars(
                 context,
                 op,
                 type.getImplicitDeref()->valueType,
-                getDerefTypeLayout(typeLayout),
+                typeLayout,
+//                getDerefTypeLayout(typeLayout),
                 varChain,
                 nameHint,
                 globalNameInfo);

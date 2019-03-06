@@ -4,6 +4,20 @@
 // interface types at more complicated places in the overall layout.
 //
 
+// NOTE TO SELF:
+//
+// First issue is that the constant buffer layouts aren't being
+// computed correctly for `gStrategy` (even in the previous test),
+// so that it doesn't get a `b` register bound.
+//
+// Second issue is that the type legalization logic is now overzealous,
+// and moves the `modifier` member of the entry-point constant buffer
+// out to global scope, when it should allocate it inside the constant
+// buffer.
+//
+
+
+
 //TEST(compute):COMPARE_COMPUTE_EX:-slang -compute
 //TEST(compute):COMPARE_COMPUTE_EX:-slang -compute -dx12
 //TEST(compute, vulkan):COMPARE_COMPUTE_EX:-vk -compute

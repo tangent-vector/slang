@@ -1184,6 +1184,8 @@ static RefPtr<TypeLayout> flushPendingItems(
     TypeLayoutContext const&    context,
     RefPtr<TypeLayout>          layout)
 {
+    SLANG_UNUSED(context);
+
     if(layout->pendingItems.Count() == 0)
         return layout;
 
@@ -1197,8 +1199,7 @@ static RefPtr<TypeLayout> flushPendingItems(
     //
     for( auto pendingItem : layout->pendingItems )
     {
-        auto itemType = pendingItem.getType();
-        auto itemTypeLayout = createTypeLayout(context, itemType);
+        auto itemTypeLayout = pendingItem.getTypeLayout();
 
         // Okay, lets add its resource usage in!
         //
