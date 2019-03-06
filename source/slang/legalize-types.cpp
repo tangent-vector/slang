@@ -7,17 +7,40 @@
 namespace Slang
 {
 
-LegalType LegalType::implicitDeref(
-    LegalType const& valueType)
+LegalType LegalType::pseudoPtr(
+    Flavor              flavor,
+    LegalType const&    valueType)
 {
-    RefPtr<ImplicitDerefType> obj = new ImplicitDerefType();
+    SLANG_ASSERT(flavor == Flavor::implicitDeref || flavor == Flavor::existentialBox);
+
+    RefPtr<PseudoPtrType> obj = new PseudoPtrType();
     obj->valueType = valueType;
 
     LegalType result;
-    result.flavor = Flavor::implicitDeref;
+    result.flavor = flavor;
     result.obj = obj;
     return result;
 }
+
+bool LegalType::isPseudoPtr()
+{
+    return flavor == Flavor::implicitDeref || flavor == Flavor::existentialBox;
+}
+
+
+LegalType LegalType::implicitDeref(
+    LegalType const& valueType)
+{
+    return pseudoPtr(Flavor::implicitDeref, valueType);
+}
+
+LegalType LegalType::existentialBox(
+    LegalType const& valueType)
+{
+    return pseudoPtr(Flavor::existentialBox, valueType);
+}
+
+
 
 LegalType LegalType::tuple(
     RefPtr<TuplePseudoType>   tupleType)
@@ -42,21 +65,29 @@ LegalType LegalType::pair(
 LegalType LegalType::pair(
     LegalType const&    ordinaryType,
     LegalType const&    specialType,
+    LegalType const&    existentialType,
     RefPtr<PairInfo>    pairInfo)
 {
     // Handle some special cases for when
-    // one or the other of the types isn't
-    // actually used.
+    // only one of the sub-types is actually used.
 
-    if (ordinaryType.flavor == LegalType::Flavor::none)
+    if(ordinaryType.flavor == LegalType::Flavor::none
+        && existentialType.flavor == LegalType::Flavor::none)
     {
         // There was nothing ordinary.
         return specialType;
     }
 
-    if (specialType.flavor == LegalType::Flavor::none)
+    if (specialType.flavor == LegalType::Flavor::none
+        && existentialType.flavor == LegalType::Flavor::none)
     {
         return ordinaryType;
+    }
+
+    if (ordinaryType.flavor == LegalType::Flavor::none
+        && specialType.flavor == LegalType::Flavor::none)
+    {
+        return existentialType;
     }
 
     // There were both ordinary and special fields,
@@ -65,6 +96,7 @@ LegalType LegalType::pair(
     RefPtr<PairPseudoType> obj = new PairPseudoType();
     obj->ordinaryType = ordinaryType;
     obj->specialType = specialType;
+    obj->existentialType = existentialType;
     obj->pairInfo = pairInfo;
     return LegalType::pair(obj);
 }
@@ -133,6 +165,7 @@ struct TupleTypeBuilder
 
     List<OrdinaryElement> ordinaryElements;
     List<TuplePseudoType::Element> specialElements;
+    List<TuplePseudoType::Element> existentialElements;
 
     List<PairInfo::Element> pairElements;
 
@@ -147,6 +180,9 @@ struct TupleTypeBuilder
     // Did we have any fields that actually used ordinary storage?
     bool anyOrdinary = false;
 
+    // Did we have any fields from existential slots?
+    bool anyExistential = false;
+
     // Add a field to the (pseudo-)type we are building
     void addField(
         IRStructKey*    fieldKey,
@@ -156,7 +192,10 @@ struct TupleTypeBuilder
     {
         LegalType ordinaryType;
         LegalType specialType;
+        LegalType existentialType;
+
         RefPtr<PairInfo> elementPairInfo;
+
         switch (legalLeafType.flavor)
         {
         case LegalType::Flavor::simple:
@@ -222,6 +261,7 @@ struct TupleTypeBuilder
                 {
                     ordinaryType = pairType->ordinaryType;
                     specialType = pairType->specialType;
+                    existentialType = pairType->existentialType;
                     elementPairInfo = pairType->pairInfo;
                 }
             }
@@ -234,12 +274,20 @@ struct TupleTypeBuilder
             }
             break;
 
+        case LegalType::Flavor::existentialBox:
+            {
+                // When a field fills in an existential slot,
+                // we need to add the data more or less like
+                // a "special" field.
+                //
+                existentialType = legalLeafType.getImplicitDeref()->valueType;
+            }
+            break;
+
         default:
             SLANG_UNEXPECTED("unknown legal type flavor");
             break;
         }
-
-//        String mangledFieldName = getMangledName(fieldDeclRef.getDecl());
 
         PairInfo::Element pairElement;
         pairElement.flags = 0;
@@ -285,7 +333,23 @@ struct TupleTypeBuilder
             specialElements.Add(specialElement);
         }
 
-        pairElement.type = LegalType::pair(ordinaryType, specialType, elementPairInfo);
+        if(existentialType.flavor != LegalType::Flavor::none)
+        {
+            anyExistential = true;
+            anyComplex = true;
+            pairElement.flags |= PairInfo::kFlag_hasExistential;
+
+            TuplePseudoType::Element existentialElement;
+            existentialElement.key = fieldKey;
+            existentialElement.type = existentialType;
+            existentialElements.Add(existentialElement);
+        }
+
+        pairElement.type = LegalType::pair(
+            ordinaryType,
+            specialType,
+            existentialType,
+            elementPairInfo);
         pairElements.Add(pairElement);
     }
 
@@ -310,21 +374,13 @@ struct TupleTypeBuilder
         // If this is an empty struct, return a none type
         // This helps get rid of emtpy structs that often trips up the 
         // downstream compiler
-        if (!anyOrdinary && !anySpecial && !anyComplex)
+        if (!anyOrdinary && !anySpecial && !anyComplex && !anyExistential)
             return LegalType();
 
         // If we didn't see anything "special"
         // then we can use the type as-is.
         // we can conceivably just use the type as-is
         //
-        // TODO: this might be a good place to turn
-        // a reference to a generic `struct` type into
-        // a concrete non-generic type so that downstream
-        // codegen doesn't have to deal with generics...
-        //
-        // TODO: In fact, why not just fully replace
-        // all aggregate types here with some structural
-        // types defined in the IR?
         if (!anyComplex)
         {
             return LegalType::simple(type);
@@ -409,14 +465,35 @@ struct TupleTypeBuilder
             specialType = LegalType::tuple(specialTuple);
         }
 
+        LegalType existentialType;
+        if (anyExistential)
+        {
+            RefPtr<TuplePseudoType> existentialTuple = new TuplePseudoType();
+            existentialTuple->elements = existentialElements;
+            existentialType = LegalType::tuple(existentialTuple);
+        }
+
+        // If there is only one kind of data in the triple,
+        // then it will get eliminated by the `LegalType::pair`
+        // constructor, and we needn't allocate a `PairInfo`.
+        //
+        // We will compute up front how many kinds of data
+        // we have, and only allocate the pointer if we
+        // really need to.
+        //
+        int kindCount = 0;
+        if(anyOrdinary) kindCount++;
+        if(anySpecial) kindCount++;
+        if(anyExistential) kindCount++;
+
         RefPtr<PairInfo> pairInfo;
-        if (anyOrdinary && anySpecial)
+        if(kindCount > 1)
         {
             pairInfo = new PairInfo();
             pairInfo->elements = pairElements;
         }
 
-        return LegalType::pair(ordinaryType, specialType, pairInfo);
+        return LegalType::pair(ordinaryType, specialType, existentialType, pairInfo);
     }
 
 };
@@ -457,6 +534,7 @@ static LegalType createLegalUniformBufferType(
         break;
 
     case LegalType::Flavor::implicitDeref:
+    case LegalType::Flavor::existentialBox:
         {
             // This is actually an annoying case, because
             // we are being asked to convert, e.g.,:
@@ -472,10 +550,12 @@ static LegalType createLegalUniformBufferType(
             // element type.
             //
             // I'm going to attempt to hack this for now.
-            return LegalType::implicitDeref(createLegalUniformBufferType(
-                context,
-                op,
-                legalElementType.getImplicitDeref()->valueType));
+            return LegalType::pseudoPtr(
+                legalElementType.flavor,
+                createLegalUniformBufferType(
+                    context,
+                    op,
+                    legalElementType.getImplicitDeref()->valueType));
         }
         break;
 
@@ -492,8 +572,18 @@ static LegalType createLegalUniformBufferType(
                 op,
                 pairType->ordinaryType);
             auto specialType = LegalType::implicitDeref(pairType->specialType);
+            auto existentialType = LegalType::implicitDeref(pairType->existentialType);
 
-            return LegalType::pair(ordinaryType, specialType, pairType->pairInfo);
+            // TODO: we actually need to drill down into the existential
+            // fields, because we really need to be allocating a constant
+            // buffer that includes those existential-type fields, but not
+            // any "special" fields that occur deeper in the type...
+
+            return LegalType::pair(
+                ordinaryType,
+                specialType,
+                existentialType,
+                pairType->pairInfo);
         }
 
     case LegalType::Flavor::tuple:
@@ -563,6 +653,7 @@ static LegalType createLegalPtrType(
         break;
 
     case LegalType::Flavor::implicitDeref:
+    case LegalType::Flavor::existentialBox:
         {
             // We are being asked to create a pointer type to something
             // that is implicitly dereferenced, meaning we had:
@@ -581,10 +672,12 @@ static LegalType createLegalPtrType(
             //
             // TODO: invetigate whether there are situations where this
             // will matter.
-            return LegalType::implicitDeref(createLegalPtrType(
-                context,
-                op,
-                legalValueType.getImplicitDeref()->valueType));
+            return LegalType::pseudoPtr(
+                legalValueType.flavor,
+                createLegalPtrType(
+                    context,
+                    op,
+                    legalValueType.getImplicitDeref()->valueType));
         }
         break;
 
@@ -601,8 +694,16 @@ static LegalType createLegalPtrType(
                 context,
                 op,
                 pairType->specialType);
+            auto existentialType = createLegalPtrType(
+                context,
+                op,
+                pairType->existentialType);
 
-            return LegalType::pair(ordinaryType, specialType, pairType->pairInfo);
+            return LegalType::pair(
+                ordinaryType,
+                specialType,
+                existentialType,
+                pairType->pairInfo);
         }
 
     case LegalType::Flavor::tuple:
@@ -696,12 +797,15 @@ static LegalType wrapLegalType(
         break;
 
     case LegalType::Flavor::implicitDeref:
+    case LegalType::Flavor::existentialBox:
         {
-            return LegalType::implicitDeref(wrapLegalType(
-                context,
-                legalType,
-                ordinaryWrapper,
-                specialWrapper));
+            return LegalType::pseudoPtr(
+                legalType.flavor,
+                wrapLegalType(
+                    context,
+                    legalType,
+                    ordinaryWrapper,
+                    specialWrapper));
         }
         break;
 
@@ -720,8 +824,17 @@ static LegalType wrapLegalType(
                 pairType->specialType,
                 specialWrapper,
                 specialWrapper);
+            auto existentialType = wrapLegalType(
+                context,
+                pairType->existentialType,
+                ordinaryWrapper,
+                specialWrapper);
 
-            return LegalType::pair(ordinaryType, specialType, pairType->pairInfo);
+            return LegalType::pair(
+                ordinaryType,
+                specialType,
+                existentialType,
+                pairType->pairInfo);
         }
 
     case LegalType::Flavor::tuple:
@@ -823,7 +936,7 @@ LegalType legalizeTypeImpl(
 
         auto legalValueType = legalizeType(context, existentialPtrType->getValueType());
 
-        return LegalType::implicitDeref(legalValueType);
+        return LegalType::existentialBox(legalValueType);
     }
     else if (auto ptrType = as<IRPtrTypeBase>(type))
     {

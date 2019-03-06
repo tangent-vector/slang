@@ -37,10 +37,12 @@ struct IRBuilder;
 struct LegalTypeImpl : RefObject
 {
 };
-struct ImplicitDerefType;
+struct PseudoPtrType;
 struct TuplePseudoType;
 struct PairPseudoType;
 struct PairInfo;
+
+typedef PseudoPtrType ImplicitDerefType;
 
 struct LegalType
 {
@@ -64,6 +66,13 @@ struct LegalType
         // A type has to get split into "ordinary" and "special" parts,
         // each of which will be represented with its own `LegalType`.
         pair,
+
+        // Logically, we have a pointer to a "heap-allocated" value
+        // that will be plugged in for an existential/interface-type slot,
+        // but physically we are going to have just a value of the pointed-to
+        // type, allocated out-of-line from ordinary storage
+        //
+        existentialBox,
     };
 
     Flavor              flavor = Flavor::none;
@@ -84,13 +93,21 @@ struct LegalType
         return irType;
     }
 
+    static LegalType pseudoPtr(
+        Flavor              flavor,
+        LegalType const&    valueType);
+    bool isPseudoPtr();
+
     static LegalType implicitDeref(
         LegalType const& valueType);
 
-    RefPtr<ImplicitDerefType> getImplicitDeref() const
+    static LegalType existentialBox(
+        LegalType const& valueType);
+
+    RefPtr<PseudoPtrType> getImplicitDeref() const
     {
-        SLANG_ASSERT(flavor == Flavor::implicitDeref);
-        return obj.as<ImplicitDerefType>();
+        SLANG_ASSERT(flavor == Flavor::implicitDeref || flavor == Flavor::existentialBox);
+        return obj.as<PseudoPtrType>();
     }
 
     static LegalType tuple(
@@ -108,6 +125,7 @@ struct LegalType
     static LegalType pair(
         LegalType const&    ordinaryType,
         LegalType const&    specialType,
+        LegalType const&    existentialType,
         RefPtr<PairInfo>    pairInfo);
 
     RefPtr<PairPseudoType> getPair() const
@@ -120,7 +138,18 @@ struct LegalType
 // Represents the pseudo-type of a type that is pointer-like
 // (and thus requires dereferencing, even if implicit), but
 // was legalized to just use the type of the pointed-type value.
-struct ImplicitDerefType : LegalTypeImpl
+//
+// The two cases where this comes up are:
+//
+//  1. When we have a type like `ConstantBuffer<Texture2D>` that
+//  implies a level of indirection, but need to legalize it to just
+//  `Texture2D`, which eliminates that indirection.
+//
+//  2. When we have a type like `ExistentialPtr<Foo>` that will
+//  become just a `Foo` field, but which needs to be allocated
+//  out-of-line from the rest of its enclosing type.
+//
+struct PseudoPtrType : LegalTypeImpl
 {
     LegalType valueType;
 };
@@ -160,8 +189,9 @@ struct PairInfo : RefObject
     typedef unsigned int Flags;
     enum
     {
-        kFlag_hasOrdinary = 0x1,
-        kFlag_hasSpecial = 0x2,
+        kFlag_hasOrdinary       = 0x1,
+        kFlag_hasSpecial        = 0x2,
+        kFlag_hasExistential    = 0x4,
         kFlag_hasOrdinaryAndSpecial = kFlag_hasOrdinary | kFlag_hasSpecial,
     };
 
@@ -172,22 +202,20 @@ struct PairInfo : RefObject
         IRStructKey* key;
 
         // The conceptual type of the field.
-        // If both the `hasOrdinary` and
-        // `hasSpecial` bits are set, then
-        // this is expected to be a
+        // If more than one bit is set in `flags`,
+        // then this is expected to be a 
         // `LegalType::Flavor::pair`
         LegalType   type;
 
-        // Is the value represented on
-        // the ordinary side, the special
-        // side, or both?
+        // Which sub-components of the triple
+        // is the field/element represented on?
+        //
         Flags       flags;
 
-        // If the type of this element is
-        // itself a pair type (that is,
-        // it both `hasOrdinary` and `hasSpecial`)
-        // then this is the `PairInfo` for that
-        // pair type:
+        // If the type of this element is itself
+        // a triple type, then this is a `PairInfo`
+        // for that triple type.
+        //
         RefPtr<PairInfo> fieldPairInfo;
     };
 
@@ -209,14 +237,22 @@ struct PairInfo : RefObject
 struct PairPseudoType : LegalTypeImpl
 {
     // Any field(s) with ordinary types will
-    // get captured here (usually as a `fieldRemap`
-    // type)
+    // get captured here, usually as a single
+    // `simple` or `implicitDeref` type.
+    //
     LegalType ordinaryType;
 
     // Any fields with "special" (not ordinary)
     // types will get captured here (usually
     // with a tuple).
+    //
     LegalType specialType;
+
+    // Any fields with "existential box" types
+    // will get captured here (usually
+    // with an existential-box tuple).
+    //
+    LegalType existentialType;
 
     // The `pairInfo` field helps to tell us which members
     // of the original aggregate type appear on which side(s)
@@ -276,6 +312,7 @@ struct LegalVal
         implicitDeref,
         tuple,
         pair,
+        existentialBox,
     };
 
     Flavor              flavor = Flavor::none;
@@ -304,13 +341,24 @@ struct LegalVal
         return obj.as<TuplePseudoVal>();
     }
 
+    static LegalVal pseudoPtr(
+        Flavor flavor,
+        LegalVal const& val);
+
+    static LegalVal pseudoPtr(
+        LegalType::Flavor flavor,
+        LegalVal const& val);
+
     static LegalVal implicitDeref(LegalVal const& val);
+    static LegalVal existentialBox(LegalVal const& val);
+
     LegalVal getImplicitDeref();
 
     static LegalVal pair(RefPtr<PairPseudoVal> pairInfo);
     static LegalVal pair(
         LegalVal const&     ordinaryVal,
         LegalVal const&     specialVal,
+        LegalVal const&     existentialVal,
         RefPtr<PairInfo>    pairInfo);
 
     RefPtr<PairPseudoVal> getPair() const
@@ -335,16 +383,18 @@ struct PairPseudoVal : LegalValImpl
 {
     LegalVal ordinaryVal;
     LegalVal specialVal;
+    LegalVal existentialVal;
 
     // The info to tell us which fields
     // are on which side(s)
     RefPtr<PairInfo>  pairInfo;
 };
 
-struct ImplicitDerefVal : LegalValImpl
+struct PseudoPtrVal : LegalValImpl
 {
     LegalVal val;
 };
+typedef PseudoPtrVal ImplicitDerefVal;
 
 //
 
