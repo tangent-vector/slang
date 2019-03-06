@@ -58,21 +58,22 @@ struct LegalType
         // going to represnet it as the pointed-to type
         implicitDeref,
 
-        // A compound type was broken apart into its constituent fields,
-        // so a tuple "pseduo-type" is being used to collect
-        // those fields together.
-        tuple,
-
-        // A type has to get split into "ordinary" and "special" parts,
-        // each of which will be represented with its own `LegalType`.
-        pair,
-
         // Logically, we have a pointer to a "heap-allocated" value
         // that will be plugged in for an existential/interface-type slot,
         // but physically we are going to have just a value of the pointed-to
         // type, allocated out-of-line from ordinary storage
         //
         existentialBox,
+
+        // A compound type was broken apart into its constituent fields,
+        // so a tuple "pseduo-type" is being used to collect
+        // those fields together.
+        resourceTuple,
+        existentialTuple,
+
+        // A type has to get split into "ordinary" and "special" parts,
+        // each of which will be represented with its own `LegalType`.
+        pair,
     };
 
     Flavor              flavor = Flavor::none;
@@ -111,21 +112,26 @@ struct LegalType
     }
 
     static LegalType tuple(
-        RefPtr<TuplePseudoType>   tupleType);
+        Flavor                      flavor,
+        RefPtr<TuplePseudoType>     tupleType);
+
+    static LegalType resourceTuple(
+        RefPtr<TuplePseudoType>     tupleType);
+    static LegalType existentialTuple(
+        RefPtr<TuplePseudoType>     tupleType);
 
     RefPtr<TuplePseudoType> getTuple() const
     {
-        SLANG_ASSERT(flavor == Flavor::tuple);
+        SLANG_ASSERT(flavor == Flavor::resourceTuple || flavor == Flavor::existentialTuple);
         return obj.as<TuplePseudoType>();
     }
 
     static LegalType pair(
-        RefPtr<PairPseudoType>   pairType);
+        RefPtr<PairPseudoType>  pairType);
 
     static LegalType pair(
         LegalType const&    ordinaryType,
         LegalType const&    specialType,
-        LegalType const&    existentialType,
         RefPtr<PairInfo>    pairInfo);
 
     RefPtr<PairPseudoType> getPair() const
@@ -191,8 +197,7 @@ struct PairInfo : RefObject
     {
         kFlag_hasOrdinary       = 0x1,
         kFlag_hasSpecial        = 0x2,
-        kFlag_hasExistential    = 0x4,
-        kFlag_hasOrdinaryAndSpecial = kFlag_hasOrdinary | kFlag_hasSpecial,
+//        kFlag_hasOrdinaryAndSpecial = kFlag_hasOrdinary | kFlag_hasSpecial,
     };
 
 

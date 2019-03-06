@@ -43,14 +43,28 @@ LegalType LegalType::existentialBox(
 
 
 LegalType LegalType::tuple(
-    RefPtr<TuplePseudoType>   tupleType)
+    Flavor                      flavor,
+    RefPtr<TuplePseudoType>     tupleType)
 {
+    SLANG_ASSERT(flavor == Flavor::resourceTuple || flavor == Flavor::existentialTuple);
     SLANG_ASSERT(tupleType->elements.Count());
 
     LegalType result;
-    result.flavor = Flavor::tuple;
+    result.flavor = flavor;
     result.obj = tupleType;
     return result;
+}
+
+LegalType LegalType::resourceTuple(
+    RefPtr<TuplePseudoType>     tupleType)
+{
+    return tuple(Flavor::resourceTuple, tupleType);
+}
+
+LegalType LegalType::existentialTuple(
+    RefPtr<TuplePseudoType>     tupleType)
+{
+    return tuple(Flavor::existentialTuple, tupleType);
 }
 
 LegalType LegalType::pair(
@@ -65,29 +79,20 @@ LegalType LegalType::pair(
 LegalType LegalType::pair(
     LegalType const&    ordinaryType,
     LegalType const&    specialType,
-    LegalType const&    existentialType,
     RefPtr<PairInfo>    pairInfo)
 {
     // Handle some special cases for when
     // only one of the sub-types is actually used.
 
-    if(ordinaryType.flavor == LegalType::Flavor::none
-        && existentialType.flavor == LegalType::Flavor::none)
+    if(ordinaryType.flavor == LegalType::Flavor::none)
     {
         // There was nothing ordinary.
         return specialType;
     }
 
-    if (specialType.flavor == LegalType::Flavor::none
-        && existentialType.flavor == LegalType::Flavor::none)
+    if(specialType.flavor == LegalType::Flavor::none)
     {
         return ordinaryType;
-    }
-
-    if (ordinaryType.flavor == LegalType::Flavor::none
-        && specialType.flavor == LegalType::Flavor::none)
-    {
-        return existentialType;
     }
 
     // There were both ordinary and special fields,
@@ -96,7 +101,6 @@ LegalType LegalType::pair(
     RefPtr<PairPseudoType> obj = new PairPseudoType();
     obj->ordinaryType = ordinaryType;
     obj->specialType = specialType;
-    obj->existentialType = existentialType;
     obj->pairInfo = pairInfo;
     return LegalType::pair(obj);
 }
@@ -164,7 +168,7 @@ struct TupleTypeBuilder
 
 
     List<OrdinaryElement> ordinaryElements;
-    List<TuplePseudoType::Element> specialElements;
+    List<TuplePseudoType::Element> resourceElements;
     List<TuplePseudoType::Element> existentialElements;
 
     List<PairInfo::Element> pairElements;
@@ -174,8 +178,8 @@ struct TupleTypeBuilder
     bool anyComplex = false;
 
     // Did we have any fields that actually required
-    // storage in the "special" part of things?
-    bool anySpecial = false;
+    // storage in the resource part of things?
+    bool anyResource = false;
 
     // Did we have any fields that actually used ordinary storage?
     bool anyOrdinary = false;
@@ -191,10 +195,11 @@ struct TupleTypeBuilder
         bool            isResource)
     {
         LegalType ordinaryType;
-        LegalType specialType;
+        LegalType resourceType;
         LegalType existentialType;
 
         RefPtr<PairInfo> elementPairInfo;
+
 
         switch (legalLeafType.flavor)
         {
@@ -209,7 +214,7 @@ struct TupleTypeBuilder
                 }
                 else
                 {
-                    specialType = legalFieldType;
+                    resourceType = legalFieldType;
                 }
             }
             break;
@@ -255,22 +260,70 @@ struct TupleTypeBuilder
                 // of `ConstantBuffer<Foo>` will still be a resource type.
                 if(isResource)
                 {
-                    specialType = legalFieldType;
+                    resourceType = legalFieldType;
                 }
                 else
                 {
+                    // We might have nested `pair` types, to handle both
+                    // resource and existential fields, so we will walk
+                    // the "spine" of the pair to discover its structure.
+                    //
+                    // Note: the main alternative here would be to use
+                    // a "triple" type instead of a "pair" type in all cases.
+                    auto pp = legalLeafType;
+                    while(pp.flavor == LegalType::Flavor::pair)
+                    {
+                        auto ppType = pp.getPair();
+                        auto specialType = ppType->specialType;
+                        switch(specialType.flavor)
+                        {
+                        case LegalType::Flavor::resourceTuple:
+                            resourceType = specialType;
+                            break;
+
+                        case LegalType::Flavor::existentialTuple:
+                            existentialType = specialType;
+                            break;
+
+                        default:
+                            SLANG_UNEXPECTED("invalid special type during type legalization");
+                            break;
+                        }
+                    }
+
+
                     ordinaryType = pairType->ordinaryType;
-                    specialType = pairType->specialType;
+
+
+
+                    auto specialType = pairType->specialType;
+                    for(;;)
+                    {
+                        switch(specialType.flavor)
+                        {
+                        case LegalType:
+                        }
+                    }
+                    while(specialType->fl )
+                    resourceType = pairType->specialType;
+
                     existentialType = pairType->existentialType;
                     elementPairInfo = pairType->pairInfo;
                 }
             }
             break;
 
-        case LegalType::Flavor::tuple:
+        case LegalType::Flavor::resourceTuple:
             {
-                // A tuple always represents "special" data
+                // A resource tuple always represents "special" data
                 specialType = legalFieldType;
+            }
+            break;
+
+        case LegalType::Flavor::existentialTuple:
+            {
+                // An existential tuple always represents "existential" data
+                existentialType = legalFieldType;
             }
             break;
 
@@ -550,8 +603,7 @@ static LegalType createLegalUniformBufferType(
             // element type.
             //
             // I'm going to attempt to hack this for now.
-            return LegalType::pseudoPtr(
-                legalElementType.flavor,
+            return LegalType::implicitDeref(
                 createLegalUniformBufferType(
                     context,
                     op,
@@ -567,6 +619,14 @@ static LegalType createLegalUniformBufferType(
             // with an `implicitDeref`.
             auto pairType = legalElementType.getPair();
 
+            // TODO: we actually need to drill down into the existential
+            // fields, because we really need to be allocating a constant
+            // buffer that includes those existential-type fields, but not
+            // any "special" fields that occur deeper in the type...
+
+
+
+
             auto ordinaryType = createLegalUniformBufferType(
                 context,
                 op,
@@ -574,10 +634,6 @@ static LegalType createLegalUniformBufferType(
             auto specialType = LegalType::implicitDeref(pairType->specialType);
             auto existentialType = LegalType::implicitDeref(pairType->existentialType);
 
-            // TODO: we actually need to drill down into the existential
-            // fields, because we really need to be allocating a constant
-            // buffer that includes those existential-type fields, but not
-            // any "special" fields that occur deeper in the type...
 
             return LegalType::pair(
                 ordinaryType,
