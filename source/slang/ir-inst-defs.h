@@ -64,6 +64,7 @@ INST(Nop, nop, 0, 0)
     /* PtrTypeBase */
         INST(PtrType, Ptr, 1, 0)
         INST(RefType, Ref, 1, 0)
+        INST(ExistentialPtrType, ExistentialPtr, 1, 0)
         /* OutTypeBase */
             INST(OutType, Out, 1, 0)
             INST(InOutType, InOut, 1, 0)

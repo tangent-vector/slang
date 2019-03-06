@@ -271,7 +271,7 @@ struct BindExistentialSlots
         // original type of `inst`.
 
         auto fullType = inst->getFullType();
-        auto type = inst->getDataType();
+//        auto type = inst->getDataType();
 
         SharedIRBuilder sharedBuilder;
         sharedBuilder.session = module->getSession();
@@ -283,6 +283,7 @@ struct BindExistentialSlots
         // The easy case is when the `type` of `inst`
         // is directly an interface type.
         //
+#if 0
         if( auto interfaceType = as<IRInterfaceType>(type) )
         {
             // An intereface-type parameter will use a
@@ -341,6 +342,7 @@ struct BindExistentialSlots
             }
         }
         else
+#endif
         {
             UInt slotOperandCount = slotCount*2;
             List<IRInst*> slotOperands;

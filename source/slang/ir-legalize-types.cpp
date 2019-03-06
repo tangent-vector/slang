@@ -478,11 +478,22 @@ static LegalVal legalizeFieldAddress(
         return LegalVal();
 
     case LegalVal::Flavor::simple:
-        return LegalVal::simple(
-            builder->emitFieldAddress(
-                type.getSimple(),
-                legalPtrOperand.getSimple(),
-                fieldKey));
+        switch( type.flavor )
+        {
+        case LegalType::Flavor::implicitDeref:
+            return legalizeFieldAddress(
+                context,
+                type.getImplicitDeref()->valueType,
+                legalPtrOperand,
+                fieldKey);
+
+        default:
+            return LegalVal::simple(
+                builder->emitFieldAddress(
+                    type.getSimple(),
+                    legalPtrOperand.getSimple(),
+                    fieldKey));
+        }
 
     case LegalVal::Flavor::pair:
         {

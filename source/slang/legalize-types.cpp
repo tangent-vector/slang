@@ -814,6 +814,17 @@ LegalType legalizeTypeImpl(
     {
         return LegalType::simple(type);
     }
+    else if( auto existentialPtrType = as<IRExistentialPtrType>(type))
+    {
+        // An `ExistentialPtr<T>` should behavie in most regards
+        // just like a `T`, but we need to ensure that it gets
+        // laid out in a way that shoves the `T` data to the end
+        // of any surrounding context.
+
+        auto legalValueType = legalizeType(context, existentialPtrType->getValueType());
+
+        return LegalType::implicitDeref(legalValueType);
+    }
     else if (auto ptrType = as<IRPtrTypeBase>(type))
     {
         auto legalValueType = legalizeType(context, ptrType->getValueType());

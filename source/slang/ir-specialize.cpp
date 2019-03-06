@@ -1251,6 +1251,7 @@ struct SpecializationContext
 
         if( auto baseInterfaceType = as<IRInterfaceType>(baseType) )
         {
+#if 0
             // A `BindExistentials<ISomeInterface, ConcreteType, ...>` can
             // just be simplified to `ConcreteType`.
 
@@ -1267,6 +1268,25 @@ struct SpecializationContext
             type->replaceUsesWith(newVal);
             type->removeAndDeallocate();
             return;
+#else
+            // A `BindExistentials<ISomeInterface, ConcreteType, ...>` can
+            // just be simplified to `ExistentialPtr<ConcreteType>`.
+
+            // We always expect two slot operands, for the concrete type
+            // and the witness table.
+            //
+            SLANG_ASSERT(slotOperandCount == 2);
+            if(slotOperandCount <= 1) return;
+
+
+            auto concreteType = (IRType*) type->getExistentialArg(0);
+            auto newVal = builder.getPtrType(kIROp_ExistentialPtrType, concreteType);
+
+            addUsersToWorkList(type);
+            type->replaceUsesWith(newVal);
+            type->removeAndDeallocate();
+            return;
+#endif
         }
         else if( auto basePtrLikeType = as<IRPointerLikeType>(baseType) )
         {

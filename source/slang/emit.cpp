@@ -6646,6 +6646,29 @@ void legalizeTypes(
     TypeLegalizationContext*    context,
     IRModule*                   module);
 
+static void dumpIR(
+    BackEndCompileRequest* compileRequest,
+    IRModule*       irModule,
+    char const*     label)
+{
+    DiagnosticSinkWriter writerImpl(compileRequest->getSink());
+    WriterHelper writer(&writerImpl);
+
+    if(label)
+    {
+        writer.put("### ");
+        writer.put(label);
+        writer.put(":\n");
+    }
+
+    dumpIR(irModule, writer.getWriter());
+
+    if( label )
+    {
+        writer.put("###\n");
+    }
+}
+
 static void dumpIRIfEnabled(
     BackEndCompileRequest* compileRequest,
     IRModule*       irModule,
@@ -6653,22 +6676,7 @@ static void dumpIRIfEnabled(
 {
     if(compileRequest->shouldDumpIR)
     {
-        DiagnosticSinkWriter writerImpl(compileRequest->getSink());
-        WriterHelper writer(&writerImpl);
-
-        if(label)
-        {
-            writer.put("### ");
-            writer.put(label);
-            writer.put(":\n");
-        }
-
-        dumpIR(irModule, writer.getWriter());
-
-        if( label )
-        {
-            writer.put("###\n");
-        }
+        dumpIR(compileRequest, irModule, label);
     }
 }
 
@@ -6821,8 +6829,8 @@ String emitEntryPoint(
         // apply at this point?
         //
         eliminateDeadCode(compileRequest, irModule);
-#if 0
-        dumpIRIfEnabled(compileRequest, irModule, "AFTER DCE");
+#if 1
+        dumpIR(compileRequest, irModule, "AFTER DCE");
 #endif
         validateIRModuleIfEnabled(compileRequest, irModule);
 
