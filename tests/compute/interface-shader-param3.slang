@@ -59,12 +59,16 @@ int test(
 //TEST_INPUT:ubuffer(data=[0 0 0 0], stride=4):dxbinding(0),glbinding(0),out
 RWStructuredBuffer<int> gOutputBuffer;
 
-//TEST_INPUT:cbuffer(data=[1 0 0 0], stride=4):dxbinding(0),glbinding(1)
-ConstantBuffer<IRandomNumberGenerationStrategy> gStrategy;
+//TEST_INPUT:cbuffer(data=[9 0 0 0 1 0 0 0], stride=4):dxbinding(0),glbinding(1)
+cbuffer C
+{
+    IRandomNumberGenerationStrategy gStrategy;
+    int                             gExtra;
+}
 
 [numthreads(4, 1, 1)]
 void computeMain(
-//TEST_INPUT:cbuffer(data=[16 0 0 0 8 0 0 0], stride=4):dxbinding(1),glbinding(2)
+//TEST_INPUT:cbuffer(data=[16384 0 0 0 8 0 0 0], stride=4):dxbinding(1),glbinding(2)
     uniform IModifier   modifier,
     uniform int         extra,
             uint3       dispatchThreadID : SV_DispatchThreadID)
@@ -73,7 +77,7 @@ void computeMain(
 
     let inputVal : int = tid;
     let outputVal = test(inputVal, gStrategy, modifier)
-    	+ extra*extra;
+    	+ extra*gExtra;
 
     gOutputBuffer[tid] = outputVal;
 }
@@ -110,7 +114,7 @@ struct MyModifier : IModifier
 
     int modify(int val)
     {
-        return val ^ localModifier;
+        return val * localModifier;
     }
 }
 

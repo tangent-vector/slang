@@ -41,30 +41,39 @@ struct ImplicitDerefType;
 struct TuplePseudoType;
 struct PairPseudoType;
 struct PairInfo;
+struct LegalField;
+struct WrappedBufferPseudoType;
+
+enum class LegalFlavor
+{
+    // Nothing: an empty type or value. Equivalent to `void`.
+    none,
+
+    // A simple type/value that can be represented as an `IRType*` or `IRInst*`
+    simple,
+
+    // Logically, a pointer-like type/value, but represented as the
+    // type/value being pointed to, so that there is one less level
+    // of indirection.
+    //
+    implicitDeref,
+
+    // A compound type/value made up of the constituent fields of some
+    // original value.
+    tuple,
+
+    // A type/value that was split into "ordinary" and "special" parts.
+    pair,
+
+    // A type/value that represents, e.g., `ConstantBuffer<T>`
+    // where `T` required some level of legalization.
+    //
+    wrappedBuffer,
+};
 
 struct LegalType
 {
-    enum class Flavor
-    {
-        // Nothing: a NULL type
-        none,
-
-        // A simple type that can be represented directly as a `Type`
-        simple,
-
-        // Logically, we have a pointer-like type, but we are
-        // going to represnet it as the pointed-to type
-        implicitDeref,
-
-        // A compound type was broken apart into its constituent fields,
-        // so a tuple "pseduo-type" is being used to collect
-        // those fields together.
-        tuple,
-
-        // A type has to get split into "ordinary" and "special" parts,
-        // each of which will be represented with its own `LegalType`.
-        pair,
-    };
+    typedef LegalFlavor Flavor;
 
     Flavor              flavor = Flavor::none;
     RefPtr<RefObject>   obj;
@@ -115,6 +124,76 @@ struct LegalType
         SLANG_ASSERT(flavor == Flavor::pair);
         return obj.as<PairPseudoType>();
     }
+
+    static LegalType makeWrappedBuffer(
+        IRType*             simpleType,
+        LegalField const&   elementInfo);
+
+    RefPtr<WrappedBufferPseudoType> getWrappedBuffer() const
+    {
+        SLANG_ASSERT(flavor == Flavor::wrappedBuffer);
+        return obj.as<WrappedBufferPseudoType>();
+    }
+};
+
+struct LegalFieldObj : RefObject
+{
+};
+
+struct SimpleLegalFieldObj;
+struct ImplicitDerefLegalFieldObj;
+struct PairLegalFieldObj;
+struct TupleLegalFieldObj;
+
+struct LegalField
+{
+    typedef LegalFlavor Flavor;
+
+    Flavor flavor;
+    RefPtr<LegalFieldObj> obj;
+
+    static LegalField makeVoid();
+    static LegalField makeSimple(IRStructKey* key, IRType* type);
+    static LegalField makeImplicitDeref(LegalField const& field);
+    static LegalField makePair(
+        LegalField const& ordinary,
+        LegalField const& special,
+        PairInfo* pairInfo);
+    static LegalField makeTuple(TupleLegalFieldObj* obj);
+
+    RefPtr<SimpleLegalFieldObj> getSimple() const;
+    RefPtr<ImplicitDerefLegalFieldObj> getImplicitDeref() const;
+    RefPtr<PairLegalFieldObj> getPair() const;
+    RefPtr<TupleLegalFieldObj> getTuple() const;
+};
+
+struct SimpleLegalFieldObj : LegalFieldObj
+{
+    IRStructKey*    key;
+    IRType*         type;
+};
+
+struct ImplicitDerefLegalFieldObj : LegalFieldObj
+{
+    LegalField field;
+};
+
+struct PairLegalFieldObj : LegalFieldObj
+{
+    LegalField ordinary;
+    LegalField special;
+    RefPtr<PairInfo> pairInfo;
+};
+
+struct TupleLegalFieldObj : LegalFieldObj
+{
+    struct Element
+    {
+        IRStructKey*    key;
+        LegalField      field;
+    };
+
+    List<Element> elements;
 };
 
 // Represents the pseudo-type of a type that is pointer-like
@@ -234,6 +313,18 @@ struct PairPseudoType : LegalTypeImpl
     RefPtr<PairInfo> pairInfo;
 };
 
+
+struct WrappedBufferPseudoType : LegalTypeImpl
+{
+    // The actual IR type that was used for the buffer.
+    IRType*     simpleType;
+
+    // Adjustments that need to be made when fetching
+    // an element from this buffer type.
+    //
+    LegalField  elementInfo;
+};
+
 //
 
 RefPtr<TypeLayout> getDerefTypeLayout(
@@ -276,17 +367,11 @@ struct LegalValImpl : RefObject
 };
 struct TuplePseudoVal;
 struct PairPseudoVal;
+struct WrappedBufferPseudoVal;
 
 struct LegalVal
 {
-    enum class Flavor
-    {
-        none,
-        simple,
-        implicitDeref,
-        tuple,
-        pair,
-    };
+    typedef LegalFlavor Flavor;
 
     Flavor              flavor = Flavor::none;
     RefPtr<RefObject>   obj;
@@ -411,6 +496,12 @@ struct IRTypeLegalizationContext
     Dictionary<IRType*, LegalType> mapTypeToLegalType;
 
     IRBuilder* getBuilder() { return builder; }
+
+    virtual bool isSpecialType(IRType* type) = 0;
+
+    virtual LegalType createLegalUniformBufferType(
+        IROp        op,
+        LegalType   legalElementType) = 0;
 };
 #endif
 typedef struct IRTypeLegalizationContext TypeLegalizationContext;
@@ -433,6 +524,18 @@ void legalizeExistentialTypeLayout(
 void legalizeResourceTypes(
     IRModule*       module,
     DiagnosticSink* sink);
+
+bool isResourceType(IRType* type);
+
+LegalType createLegalUniformBufferTypeForResources(
+    TypeLegalizationContext*    context,
+    IROp                        op,
+    LegalType                   legalElementType);
+
+LegalType createLegalUniformBufferTypeForExistentials(
+    TypeLegalizationContext*    context,
+    IROp                        op,
+    LegalType                   legalElementType);
 
 }
 

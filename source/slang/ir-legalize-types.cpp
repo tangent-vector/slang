@@ -74,6 +74,8 @@ LegalVal LegalVal::getImplicitDeref()
     return as<ImplicitDerefVal>(obj)->val;
 }
 
+//
+
 IRTypeLegalizationContext::IRTypeLegalizationContext(
     IRModule* inModule)
 {
@@ -464,6 +466,77 @@ static LegalVal legalizeFieldExtract(
         type,
         legalPtrOperand,
         (IRStructKey*) fieldKey);
+}
+
+static LegalVal desugarWrappedBuffer(
+    IRTypeLegalizationContext*  context,
+    LegalVal                    legalPtrOperand,
+    LegalField const&           elementInfo)
+{
+    switch( elementInfo.flavor )
+    {
+    default:
+        SLANG_UNEXPECTED("unhandled");
+        UNREACHABLE_RETURN(LegalVal());
+        break;
+
+    case LegalField::Flavor::none:
+        return LegalVal();
+
+    case LegalField::Flavor::simple:
+        {
+            auto builder = context->getBuilder();
+
+            auto simpleElementInfo = elementInfo.getSimple();
+            auto valPtr = builder->emitFieldAddress(
+                simpleElementInfo->type,
+                legalPtrOperand.getSimple(),
+                simpleElementInfo->key);
+
+            return LegalVal::simple(valPtr);
+        }
+
+    case LegalField::Flavor::implicitDeref:
+        {
+            auto derefField = elementInfo.getImplicitDeref();
+            auto baseVal = desugarWrappedBuffer(context, legalPtrOperand, derefField->field);
+            return LegalVal::implicitDeref(baseVal);
+        }
+
+    case LegalField::Flavor::pair:
+        {
+            auto pairField = elementInfo.getPair();
+            auto pairInfo = pairField->pairInfo;
+
+            auto ordinaryVal = desugarWrappedBuffer(context, legalPtrOperand, pairField->ordinary);
+            auto specialVal = desugarWrappedBuffer(context, legalPtrOperand, pairField->special);
+            return LegalVal::pair(ordinaryVal, specialVal, pairInfo);
+        }
+
+    case LegalField::Flavor::tuple:
+        {
+            auto tupleField = elementInfo.getTuple();
+
+            RefPtr<TuplePseudoVal> obj = new TuplePseudoVal();
+            for( auto ee : tupleField->elements )
+            {
+                auto elementVal = desugarWrappedBuffer(
+                    context,
+                    legalPtrOperand,
+                    ee.field);
+
+                TuplePseudoVal::Element element;
+                element.key = ee.key;
+                element.val = desugarWrappedBuffer(
+                    context,
+                    legalPtrOperand,
+                    ee.field);
+                obj->elements.Add(element);
+            }
+
+            return LegalVal::tuple(obj);
+        }
+    }
 }
 
 static LegalVal legalizeFieldAddress(
@@ -1582,8 +1655,30 @@ static LegalVal declareVars(
         }
         break;
 
+    case LegalType::Flavor::wrappedBuffer:
+        {
+            auto wrappedBuffer = type.getWrappedBuffer();
+
+            auto innerVal = declareSimpleVar(
+                context,
+                op,
+                wrappedBuffer->simpleType,
+                typeLayout,
+                varChain,
+                nameHint,
+                globalNameInfo);
+
+            auto wrappedVal = desugarWrappedBuffer(
+                context,
+                innerVal,
+                wrappedBuffer->elementInfo);
+
+            return wrappedVal;
+        }
+
     default:
         SLANG_UNEXPECTED("unhandled");
+        UNREACHABLE_RETURN(LegalVal());
         break;
     }
 }
@@ -1745,13 +1840,59 @@ static void legalizeTypes(
     }
 }
 
+struct IRResourceTypeLegalizationContext : IRTypeLegalizationContext
+{
+    IRResourceTypeLegalizationContext(IRModule* module)
+        : IRTypeLegalizationContext(module)
+    {}
+
+    bool isSpecialType(IRType* type) override
+    {
+        return isResourceType(type);
+    }
+
+    virtual LegalType createLegalUniformBufferType(
+        IROp        op,
+        LegalType   legalElementType)
+    {
+        return createLegalUniformBufferTypeForResources(
+            this,
+            op,
+            legalElementType);
+    }
+};
+
+struct IRExistentialTypeLegalizationContext : IRTypeLegalizationContext
+{
+    IRExistentialTypeLegalizationContext(IRModule* module)
+        : IRTypeLegalizationContext(module)
+    {}
+
+    bool isSpecialType(IRType* inType) override
+    {
+        auto type = unwrapArray(inType);
+        return as<IRExistentialPtrType>(type) != nullptr;
+    }
+
+    virtual LegalType createLegalUniformBufferType(
+        IROp        op,
+        LegalType   legalElementType)
+    {
+        return createLegalUniformBufferTypeForExistentials(
+            this,
+            op,
+            legalElementType);
+    }
+};
+
+
 void legalizeResourceTypes(
     IRModule*       module,
     DiagnosticSink* sink)
 {
     SLANG_UNUSED(sink);
 
-    IRTypeLegalizationContext context(module);
+    IRResourceTypeLegalizationContext context(module);
     legalizeTypes(&context);
 }
 
@@ -1761,6 +1902,9 @@ void legalizeExistentialTypeLayout(
 {
     SLANG_UNUSED(module);
     SLANG_UNUSED(sink);
+
+    IRExistentialTypeLegalizationContext context(module);
+    legalizeTypes(&context);
 }
 
 

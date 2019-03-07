@@ -68,9 +68,103 @@ LegalType LegalType::pair(
     return LegalType::pair(obj);
 }
 
+LegalType LegalType::makeWrappedBuffer(
+    IRType*             simpleType,
+    LegalField const&   elementInfo)
+{
+    RefPtr<WrappedBufferPseudoType> obj = new WrappedBufferPseudoType();
+    obj->simpleType = simpleType;
+    obj->elementInfo = elementInfo;
+
+    LegalType result;
+    result.flavor = Flavor::wrappedBuffer;
+    result.obj = obj;
+    return result;
+}
+
 //
 
-static bool isResourceType(IRType* type)
+LegalField LegalField::makeVoid()
+{
+    LegalField result;
+    result.flavor = Flavor::none;
+    return result;
+}
+
+LegalField LegalField::makeSimple(IRStructKey* key, IRType* type)
+{
+    RefPtr<SimpleLegalFieldObj> obj = new SimpleLegalFieldObj();
+    obj->key = key;
+    obj->type = type;
+
+    LegalField result;
+    result.flavor = Flavor::simple;
+    result.obj = obj;
+    return result;
+}
+
+RefPtr<SimpleLegalFieldObj> LegalField::getSimple() const
+{
+    SLANG_ASSERT(flavor == Flavor::simple);
+    return obj.as<SimpleLegalFieldObj>();
+}
+
+LegalField LegalField::makeImplicitDeref(LegalField const& field)
+{
+    RefPtr<ImplicitDerefLegalFieldObj> obj = new ImplicitDerefLegalFieldObj();
+    obj->field = field;
+
+    LegalField result;
+    result.flavor = Flavor::implicitDeref;
+    result.obj = obj;
+    return result;
+}
+
+RefPtr<ImplicitDerefLegalFieldObj> LegalField::getImplicitDeref() const
+{
+    SLANG_ASSERT(flavor == Flavor::implicitDeref);
+    return obj.as<ImplicitDerefLegalFieldObj>();
+}
+
+LegalField LegalField::makePair(
+    LegalField const&   ordinary,
+    LegalField const&   special,
+    PairInfo*           pairInfo)
+{
+    RefPtr<PairLegalFieldObj> obj = new PairLegalFieldObj();
+    obj->ordinary = ordinary;
+    obj->special = special;
+    obj->pairInfo = pairInfo;
+
+    LegalField result;
+    result.flavor = Flavor::pair;
+    result.obj = obj;
+    return result;
+}
+
+RefPtr<PairLegalFieldObj> LegalField::getPair() const
+{
+    SLANG_ASSERT(flavor == Flavor::pair);
+    return obj.as<PairLegalFieldObj>();
+}
+
+LegalField LegalField::makeTuple(TupleLegalFieldObj* obj)
+{
+    LegalField result;
+    result.flavor = Flavor::tuple;
+    result.obj = obj;
+    return result;
+}
+
+RefPtr<TupleLegalFieldObj> LegalField::getTuple() const
+{
+    SLANG_ASSERT(flavor == Flavor::tuple);
+    return obj.as<TupleLegalFieldObj>();
+}
+
+//
+
+bool isResourceType(IRType* type)
 {
     while (auto arrayType = as<IRArrayTypeBase>(type))
     {
@@ -299,14 +393,14 @@ struct TupleTypeBuilder
     {
         auto fieldType = field->getFieldType();
 
-        bool isResourceField = isResourceType(fieldType);
+        bool isSpecialTypeField = context->isSpecialType(fieldType);
         auto legalFieldType = legalizeType(context, fieldType);
 
         addField(
             field->getKey(),
             legalFieldType,
             legalFieldType,
-            isResourceField);
+            isSpecialTypeField);
     }
 
     LegalType getResult()
@@ -429,8 +523,6 @@ static IRType* createBuiltinGenericType(
         operands);
 }
 
-// Create a uniform buffer type with a given legalized
-// element type.
 static LegalType createLegalUniformBufferType(
     TypeLegalizationContext*    context,
     IROp                        op,
@@ -438,19 +530,26 @@ static LegalType createLegalUniformBufferType(
 {
     switch (legalElementType.flavor)
     {
+    default:
+        return context->createLegalUniformBufferType(
+            op,
+            legalElementType);
+
     case LegalType::Flavor::none:
         return LegalType();
 
     case LegalType::Flavor::simple:
-        {
-            // Easy case: we just have a simple element type,
-            // so we want to create a uniform buffer that wraps it.
-            return LegalType::simple(createBuiltinGenericType(
-                context,
-                op,
-                legalElementType.getSimple()));
-        }
-        break;
+        // Easy case: we just have a simple element type,
+        // so we want to create a uniform buffer that wraps it.
+        //
+        // TODO: This isn't *quite* right, since it won't handle something
+        // like a `ParameterBlock<Texture2D>`, but that seems like
+        // an unlikely case in practice.
+        //
+        return LegalType::simple(createBuiltinGenericType(
+            context,
+            op,
+            legalElementType.getSimple()));
 
     case LegalType::Flavor::implicitDeref:
         {
@@ -475,30 +574,64 @@ static LegalType createLegalUniformBufferType(
                     legalElementType.getImplicitDeref()->valueType));
         }
         break;
+    }
+}
 
+// Create a uniform buffer type with a given legalized element type,
+// under the assumption that we are doing resource-based type legalization.
+//
+LegalType createLegalUniformBufferTypeForResources(
+    TypeLegalizationContext*    context,
+    IROp                        op,
+    LegalType                   legalElementType)
+{
+    switch (legalElementType.flavor)
+    {
     case LegalType::Flavor::pair:
         {
-            // We assume that the "ordinary" part of things
-            // will get wrapped in a constant-buffer type,
-            // and the "special" part needs to be wrapped
-            // with an `implicitDeref`.
             auto pairType = legalElementType.getPair();
 
-            // TODO: we actually need to drill down into the existential
-            // fields, because we really need to be allocating a constant
-            // buffer that includes those existential-type fields, but not
-            // any "special" fields that occur deeper in the type...
-
-
-
-
+            // The pair has both an "ordinary" and a "special"
+            // side, where the ordinary side is just plain data
+            // that we can put in a constant buffer type without
+            // any problems. The special side will (recursively)
+            // contain any resource-type fields that were nested
+            // in the constant buffer, and we'll need to
+            // treat those as resources that stand alongside
+            // the original constant buffer.
+            //
+            // We can start with the ordinary side, which we
+            // just want to wrap up in an ordinary uniform
+            // buffer with the appropriate `op`, so that case
+            // is easy:
+            //
             auto ordinaryType = createLegalUniformBufferType(
                 context,
                 op,
                 pairType->ordinaryType);
+
+            // For the special side, we really just want to turn
+            // a special field of type `R` into a value of type
+            // `R`, and the main detail we have to be aware of
+            // is that any use sites for the original buffer/block
+            // will include a dereferencing step to get from
+            // the block to this field, so we need to add
+            // something to the type structure to account for
+            // that step.
+            //
+            // We handle that issue by wrapping the special
+            // part of the type in an `implicitDeref` wrapper,
+            // which indicates that we logically have `SomePtr<R>`
+            // but we actually just have `R`, and any attempt to
+            // load from or otherwise indirect through that pointer
+            // will turn into a plain old reference to the `R` value.
+            //
             auto specialType = LegalType::implicitDeref(pairType->specialType);
 
-
+            // Once we've wrapped up both the ordinary and special
+            // sides suitably, we tie them back together in a pair
+            // and make that be the legalized type of the result.
+            //
             return LegalType::pair(
                 ordinaryType,
                 specialType,
@@ -507,16 +640,27 @@ static LegalType createLegalUniformBufferType(
 
     case LegalType::Flavor::tuple:
         {
-            // if we have a tuple type, then it must be representing
-            // the fields that can't be stored in a buffer anyway,
-            // so we just need to wrap each of them in an `implicitDeref`
+            // A tuple type always represents purely "special" data,
+            // which in this case means resources.
+            //
+            // As in the `pair` case, the main thing we have to
+            // take into account is that each of the entries in the
+            // tuple itself (e.g., a value of type `R`) and the code
+            // that uses the legalized buffer type will expect a
+            // `ConstantBuffer<R>` or at least `SomePtrType<R>`.
+            //
+            // We will construct a new tuple type that wraps each
+            // of the element types in an `implicitDeref` to
+            // account for the different in levels of indirection.
+            //
+            // TODO: This seems odd, because we *should* be able to
+            // just wrap the whole thing in an `implicitDeref` and
+            // have done. We should investigate why this roundabout
+            // way of doing things was ever necessary.
 
             auto elementPseudoTupleType = legalElementType.getTuple();
-
             RefPtr<TuplePseudoType> bufferPseudoTupleType = new TuplePseudoType();
 
-            // Wrap all the pseudo-tuple elements with `implicitDeref`,
-            // since they used to be inside a tuple, but aren't any more.
             for (auto ee : elementPseudoTupleType->elements)
             {
                 TuplePseudoType::Element newElement;
@@ -532,10 +676,105 @@ static LegalType createLegalUniformBufferType(
         break;
 
     default:
-        SLANG_UNEXPECTED("unknown legal type flavor");
+        SLANG_UNEXPECTED("unhandled legal type flavor");
         UNREACHABLE_RETURN(LegalType());
         break;
     }
+}
+
+// Legalizing a uniform buffer/block type for existentials is
+// more interesting, because we don't actually want to push
+// the "special" fields out of the buffer entirely (as we
+// do for resources), and instead we just want to place
+// them in the buffer *after* all the ordinary data.
+//
+
+LegalField declareSimpleStructField(
+    TypeLegalizationContext*    context,
+    IRStructType*               structType,
+    IRType*                     fieldType)
+{
+    auto builder = context->getBuilder();
+
+    auto fieldKey = builder->createStructKey();
+
+    builder->createStructField(structType, fieldKey, fieldType);
+
+    return LegalField::makeSimple(fieldKey, fieldType);
+}
+
+
+LegalField declareStructFields(
+    TypeLegalizationContext*    context,
+    IRStructType*               structType,
+    LegalType                   fieldType)
+{
+    // TODO: should thread through some kind of name hint here...
+
+    switch(fieldType.flavor)
+    {
+    case LegalType::Flavor::none:
+        return LegalField::makeVoid();
+
+    case LegalType::Flavor::simple:
+        return declareSimpleStructField(context, structType, fieldType.getSimple());
+
+    case LegalType::Flavor::implicitDeref:
+        {
+            auto subField = declareStructFields(context, structType, fieldType.getImplicitDeref()->valueType);
+            return LegalField::makeImplicitDeref(subField);
+        }
+
+    case LegalType::Flavor::pair:
+        {
+            auto pairType = fieldType.getPair();
+            auto ordinaryField = declareStructFields(context, structType, pairType->ordinaryType);
+            auto specialField = declareStructFields(context, structType, pairType->specialType);
+            return LegalField::makePair(
+                ordinaryField,
+                specialField,
+                pairType->pairInfo);
+        }
+
+    case LegalType::Flavor::tuple:
+        {
+            auto tupleType = fieldType.getTuple();
+
+            RefPtr<TupleLegalFieldObj> obj = new TupleLegalFieldObj();
+            for( auto ee : tupleType->elements )
+            {
+                TupleLegalFieldObj::Element element;
+                element.key = ee.key;
+                element.field = declareStructFields(context, structType, ee.type);
+                obj->elements.Add(element);
+            }
+            return LegalField::makeTuple(obj);
+        }
+
+    default:
+        SLANG_UNEXPECTED("unhandled legal type flavor");
+        UNREACHABLE_RETURN(LegalField::makeVoid());
+        break;
+    }
+}
+
+LegalType createLegalUniformBufferTypeForExistentials(
+    TypeLegalizationContext*    context,
+    IROp                        op,
+    LegalType                   legalElementType)
+{
+    auto builder = context->getBuilder();
+
+    auto structType = builder->createStructType();
+
+    auto fields = declareStructFields(context, structType, legalElementType);
+
+    auto bufferType = createBuiltinGenericType(
+        context,
+        op,
+        structType);
+
+    return LegalType::makeWrappedBuffer(bufferType, fields);
 }
 
 static LegalType createLegalUniformBufferType(
@@ -806,7 +1045,7 @@ LegalType legalizeTypeImpl(
         // we still need to create a new uniform buffer type
         // from `legalElementType` instead of `type`
         // because the `legalElementType` may still differ from `type`
-        // if `type` contains empty structs.
+        // if, e.g., `type` contains empty structs.
         return createLegalUniformBufferType(
                 context,
                 uniformBufferType,
