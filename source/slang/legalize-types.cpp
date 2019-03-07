@@ -364,7 +364,7 @@ struct TupleTypeBuilder
             // collide.
             //
             // (Also, the original type wasn't legal - that was the whole point...)
-            context->instsToRemove.Add(originalStructType);
+            context->replacedInstructions.Add(originalStructType);
 
             for(auto ee : ordinaryElements)
             {
@@ -935,21 +935,6 @@ LegalType legalizeTypeImpl(
     }
 
     return LegalType::simple(type);
-}
-
-void initialize(
-    TypeLegalizationContext*    context,
-    Session*                    session,
-    IRModule*                   module)
-{
-    context->session = session;
-    context->irModule = module;
-
-    context->sharedBuilder.session = session;
-    context->sharedBuilder.module = module;
-
-    context->builder.sharedBuilder = &context->sharedBuilder;
-    context->builder.setInsertInto(module->moduleInst);
 }
 
 LegalType legalizeType(

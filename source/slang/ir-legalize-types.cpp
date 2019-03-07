@@ -74,29 +74,19 @@ LegalVal LegalVal::getImplicitDeref()
     return as<ImplicitDerefVal>(obj)->val;
 }
 
-struct IRTypeLegalizationContext
+IRTypeLegalizationContext::IRTypeLegalizationContext(
+    IRModule* inModule)
 {
-    Session*    session;
-    IRModule*   module;
-    IRBuilder*  builder;
+    session = inModule->getSession();
+    module = inModule;
 
-    /// Context to use for underlying (non-IR) type legalization.
-    TypeLegalizationContext* typeLegalizationContext;
+    auto sharedBuilder = &sharedBuilderStorage;
+    sharedBuilder->session = session;
+    sharedBuilder->module = module;
 
-    // When inserting new globals, put them before this one.
-    IRInst* insertBeforeGlobal = nullptr;
-
-    // When inserting new parameters, put them before this one.
-    IRParam* insertBeforeParam = nullptr;
-
-    Dictionary<IRInst*, LegalVal> mapValToLegalVal;
-
-    IRVar* insertBeforeLocalVar = nullptr;
-
-    // store instructions that have been replaced here, so we can free them
-    // when legalization has done
-    List<IRInst*> replacedInstructions;
-};
+    builder = &builderStorage;
+    builder->sharedBuilder = sharedBuilder;
+}
 
 static void registerLegalizedValue(
     IRTypeLegalizationContext*  context,
@@ -120,13 +110,6 @@ static LegalVal declareVars(
     LegalVarChain*              varChain,
     UnownedStringSlice          nameHint,
     IRGlobalNameInfo*           globalNameInfo);
-
-static LegalType legalizeType(
-    IRTypeLegalizationContext*  context,
-    IRType*                     type)
-{
-    return legalizeType(context->typeLegalizationContext, type);
-}
 
 // Take a value that is being used as an operand,
 // and turn it into the equivalent legalized value.
@@ -1762,52 +1745,23 @@ static void legalizeTypes(
     }
 }
 
-
-void legalizeTypes(
-    TypeLegalizationContext*    typeLegalizationContext,
-    IRModule*                   module)
+void legalizeResourceTypes(
+    IRModule*       module,
+    DiagnosticSink* sink)
 {
-    auto session = module->session;
+    SLANG_UNUSED(sink);
 
-    SharedIRBuilder sharedBuilderStorage;
-    auto sharedBuilder = &sharedBuilderStorage;
-
-    sharedBuilder->session = session;
-    sharedBuilder->module = module;
-
-    IRBuilder builderStorage;
-    auto builder = &builderStorage;
-
-    builder->sharedBuilder = sharedBuilder;
-
-
-    IRTypeLegalizationContext contextStorage;
-    auto context = &contextStorage;
-
-    context->session = session;
-    context->module = module;
-    context->builder = builder;
-
-    context->typeLegalizationContext = typeLegalizationContext;
-
-    legalizeTypes(context);
-
-    // Clean up after any type instructions we removed (e.g.,
-    // global `struct` types).
-    //
-    // TODO: this logic should probably get paired up with
-    // the case for `IRTypeLegalizationContext::replacedInstructions`,
-    // but we haven't yet folded all the legalization logic into
-    // the IR legalization pass (since it used to apply to the AST too).
-    //
-    // TODO: This code has issues that can lead to IR validation
-    // failure, because we might remove a `struct X` that has been
-    // legalized away, but leave around a `ParameterBlock<X>` instruction
-    // that is no longer valid.
-    for (auto& oldInst : typeLegalizationContext->instsToRemove)
-    {
-        oldInst->removeAndDeallocate();
-    }
+    IRTypeLegalizationContext context(module);
+    legalizeTypes(&context);
 }
+
+void legalizeExistentialTypeLayout(
+    IRModule*       module,
+    DiagnosticSink* sink)
+{
+    SLANG_UNUSED(module);
+    SLANG_UNUSED(sink);
+}
+
 
 }

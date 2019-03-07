@@ -359,6 +359,7 @@ struct ImplicitDerefVal : LegalValImpl
 
 //
 
+#if 0
 struct TypeLegalizationContext
 {
     /// The overall compilation session..
@@ -371,7 +372,6 @@ struct TypeLegalizationContext
 
     IRBuilder* getBuilder() { return &builder; }
 
-    Dictionary<IRType*, LegalType> mapTypeToLegalType;
 
     // Intstructions to be removed when legalization is done
     HashSet<IRInst*> instsToRemove;
@@ -381,7 +381,39 @@ void initialize(
     TypeLegalizationContext*    context,
     Session*                    session,
     IRModule*                   module);
+#else
+struct IRTypeLegalizationContext
+{
+    Session*    session;
+    IRModule*   module;
+    IRBuilder*  builder;
 
+    SharedIRBuilder sharedBuilderStorage;
+    IRBuilder builderStorage;
+
+    IRTypeLegalizationContext(
+        IRModule* inModule);
+
+    // When inserting new globals, put them before this one.
+    IRInst* insertBeforeGlobal = nullptr;
+
+    // When inserting new parameters, put them before this one.
+    IRParam* insertBeforeParam = nullptr;
+
+    Dictionary<IRInst*, LegalVal> mapValToLegalVal;
+
+    IRVar* insertBeforeLocalVar = nullptr;
+
+    // store instructions that have been replaced here, so we can free them
+    // when legalization has done
+    List<IRInst*> replacedInstructions;
+
+    Dictionary<IRType*, LegalType> mapTypeToLegalType;
+
+    IRBuilder* getBuilder() { return builder; }
+};
+#endif
+typedef struct IRTypeLegalizationContext TypeLegalizationContext;
 
 LegalType legalizeType(
     TypeLegalizationContext*    context,
@@ -390,6 +422,17 @@ LegalType legalizeType(
 /// Try to find the module that (recursively) contains a given declaration.
 ModuleDecl* findModuleForDecl(
     Decl*   decl);
+
+
+
+
+void legalizeExistentialTypeLayout(
+    IRModule*       module,
+    DiagnosticSink* sink);
+
+void legalizeResourceTypes(
+    IRModule*       module,
+    DiagnosticSink* sink);
 
 }
 

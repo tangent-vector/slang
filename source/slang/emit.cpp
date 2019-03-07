@@ -6642,10 +6642,6 @@ StructTypeLayout* getGlobalStructLayout(
     return getScopeStructLayout(programLayout);
 }
 
-void legalizeTypes(
-    TypeLegalizationContext*    context,
-    IRModule*                   module);
-
 static void dumpIR(
     BackEndCompileRequest* compileRequest,
     IRModule*       irModule,
@@ -6842,22 +6838,23 @@ String emitEntryPoint(
         // we need to ensure that the code only uses types
         // that are legal on the chosen target.
         //
-        {
-            // TODO: The presence of `TypeLegalizationContext`
-            // in the public API of the `legalizeTypes` function
-            // is a throwback to when there was AST-level
-            // type legalization and all the complications it
-            // created. The pass should be refactored to not
-            // expose these details.
-            //
-            TypeLegalizationContext typeLegalizationContext;
-            initialize(&typeLegalizationContext,
-                session,
-                irModule);
-            legalizeTypes(
-                &typeLegalizationContext,
-                irModule);
-        }
+
+        // There are two steps, and we'll do existential-based
+        // legalization first...
+        //
+        legalizeExistentialTypeLayout(
+            irModule,
+            sink);
+
+        //  Debugging output of legalization
+#if 0
+        dumpIRIfEnabled(compileRequest, irModule, "EXISTENTIALS LEGALIZED");
+#endif
+        validateIRModuleIfEnabled(compileRequest, irModule);
+
+        legalizeResourceTypes(
+            irModule,
+            sink);
 
         //  Debugging output of legalization
 #if 0
