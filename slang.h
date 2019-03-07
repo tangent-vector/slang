@@ -1554,12 +1554,44 @@ extern "C"
         SLANG_PARAMETER_CATEGORY_CALLABLE_PAYLOAD,
         SLANG_PARAMETER_CATEGORY_SHADER_RECORD,
 
-        // A parameter of interface or array-of-interface type introduces
-        // one existential slot, into which a concrete type must be plugged
-        // to enable specialized code generation.
+        // An existential type parameter represents a "hole" that
+        // needs to be filled with a concrete type to enable
+        // generation of specialized code.
         //
-        SLANG_PARAMETER_CATEGORY_EXISTENTIAL_TYPE_SLOT,
-        SLANG_PARAMETER_CATEGORY_EXISTENTIAL_VALUE_SLOT,
+        // Consider this example:
+        //
+        //      struct MyParams
+        //      {
+        //          IMaterial material;
+        //          ILight lights[3];
+        //      };
+        //
+        // This `MyParams` type introduces two existential type parameters:
+        // one for `material` and one for `lights`. Even though `lights`
+        // is an array, it only introduces one type parameter, because
+        // we need to hae a *single* concrete type for all the array
+        // elements to be able to generate specialized code.
+        //
+        SLANG_PARAMETER_CATEGORY_EXISTENTIAL_TYPE_PARAM,
+
+        // An existential object parameter represents a value
+        // that needs to be passed in to provide data for some
+        // interface-type shader paameter.
+        //
+        // Consider this example:
+        //
+        //      struct MyParams
+        //      {
+        //          IMaterial material;
+        //          ILight lights[3];
+        //      };
+        //
+        // This `MyParams` type introduces four existential object parameters:
+        // one for `material` and three for `lights` (one for each array
+        // element). This is consistent with the number of interface-type
+        // "objects" that are being passed through to the shader.
+        //
+        SLANG_PARAMETER_CATEGORY_EXISTENTIAL_OBJECT_PARAM,
 
         //
         SLANG_PARAMETER_CATEGORY_COUNT,
@@ -1940,8 +1972,8 @@ namespace slang
 
         ShaderRecord = SLANG_PARAMETER_CATEGORY_SHADER_RECORD,
 
-        ExistentialTypeSlot = SLANG_PARAMETER_CATEGORY_EXISTENTIAL_TYPE_SLOT,
-        ExistentialValueSlot = SLANG_PARAMETER_CATEGORY_EXISTENTIAL_VALUE_SLOT,
+        ExistentialTypeParam = SLANG_PARAMETER_CATEGORY_EXISTENTIAL_TYPE_PARAM,
+        ExistentialObjectParam = SLANG_PARAMETER_CATEGORY_EXISTENTIAL_OBJECT_PARAM,
 
         // DEPRECATED:
         VertexInput = SLANG_PARAMETER_CATEGORY_VERTEX_INPUT,

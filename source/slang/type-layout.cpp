@@ -2379,7 +2379,7 @@ static TypeLayoutResult _createTypeLayout(
                 // computed so far.
                 //
                 Int baseExistentialSlotIndex = 0;
-                if(auto resInfo = typeLayout->FindResourceInfo(LayoutResourceKind::ExistentialTypeSlot))
+                if(auto resInfo = typeLayout->FindResourceInfo(LayoutResourceKind::ExistentialTypeParam))
                     baseExistentialSlotIndex = Int(resInfo->count.getFiniteValue());
                 //
                 // When computing the layout for the field, we will give it access
@@ -2550,8 +2550,8 @@ static TypeLayoutResult _createTypeLayout(
             typeLayout->type = type;
             typeLayout->rules = rules;
 
-            typeLayout->addResourceUsage(LayoutResourceKind::ExistentialTypeSlot, 1);
-            typeLayout->addResourceUsage(LayoutResourceKind::ExistentialValueSlot, 1);
+            typeLayout->addResourceUsage(LayoutResourceKind::ExistentialTypeParam, 1);
+            typeLayout->addResourceUsage(LayoutResourceKind::ExistentialObjectParam, 1);
 
             // If there are any concrete types available, the first one will be
             // the value that should be plugged into the slot we just introduced.

@@ -9333,6 +9333,7 @@ namespace Slang
         ExistentialSlots&       ioSlots,
         DeclRef<VarDeclBase>    paramDeclRef);
 
+        /// Recursively walk `type` and discover any required existential type parameters.
     static void _collectExistentialParamsRec(
         ExistentialSlots&   ioSlots,
         Type*               type)

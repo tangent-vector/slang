@@ -198,7 +198,7 @@ struct BindExistentialSlots
         // We only care about parameters that are associated
         // with one or more existential slots.
         //
-        auto resInfo = varLayout->FindResourceInfo(LayoutResourceKind::ExistentialTypeSlot);
+        auto resInfo = varLayout->FindResourceInfo(LayoutResourceKind::ExistentialTypeParam);
         if(!resInfo)
             return;
 
@@ -208,7 +208,7 @@ struct BindExistentialSlots
         //
         UInt firstSlot = resInfo->index;
         UInt slotCount = 0;
-        if(auto typeResInfo = varLayout->getTypeLayout()->FindResourceInfo(LayoutResourceKind::ExistentialTypeSlot))
+        if(auto typeResInfo = varLayout->getTypeLayout()->FindResourceInfo(LayoutResourceKind::ExistentialTypeParam))
             slotCount = UInt(typeResInfo->count.getFiniteValue());
 
         // At this point we know that the parameter consumes
