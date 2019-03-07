@@ -59,25 +59,47 @@ int test(
 //TEST_INPUT:ubuffer(data=[0 0 0 0], stride=4):dxbinding(0),glbinding(0),out
 RWStructuredBuffer<int> gOutputBuffer;
 
-//TEST_INPUT:cbuffer(data=[9 0 0 0 1 0 0 0], stride=4):dxbinding(0),glbinding(1)
-cbuffer C
-{
-    IRandomNumberGenerationStrategy gStrategy;
-    int                             gExtra;
-}
+//TEST_INPUT:cbuffer(data=[1 0 0 0], stride=4):dxbinding(0),glbinding(1)
+ConstantBuffer<IRandomNumberGenerationStrategy> gStrategy;
 
 [numthreads(4, 1, 1)]
 void computeMain(
-//TEST_INPUT:cbuffer(data=[16384 0 0 0 8 0 0 0], stride=4):dxbinding(1),glbinding(2)
+
+// We will be declaring two different `uniform` parameters in the
+// entry-point parameter list, which will both get allocated to
+// the same constant buffer.
+//
+// The first parameter will use an interface type, while the second
+// will be plain-old-data.
+//
     uniform IModifier   modifier,
     uniform int         extra,
+//
+// The computed layout for the entry-point constant buffer will
+// always place the non-interface-type data first, so the first
+// four bytes of our buffer represent the `extra` field.
+//
+// After all the non-interface-type data is laid out, we lay out
+// the contents of extistential value slots in order, using the
+// ordinary constant buffer packing rules. Because the concrete
+// type we'll be plugging in for `modifier` is a `struct` type,
+// it will need to start on a 16-byte-aligned boundary.
+//
+// Here's the incantation to make teh test runner ifll in the constant buffer:
+//
+//TEST_INPUT:cbuffer(data=[256 0 0 0 16 0 0 0], stride=4):dxbinding(1),glbinding(2)
+//
+// So, the value `256` will be used for `extra` and the value `16`
+// will be written to the first four bytes of the concrete value
+// being used for `modifier`.
+
             uint3       dispatchThreadID : SV_DispatchThreadID)
 {
     let tid = dispatchThreadID.x;
 
     let inputVal : int = tid;
     let outputVal = test(inputVal, gStrategy, modifier)
-    	+ extra*gExtra;
+    	+ extra*extra;
 
     gOutputBuffer[tid] = outputVal;
 }
