@@ -876,7 +876,7 @@ struct TypeLayoutContext
     // existential type slots.
     //
     Int                             existentialTypeArgCount = 0;
-    ExistentialSlots::Arg const*    existentialTypeArgs = nullptr;
+    ExistentialTypeSlots::Arg const*    existentialTypeArgs = nullptr;
 
     LayoutRulesImpl* getRules() { return rules; }
     LayoutRulesFamilyImpl* getRulesFamily() const { return rules->getLayoutRulesFamily(); }
@@ -897,7 +897,7 @@ struct TypeLayoutContext
 
     TypeLayoutContext withExistentialTypeArgs(
         Int                             argCount,
-        ExistentialSlots::Arg const*    args) const
+        ExistentialTypeSlots::Arg const*    args) const
     {
         TypeLayoutContext result = *this;
         result.existentialTypeArgCount  = argCount;

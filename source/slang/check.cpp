@@ -9330,12 +9330,12 @@ namespace Slang
 
         /// Recursively walk `paramDeclRef` and add any required existential slots to `ioSlots`.
     static void _collectExistentialSlotsRec(
-        ExistentialSlots&       ioSlots,
+        ExistentialTypeSlots&       ioSlots,
         DeclRef<VarDeclBase>    paramDeclRef);
 
         /// Recursively walk `type` and discover any required existential type parameters.
     static void _collectExistentialParamsRec(
-        ExistentialSlots&   ioSlots,
+        ExistentialTypeSlots&   ioSlots,
         Type*               type)
     {
         // Whether or not something is an array does not affect
@@ -9359,7 +9359,7 @@ namespace Slang
             {
                 // Each leaf parameter of interface type adds one slot.
                 //
-                ioSlots.types.Add(type);
+                ioSlots.paramTypes.Add(type);
             }
             else if( auto structDeclRef = typeDeclRef.as<StructDecl>() )
             {
@@ -9382,7 +9382,7 @@ namespace Slang
     }
 
     static void _collectExistentialSlotsRec(
-        ExistentialSlots&       ioSlots,
+        ExistentialTypeSlots&       ioSlots,
         DeclRef<VarDeclBase>    paramDeclRef)
     {
         _collectExistentialParamsRec(ioSlots, GetType(paramDeclRef));
@@ -9392,12 +9392,12 @@ namespace Slang
         /// Add information about a shader parameter to `ioParams` and `ioSlots`
     static void _collectExistentialSlotsForShaderParam(
         ShaderParamInfo&        ioParamInfo,
-        ExistentialSlots&       ioSlots,
+        ExistentialTypeSlots&       ioSlots,
         DeclRef<VarDeclBase>    paramDeclRef)
     {
-        UInt startSlot = ioSlots.types.Count();
+        UInt startSlot = ioSlots.paramTypes.Count();
         _collectExistentialSlotsRec(ioSlots, paramDeclRef);
-        UInt endSlot = ioSlots.types.Count();
+        UInt endSlot = ioSlots.paramTypes.Count();
         UInt slotCount = endSlot - startSlot;
 
         ioParamInfo.firstExistentialTypeSlot = startSlot;
@@ -10328,11 +10328,11 @@ static bool doesParameterMatch(
 
     static void _specializeExistentialSlots(
         Linkage*                    linkage,
-        ExistentialSlots&           ioSlots,
+        ExistentialTypeSlots&           ioSlots,
         List<RefPtr<Expr>> const&   args,
         DiagnosticSink*             sink)
     {
-        UInt slotCount = ioSlots.types.Count();
+        UInt slotCount = ioSlots.paramTypes.Count();
         UInt argCount = args.Count();
 
         if( slotCount != argCount )
@@ -10345,7 +10345,7 @@ static bool doesParameterMatch(
 
         for( UInt ii = 0; ii < slotCount; ++ii )
         {
-            auto slotType = ioSlots.types[ii];
+            auto slotType = ioSlots.paramTypes[ii];
             auto argExpr = args[ii];
 
             auto argType = checkProperType(linkage, TypeExp(argExpr), sink);
@@ -10368,7 +10368,7 @@ static bool doesParameterMatch(
                 return;
             }
 
-            ExistentialSlots::Arg arg;
+            ExistentialTypeSlots::Arg arg;
             arg.type = argType;
             arg.witness = witness;
             ioSlots.args.Add(arg);
