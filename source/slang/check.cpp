@@ -9329,12 +9329,12 @@ namespace Slang
     }
 
         /// Recursively walk `paramDeclRef` and add any required existential slots to `ioSlots`.
-    static void _collectExistentialSlotsRec(
+    static void _collectExistentialTypeParamsRec(
         ExistentialTypeSlots&       ioSlots,
         DeclRef<VarDeclBase>    paramDeclRef);
 
         /// Recursively walk `type` and discover any required existential type parameters.
-    static void _collectExistentialParamsRec(
+    static void _collectExistentialTypeParamsRec(
         ExistentialTypeSlots&   ioSlots,
         Type*               type)
     {
@@ -9348,7 +9348,7 @@ namespace Slang
 
         if( auto parameterGroupType = as<ParameterGroupType>(type) )
         {
-            _collectExistentialParamsRec(ioSlots, parameterGroupType->getElementType());
+            _collectExistentialTypeParamsRec(ioSlots, parameterGroupType->getElementType());
             return;
         }
 
@@ -9371,7 +9371,7 @@ namespace Slang
                     if(fieldDeclRef.getDecl()->HasModifier<HLSLStaticModifier>())
                         continue;
 
-                    _collectExistentialSlotsRec(ioSlots, fieldDeclRef);
+                    _collectExistentialTypeParamsRec(ioSlots, fieldDeclRef);
                 }
             }
         }
@@ -9381,11 +9381,11 @@ namespace Slang
         // element types.
     }
 
-    static void _collectExistentialSlotsRec(
+    static void _collectExistentialTypeParamsRec(
         ExistentialTypeSlots&       ioSlots,
         DeclRef<VarDeclBase>    paramDeclRef)
     {
-        _collectExistentialParamsRec(ioSlots, GetType(paramDeclRef));
+        _collectExistentialTypeParamsRec(ioSlots, GetType(paramDeclRef));
     }
 
 
@@ -9396,7 +9396,7 @@ namespace Slang
         DeclRef<VarDeclBase>    paramDeclRef)
     {
         UInt startSlot = ioSlots.paramTypes.Count();
-        _collectExistentialSlotsRec(ioSlots, paramDeclRef);
+        _collectExistentialTypeParamsRec(ioSlots, paramDeclRef);
         UInt endSlot = ioSlots.paramTypes.Count();
         UInt slotCount = endSlot - startSlot;
 
@@ -10326,7 +10326,7 @@ static bool doesParameterMatch(
         return program;
     }
 
-    static void _specializeExistentialSlots(
+    static void _specializeExistentialTypeParams(
         Linkage*                    linkage,
         ExistentialTypeSlots&           ioSlots,
         List<RefPtr<Expr>> const&   args,
@@ -10375,11 +10375,11 @@ static bool doesParameterMatch(
         }
     }
 
-    void EntryPoint::_specializeExistentialSlots(
+    void EntryPoint::_specializeExistentialTypeParams(
         List<RefPtr<Expr>> const&   args,
         DiagnosticSink*             sink)
     {
-        Slang::_specializeExistentialSlots(getLinkage(), m_existentialSlots, args, sink);
+        Slang::_specializeExistentialTypeParams(getLinkage(), m_existentialSlots, args, sink);
     }
 
             /// Create a specialization an existing entry point based on generic arguments.
@@ -10472,7 +10472,7 @@ static bool doesParameterMatch(
             unspecializedEntryPoint->getProfile());
 
         // Next we need to validate the existential arguments.
-        specializedEntryPoint->_specializeExistentialSlots(existentialArgs, sink);
+        specializedEntryPoint->_specializeExistentialTypeParams(existentialArgs, sink);
 
         return specializedEntryPoint;
     }
@@ -10531,11 +10531,11 @@ static bool doesParameterMatch(
         }
     }
 
-    void Program::_specializeExistentialSlots(
+    void Program::_specializeExistentialTypeParams(
         List<RefPtr<Expr>> const&   args,
         DiagnosticSink*             sink)
     {
-        Slang::_specializeExistentialSlots(getLinkage(), m_globalExistentialSlots, args, sink);
+        Slang::_specializeExistentialTypeParams(getLinkage(), m_globalExistentialSlots, args, sink);
     }
 
 
@@ -10716,7 +10716,7 @@ static bool doesParameterMatch(
         // unspecialized on first, which is maybe not always desirable.
         //
         specializedProgram->_collectShaderParams(sink);
-        specializedProgram->_specializeExistentialSlots(globalExistentialArgs, sink);
+        specializedProgram->_specializeExistentialTypeParams(globalExistentialArgs, sink);
 
         return specializedProgram;
     }

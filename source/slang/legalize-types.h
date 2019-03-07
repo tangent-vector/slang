@@ -41,33 +41,28 @@ struct ImplicitDerefType;
 struct TuplePseudoType;
 struct PairPseudoType;
 struct PairInfo;
-struct LegalField;
+struct LegalElementWrapping;
 struct WrappedBufferPseudoType;
 
+    /// A flavor for types or values that arise during legalization.
 enum class LegalFlavor
 {
-    // Nothing: an empty type or value. Equivalent to `void`.
+        /// Nothing: an empty type or value. Equivalent to `void`.
     none,
 
-    // A simple type/value that can be represented as an `IRType*` or `IRInst*`
+        /// A simple type/value that can be represented as an `IRType*` or `IRInst*`
     simple,
 
-    // Logically, a pointer-like type/value, but represented as the
-    // type/value being pointed to, so that there is one less level
-    // of indirection.
-    //
+        /// Logically, a pointer-like type/value, but represented as the type/value being pointed type.
     implicitDeref,
 
-    // A compound type/value made up of the constituent fields of some
-    // original value.
+        /// A compound type/value made up of the constituent fields of some original value.
     tuple,
 
-    // A type/value that was split into "ordinary" and "special" parts.
+        /// A type/value that was split into "ordinary" and "special" parts.
     pair,
 
-    // A type/value that represents, e.g., `ConstantBuffer<T>`
-    // where `T` required some level of legalization.
-    //
+        /// A type/value that represents, e.g., `ConstantBuffer<T>` where `T` needed legalization.
     wrappedBuffer,
 };
 
@@ -103,7 +98,7 @@ struct LegalType
     }
 
     static LegalType tuple(
-        RefPtr<TuplePseudoType>     tupleType);
+        RefPtr<TuplePseudoType>   tupleType);
 
     RefPtr<TuplePseudoType> getTuple() const
     {
@@ -112,7 +107,7 @@ struct LegalType
     }
 
     static LegalType pair(
-        RefPtr<PairPseudoType>  pairType);
+        RefPtr<PairPseudoType> pairType);
 
     static LegalType pair(
         LegalType const&    ordinaryType,
@@ -127,7 +122,7 @@ struct LegalType
 
     static LegalType makeWrappedBuffer(
         IRType*             simpleType,
-        LegalField const&   elementInfo);
+        LegalElementWrapping const&   elementInfo);
 
     RefPtr<WrappedBufferPseudoType> getWrappedBuffer() const
     {
@@ -136,61 +131,62 @@ struct LegalType
     }
 };
 
-struct LegalFieldObj : RefObject
+struct LegalElementWrappingObj : RefObject
 {
 };
 
-struct SimpleLegalFieldObj;
-struct ImplicitDerefLegalFieldObj;
-struct PairLegalFieldObj;
-struct TupleLegalFieldObj;
+struct SimpleLegalElementWrappingObj;
+struct ImplicitDerefLegalElementWrappingObj;
+struct PairLegalElementWrappingObj;
+struct TupleLegalElementWrappingObj;
 
-struct LegalField
+    /// Information on how the element type of a buffer needs to be wrapped.
+struct LegalElementWrapping
 {
     typedef LegalFlavor Flavor;
 
     Flavor flavor;
-    RefPtr<LegalFieldObj> obj;
+    RefPtr<LegalElementWrappingObj> obj;
 
-    static LegalField makeVoid();
-    static LegalField makeSimple(IRStructKey* key, IRType* type);
-    static LegalField makeImplicitDeref(LegalField const& field);
-    static LegalField makePair(
-        LegalField const& ordinary,
-        LegalField const& special,
+    static LegalElementWrapping makeVoid();
+    static LegalElementWrapping makeSimple(IRStructKey* key, IRType* type);
+    static LegalElementWrapping makeImplicitDeref(LegalElementWrapping const& field);
+    static LegalElementWrapping makePair(
+        LegalElementWrapping const& ordinary,
+        LegalElementWrapping const& special,
         PairInfo* pairInfo);
-    static LegalField makeTuple(TupleLegalFieldObj* obj);
+    static LegalElementWrapping makeTuple(TupleLegalElementWrappingObj* obj);
 
-    RefPtr<SimpleLegalFieldObj> getSimple() const;
-    RefPtr<ImplicitDerefLegalFieldObj> getImplicitDeref() const;
-    RefPtr<PairLegalFieldObj> getPair() const;
-    RefPtr<TupleLegalFieldObj> getTuple() const;
+    RefPtr<SimpleLegalElementWrappingObj> getSimple() const;
+    RefPtr<ImplicitDerefLegalElementWrappingObj> getImplicitDeref() const;
+    RefPtr<PairLegalElementWrappingObj> getPair() const;
+    RefPtr<TupleLegalElementWrappingObj> getTuple() const;
 };
 
-struct SimpleLegalFieldObj : LegalFieldObj
+struct SimpleLegalElementWrappingObj : LegalElementWrappingObj
 {
     IRStructKey*    key;
     IRType*         type;
 };
 
-struct ImplicitDerefLegalFieldObj : LegalFieldObj
+struct ImplicitDerefLegalElementWrappingObj : LegalElementWrappingObj
 {
-    LegalField field;
+    LegalElementWrapping field;
 };
 
-struct PairLegalFieldObj : LegalFieldObj
+struct PairLegalElementWrappingObj : LegalElementWrappingObj
 {
-    LegalField ordinary;
-    LegalField special;
+    LegalElementWrapping ordinary;
+    LegalElementWrapping special;
     RefPtr<PairInfo> pairInfo;
 };
 
-struct TupleLegalFieldObj : LegalFieldObj
+struct TupleLegalElementWrappingObj : LegalElementWrappingObj
 {
     struct Element
     {
         IRStructKey*    key;
-        LegalField      field;
+        LegalElementWrapping      field;
     };
 
     List<Element> elements;
@@ -206,7 +202,7 @@ struct TupleLegalFieldObj : LegalFieldObj
 //  implies a level of indirection, but need to legalize it to just
 //  `Texture2D`, which eliminates that indirection.
 //
-//  2. When we have a type like `ExistentialPtr<Foo>` that will
+//  2. When we have a type like `ExistentialBox<Foo>` that will
 //  become just a `Foo` field, but which needs to be allocated
 //  out-of-line from the rest of its enclosing type.
 //
@@ -250,8 +246,8 @@ struct PairInfo : RefObject
     typedef unsigned int Flags;
     enum
     {
-        kFlag_hasOrdinary       = 0x1,
-        kFlag_hasSpecial        = 0x2,
+        kFlag_hasOrdinary = 0x1,
+        kFlag_hasSpecial = 0x2,
     };
 
 
@@ -261,20 +257,23 @@ struct PairInfo : RefObject
         IRStructKey* key;
 
         // The conceptual type of the field.
-        // If more than one bit is set in `flags`,
-        // then this is expected to be a 
+        // If both the `hasOrdinary` and
+        // `hasSpecial` bits are set, then
+        // this is expected to be a
         // `LegalType::Flavor::pair`
         LegalType   type;
 
-        // Which sub-components of the triple
-        // is the field/element represented on?
-        //
+
+        // Is the value represented on
+        // the ordinary side, the special
+        // side, or both?
         Flags       flags;
 
-        // If the type of this element is itself
-        // a triple type, then this is a `PairInfo`
-        // for that triple type.
-        //
+        // If the type of this element is
+        // itself a pair type (that is,
+        // it both `hasOrdinary` and `hasSpecial`)
+        // then this is the `PairInfo` for that
+        // pair type:
         RefPtr<PairInfo> fieldPairInfo;
     };
 
@@ -322,7 +321,7 @@ struct WrappedBufferPseudoType : LegalTypeImpl
     // Adjustments that need to be made when fetching
     // an element from this buffer type.
     //
-    LegalField  elementInfo;
+    LegalElementWrapping  elementInfo;
 };
 
 //
@@ -444,29 +443,11 @@ struct ImplicitDerefVal : LegalValImpl
 
 //
 
-#if 0
-struct TypeLegalizationContext
-{
-    /// The overall compilation session..
-    Session*            session;
-
-    IRModule* irModule = nullptr;
-
-    SharedIRBuilder sharedBuilder;
-    IRBuilder builder;
-
-    IRBuilder* getBuilder() { return &builder; }
-
-
-    // Intstructions to be removed when legalization is done
-    HashSet<IRInst*> instsToRemove;
-};
-
-void initialize(
-    TypeLegalizationContext*    context,
-    Session*                    session,
-    IRModule*                   module);
-#else
+    /// Context that drives type legalization
+    ///
+    /// This type is an abstract base class, and there are
+    /// customization points that a concrete pass needs to
+    /// override (e.g., to specify what needs to be legalized).
 struct IRTypeLegalizationContext
 {
     Session*    session;
@@ -497,13 +478,25 @@ struct IRTypeLegalizationContext
 
     IRBuilder* getBuilder() { return builder; }
 
+        /// Customization point to decide what types are "special."
+        ///
+        /// When legalizing a `struct` type, any fields that have "special"
+        /// types will get moved out of the `struc` itself.
     virtual bool isSpecialType(IRType* type) = 0;
 
+        /// Customization point to construct uniform-buffer/block types.
+        ///
+        /// This function will only be called if `legalElementType` is
+        /// somehow non-trivial.
+        ///
     virtual LegalType createLegalUniformBufferType(
         IROp        op,
         LegalType   legalElementType) = 0;
 };
-#endif
+
+// This typedef exists to support pre-existing code from when
+// `IRTypeLegalizationContext` and `TypeLegalizationContext` were
+// two different types that had to coordinate.
 typedef struct IRTypeLegalizationContext TypeLegalizationContext;
 
 LegalType legalizeType(
@@ -513,6 +506,27 @@ LegalType legalizeType(
 /// Try to find the module that (recursively) contains a given declaration.
 ModuleDecl* findModuleForDecl(
     Decl*   decl);
+
+    /// Create a uniform buffer type suitable for resource legalization.
+    ///
+    /// This will allocate a real buffer for the ordinary data (if any),
+    /// and leave the special data (if any) as a tuple.
+    ///
+LegalType createLegalUniformBufferTypeForResources(
+    TypeLegalizationContext*    context,
+    IROp                        op,
+    LegalType                   legalElementType);
+
+    /// Create a uniform buffer type suitable for existential legalization.
+    ///
+    /// This will allocate a real uniform buffer for *all* the data, by
+    /// declaring an intermediate `struct` type to hold the ordinary and
+    /// special (existential-box) fields, if required.
+    ///
+LegalType createLegalUniformBufferTypeForExistentials(
+    TypeLegalizationContext*    context,
+    IROp                        op,
+    LegalType                   legalElementType);
 
 
 
@@ -527,15 +541,6 @@ void legalizeResourceTypes(
 
 bool isResourceType(IRType* type);
 
-LegalType createLegalUniformBufferTypeForResources(
-    TypeLegalizationContext*    context,
-    IROp                        op,
-    LegalType                   legalElementType);
-
-LegalType createLegalUniformBufferTypeForExistentials(
-    TypeLegalizationContext*    context,
-    IROp                        op,
-    LegalType                   legalElementType);
 
 }
 

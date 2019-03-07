@@ -8,7 +8,7 @@ namespace Slang
 {
 
 LegalType LegalType::implicitDeref(
-    LegalType const&    valueType)
+    LegalType const& valueType)
 {
     RefPtr<ImplicitDerefType> obj = new ImplicitDerefType();
     obj->valueType = valueType;
@@ -20,7 +20,7 @@ LegalType LegalType::implicitDeref(
 }
 
 LegalType LegalType::tuple(
-    RefPtr<TuplePseudoType>     tupleType)
+    RefPtr<TuplePseudoType>   tupleType)
 {
     SLANG_ASSERT(tupleType->elements.Count());
 
@@ -45,15 +45,16 @@ LegalType LegalType::pair(
     RefPtr<PairInfo>    pairInfo)
 {
     // Handle some special cases for when
-    // only one of the sub-types is actually used.
+    // one or the other of the types isn't
+    // actually used.
 
-    if(ordinaryType.flavor == LegalType::Flavor::none)
+    if (ordinaryType.flavor == LegalType::Flavor::none)
     {
         // There was nothing ordinary.
         return specialType;
     }
 
-    if(specialType.flavor == LegalType::Flavor::none)
+    if (specialType.flavor == LegalType::Flavor::none)
     {
         return ordinaryType;
     }
@@ -70,7 +71,7 @@ LegalType LegalType::pair(
 
 LegalType LegalType::makeWrappedBuffer(
     IRType*             simpleType,
-    LegalField const&   elementInfo)
+    LegalElementWrapping const&   elementInfo)
 {
     RefPtr<WrappedBufferPseudoType> obj = new WrappedBufferPseudoType();
     obj->simpleType = simpleType;
@@ -84,82 +85,82 @@ LegalType LegalType::makeWrappedBuffer(
 
 //
 
-LegalField LegalField::makeVoid()
+LegalElementWrapping LegalElementWrapping::makeVoid()
 {
-    LegalField result;
+    LegalElementWrapping result;
     result.flavor = Flavor::none;
     return result;
 }
 
-LegalField LegalField::makeSimple(IRStructKey* key, IRType* type)
+LegalElementWrapping LegalElementWrapping::makeSimple(IRStructKey* key, IRType* type)
 {
-    RefPtr<SimpleLegalFieldObj> obj = new SimpleLegalFieldObj();
+    RefPtr<SimpleLegalElementWrappingObj> obj = new SimpleLegalElementWrappingObj();
     obj->key = key;
     obj->type = type;
 
-    LegalField result;
+    LegalElementWrapping result;
     result.flavor = Flavor::simple;
     result.obj = obj;
     return result;
 }
 
-RefPtr<SimpleLegalFieldObj> LegalField::getSimple() const
+RefPtr<SimpleLegalElementWrappingObj> LegalElementWrapping::getSimple() const
 {
     SLANG_ASSERT(flavor == Flavor::simple);
-    return obj.as<SimpleLegalFieldObj>();
+    return obj.as<SimpleLegalElementWrappingObj>();
 }
 
-LegalField LegalField::makeImplicitDeref(LegalField const& field)
+LegalElementWrapping LegalElementWrapping::makeImplicitDeref(LegalElementWrapping const& field)
 {
-    RefPtr<ImplicitDerefLegalFieldObj> obj = new ImplicitDerefLegalFieldObj();
+    RefPtr<ImplicitDerefLegalElementWrappingObj> obj = new ImplicitDerefLegalElementWrappingObj();
     obj->field = field;
 
-    LegalField result;
+    LegalElementWrapping result;
     result.flavor = Flavor::implicitDeref;
     result.obj = obj;
     return result;
 }
 
-RefPtr<ImplicitDerefLegalFieldObj> LegalField::getImplicitDeref() const
+RefPtr<ImplicitDerefLegalElementWrappingObj> LegalElementWrapping::getImplicitDeref() const
 {
     SLANG_ASSERT(flavor == Flavor::implicitDeref);
-    return obj.as<ImplicitDerefLegalFieldObj>();
+    return obj.as<ImplicitDerefLegalElementWrappingObj>();
 }
 
-LegalField LegalField::makePair(
-    LegalField const&   ordinary,
-    LegalField const&   special,
+LegalElementWrapping LegalElementWrapping::makePair(
+    LegalElementWrapping const&   ordinary,
+    LegalElementWrapping const&   special,
     PairInfo*           pairInfo)
 {
-    RefPtr<PairLegalFieldObj> obj = new PairLegalFieldObj();
+    RefPtr<PairLegalElementWrappingObj> obj = new PairLegalElementWrappingObj();
     obj->ordinary = ordinary;
     obj->special = special;
     obj->pairInfo = pairInfo;
 
-    LegalField result;
+    LegalElementWrapping result;
     result.flavor = Flavor::pair;
     result.obj = obj;
     return result;
 }
 
-RefPtr<PairLegalFieldObj> LegalField::getPair() const
+RefPtr<PairLegalElementWrappingObj> LegalElementWrapping::getPair() const
 {
     SLANG_ASSERT(flavor == Flavor::pair);
-    return obj.as<PairLegalFieldObj>();
+    return obj.as<PairLegalElementWrappingObj>();
 }
 
-LegalField LegalField::makeTuple(TupleLegalFieldObj* obj)
+LegalElementWrapping LegalElementWrapping::makeTuple(TupleLegalElementWrappingObj* obj)
 {
-    LegalField result;
+    LegalElementWrapping result;
     result.flavor = Flavor::tuple;
     result.obj = obj;
     return result;
 }
 
-RefPtr<TupleLegalFieldObj> LegalField::getTuple() const
+RefPtr<TupleLegalElementWrappingObj> LegalElementWrapping::getTuple() const
 {
     SLANG_ASSERT(flavor == Flavor::tuple);
-    return obj.as<TupleLegalFieldObj>();
+    return obj.as<TupleLegalElementWrappingObj>();
 }
 
 //
@@ -249,10 +250,7 @@ struct TupleTypeBuilder
     {
         LegalType ordinaryType;
         LegalType specialType;
-
         RefPtr<PairInfo> elementPairInfo;
-
-
         switch (legalLeafType.flavor)
         {
         case LegalType::Flavor::simple:
@@ -318,7 +316,6 @@ struct TupleTypeBuilder
                 {
                     ordinaryType = pairType->ordinaryType;
                     specialType = pairType->specialType;
-
                     elementPairInfo = pairType->pairInfo;
                 }
             }
@@ -326,7 +323,7 @@ struct TupleTypeBuilder
 
         case LegalType::Flavor::tuple:
             {
-                // A resource tuple always represents "special" data
+                // A tuple always represents "special" data
                 specialType = legalFieldType;
             }
             break;
@@ -380,10 +377,7 @@ struct TupleTypeBuilder
             specialElements.Add(specialElement);
         }
 
-        pairElement.type = LegalType::pair(
-            ordinaryType,
-            specialType,
-            elementPairInfo);
+        pairElement.type = LegalType::pair(ordinaryType, specialType, elementPairInfo);
         pairElements.Add(pairElement);
     }
 
@@ -393,14 +387,14 @@ struct TupleTypeBuilder
     {
         auto fieldType = field->getFieldType();
 
-        bool isSpecialTypeField = context->isSpecialType(fieldType);
+        bool isSpecialField = context->isSpecialType(fieldType);
         auto legalFieldType = legalizeType(context, fieldType);
 
         addField(
             field->getKey(),
             legalFieldType,
             legalFieldType,
-            isSpecialTypeField);
+            isSpecialField);
     }
 
     LegalType getResult()
@@ -500,7 +494,7 @@ struct TupleTypeBuilder
         }
 
         RefPtr<PairInfo> pairInfo;
-        if(anyOrdinary && anySpecial)
+        if (anyOrdinary && anySpecial)
         {
             pairInfo = new PairInfo();
             pairInfo->elements = pairElements;
@@ -523,11 +517,19 @@ static IRType* createBuiltinGenericType(
         operands);
 }
 
+// Create a uniform buffer type with a given legalized
+// element type.
 static LegalType createLegalUniformBufferType(
     TypeLegalizationContext*    context,
     IROp                        op,
     LegalType                   legalElementType)
 {
+    // We will handle some of the easy/non-interesting
+    // cases here in the main routine, but for all
+    // the non-trivial cases we will dispatch to logic
+    // on the `context` (which may differ depending
+    // on what we are using legalization to accomplish).
+    //
     switch (legalElementType.flavor)
     {
     default:
@@ -539,17 +541,19 @@ static LegalType createLegalUniformBufferType(
         return LegalType();
 
     case LegalType::Flavor::simple:
-        // Easy case: we just have a simple element type,
-        // so we want to create a uniform buffer that wraps it.
-        //
-        // TODO: This isn't *quite* right, since it won't handle something
-        // like a `ParameterBlock<Texture2D>`, but that seems like
-        // an unlikely case in practice.
-        //
-        return LegalType::simple(createBuiltinGenericType(
-            context,
-            op,
-            legalElementType.getSimple()));
+        {
+            // Easy case: we just have a simple element type,
+            // so we want to create a uniform buffer that wraps it.
+            //
+            // TODO: This isn't *quite* right, since it won't handle something
+            // like a `ParameterBlock<Texture2D>`, but that seems like
+            // an unlikely case in practice.
+            //
+            return LegalType::simple(createBuiltinGenericType(
+                context,
+                op,
+                legalElementType.getSimple()));
+        }
 
     case LegalType::Flavor::implicitDeref:
         {
@@ -567,11 +571,10 @@ static LegalType createLegalUniformBufferType(
             // element type.
             //
             // I'm going to attempt to hack this for now.
-            return LegalType::implicitDeref(
-                createLegalUniformBufferType(
-                    context,
-                    op,
-                    legalElementType.getImplicitDeref()->valueType));
+            return LegalType::implicitDeref(createLegalUniformBufferType(
+                context,
+                op,
+                legalElementType.getImplicitDeref()->valueType));
         }
         break;
     }
@@ -688,41 +691,90 @@ LegalType createLegalUniformBufferTypeForResources(
 // do for resources), and instead we just want to place
 // them in the buffer *after* all the ordinary data.
 //
-
-LegalField declareSimpleStructField(
-    TypeLegalizationContext*    context,
-    IRStructType*               structType,
-    IRType*                     fieldType)
-{
-    auto builder = context->getBuilder();
-
-    auto fieldKey = builder->createStructKey();
-
-    builder->createStructField(structType, fieldKey, fieldType);
-
-    return LegalField::makeSimple(fieldKey, fieldType);
-}
-
-
-LegalField declareStructFields(
+// In order to accomplish this we need a way to emit a
+// constant buffer with a new element type, and then
+// "wrap" that constant buffer so that it looks like
+// something that matches the legalization of the original
+// element type.
+//
+// As a concrete example, suppose we have:
+//
+//      struct Params { ExistentialBox<Foo> f; int x; ExistentialBox<Bar> b; };
+//      ConstantBuffer<Params> gParams;
+//
+// The legalized form of `Params` will be something like:
+//
+//      Pair(
+//          /* ordinary: */ struct Params_Ordinary { int x; },
+//          /* special: */ Tuple(
+//              f -> ImplicitDeref(Foo),
+//              b -> ImplicitDeref(Bar)))
+//
+// We need to be able to splat that all out into a single
+// structure declaration like:
+//
+//      struct Params_Reordered
+//      {
+//          Params_Ordinary ordinary;
+//          Foo f;
+//          Bar b;
+//      }
+//
+// That allows us to declare:
+//
+//      ConstantBuffer<Params_Reordered> gParams;
+//
+// That gets the in-memory layout of things correct for the
+// way we are defining existential value slots to work.
+// The challenge is that elsewehere in the code there are
+// operations like `gParams.x` need to now refer to
+// `gParams.ordinary.x`. Furthermore, even for something like
+// `f` that seems fine in the example above, we have lost
+// a level of indirection, so that where we had `load(gParams.f)`
+// we now want just `gParams.f`.
+//
+// The solution is to take `gParams` as soon as it is declared
+// and wrap it up as a new value:
+//
+//      pair(
+//          /* ordinary: */ gParams.ordinary,
+//          /* special: */ tuple(
+//              f -> implicitDeref(gParams.f),
+//              b -> implicitDeref(gParams.b)))
+//
+//
+// Let's begin by just defining a function that can take
+// a `LegalType` and turn it into zero or more field
+// declarations, and return enough tracking information
+// for us to be able to reconstruct a value like the above.
+//
+LegalElementWrapping declareStructFields(
     TypeLegalizationContext*    context,
     IRStructType*               structType,
     LegalType                   fieldType)
 {
-    // TODO: should thread through some kind of name hint here...
+    // TODO: We should eventually thread through some kind
+    // of "name hint" that can be used to give the generated
+    // fields more useful names.
 
     switch(fieldType.flavor)
     {
     case LegalType::Flavor::none:
-        return LegalField::makeVoid();
+        return LegalElementWrapping::makeVoid();
 
     case LegalType::Flavor::simple:
-        return declareSimpleStructField(context, structType, fieldType.getSimple());
+        {
+            auto simpleFieldType = fieldType.getSimple();
+            auto builder = context->getBuilder();
+            auto fieldKey = builder->createStructKey();
+            builder->createStructField(structType, fieldKey, simpleFieldType);
+            return LegalElementWrapping::makeSimple(fieldKey, simpleFieldType);
+        }
 
     case LegalType::Flavor::implicitDeref:
         {
             auto subField = declareStructFields(context, structType, fieldType.getImplicitDeref()->valueType);
-            return LegalField::makeImplicitDeref(subField);
+            return LegalElementWrapping::makeImplicitDeref(subField);
         }
 
     case LegalType::Flavor::pair:
@@ -730,7 +782,7 @@ LegalField declareStructFields(
             auto pairType = fieldType.getPair();
             auto ordinaryField = declareStructFields(context, structType, pairType->ordinaryType);
             auto specialField = declareStructFields(context, structType, pairType->specialType);
-            return LegalField::makePair(
+            return LegalElementWrapping::makePair(
                 ordinaryField,
                 specialField,
                 pairType->pairInfo);
@@ -740,20 +792,20 @@ LegalField declareStructFields(
         {
             auto tupleType = fieldType.getTuple();
 
-            RefPtr<TupleLegalFieldObj> obj = new TupleLegalFieldObj();
+            RefPtr<TupleLegalElementWrappingObj> obj = new TupleLegalElementWrappingObj();
             for( auto ee : tupleType->elements )
             {
-                TupleLegalFieldObj::Element element;
+                TupleLegalElementWrappingObj::Element element;
                 element.key = ee.key;
                 element.field = declareStructFields(context, structType, ee.type);
                 obj->elements.Add(element);
             }
-            return LegalField::makeTuple(obj);
+            return LegalElementWrapping::makeTuple(obj);
         }
 
     default:
         SLANG_UNEXPECTED("unhandled legal type flavor");
-        UNREACHABLE_RETURN(LegalField::makeVoid());
+        UNREACHABLE_RETURN(LegalElementWrapping::makeVoid());
         break;
     }
 }
@@ -765,16 +817,34 @@ LegalType createLegalUniformBufferTypeForExistentials(
 {
     auto builder = context->getBuilder();
 
+    // In order to wrap up all the data in `legalElementType`,
+    // will create a fresh `struct` type and then declare
+    // fields in it that are sufficient to hold that data
+    // in `legalElementType`.
+    //
     auto structType = builder->createStructType();
+    auto elementWrapping = declareStructFields(
+        context, structType, legalElementType);
 
-    auto fields = declareStructFields(context, structType, legalElementType);
-
+    // Because the `structType` is an ordinary IR type
+    // (not a `LegalType`) we can go ahead and create an
+    // IR uniform buffer type that wraps it.
+    //
     auto bufferType = createBuiltinGenericType(
         context,
         op,
         structType);
 
-    return LegalType::makeWrappedBuffer(bufferType, fields);
+    // The `elementWrapping` computed when we declared all
+    // the `struct` fields tells us how to get from the
+    // actual fields declared in the structure type to a
+    // `LegalVal` with the right shape for what users of
+    // the buffer will expect. We record both the underlying
+    // IR buffer type and that wrapping information into
+    // the resulting `LegalType` so that we can use it
+    // when declaring variables of this type.
+    //
+    return LegalType::makeWrappedBuffer(bufferType, elementWrapping);
 }
 
 static LegalType createLegalUniformBufferType(
@@ -829,11 +899,10 @@ static LegalType createLegalPtrType(
             //
             // TODO: invetigate whether there are situations where this
             // will matter.
-            return LegalType::implicitDeref(
-                createLegalPtrType(
-                    context,
-                    op,
-                    legalValueType.getImplicitDeref()->valueType));
+            return LegalType::implicitDeref(createLegalPtrType(
+                context,
+                op,
+                legalValueType.getImplicitDeref()->valueType));
         }
         break;
 
@@ -851,10 +920,7 @@ static LegalType createLegalPtrType(
                 op,
                 pairType->specialType);
 
-            return LegalType::pair(
-                ordinaryType,
-                specialType,
-                pairType->pairInfo);
+            return LegalType::pair(ordinaryType, specialType, pairType->pairInfo);
         }
 
     case LegalType::Flavor::tuple:
@@ -949,12 +1015,11 @@ static LegalType wrapLegalType(
 
     case LegalType::Flavor::implicitDeref:
         {
-            return LegalType::implicitDeref(
-                wrapLegalType(
-                    context,
-                    legalType,
-                    ordinaryWrapper,
-                    specialWrapper));
+            return LegalType::implicitDeref(wrapLegalType(
+                context,
+                legalType,
+                ordinaryWrapper,
+                specialWrapper));
         }
         break;
 
@@ -974,10 +1039,7 @@ static LegalType wrapLegalType(
                 specialWrapper,
                 specialWrapper);
 
-            return LegalType::pair(
-                ordinaryType,
-                specialType,
-                pairType->pairInfo);
+            return LegalType::pair(ordinaryType, specialType, pairType->pairInfo);
         }
 
     case LegalType::Flavor::tuple:
@@ -1070,15 +1132,18 @@ LegalType legalizeTypeImpl(
     {
         return LegalType::simple(type);
     }
-    else if( auto existentialPtrType = as<IRExistentialPtrType>(type))
+    else if( auto existentialPtrType = as<IRExistentialBoxType>(type))
     {
-        // An `ExistentialPtr<T>` should behavie in most regards
-        // just like a `T`, but we need to ensure that it gets
-        // laid out in a way that shoves the `T` data to the end
-        // of any surrounding context.
-
+        // We want to transform an `ExistentialBox<T>` into just
+        // a `T`, with an `iplicitDeref` to make sure that any
+        // pointer-related operations on the box Just Work.
+        //
+        // Note: the logic here doesn't have to deal with moving
+        // existential-type fields to the end of their outer
+        // type(s) because that is mostly dealt with in the 
+        // case for struct types below.
+        //
         auto legalValueType = legalizeType(context, existentialPtrType->getValueType());
-
         return LegalType::implicitDeref(legalValueType);
     }
     else if (auto ptrType = as<IRPtrTypeBase>(type))

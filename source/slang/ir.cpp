@@ -1775,35 +1775,22 @@ namespace Slang
         UInt            slotArgCount,
         IRInst* const*  slotArgs)
     {
-#if 0
         // If we are trying to bind an interface type, then
-        // this should really just return the concrete type
-        // that is being substituted in.
-        //
+        // we will go ahead and simplify the instruction
+        // away impmediately.
+        // 
         if(as<IRInterfaceType>(baseType))
         {
             if(slotArgCount >= 1)
             {
                 // We are being asked to emit `BindExistentials(someInterface, someConcreteType, ...)`
-                // so we just want to return `someConcreteType`.
-                //
-                return (IRType*) slotArgs[0];
-            }
-        }
-#else
-        if(as<IRInterfaceType>(baseType))
-        {
-            if(slotArgCount >= 1)
-            {
-                // We are being asked to emit `BindExistentials(someInterface, someConcreteType, ...)`
-                // so we just want to return `someConcreteType`.
+                // so we just want to return `ExistentialBox<someConcreteType>`.
                 //
                 auto concreteType = (IRType*) slotArgs[0];
-                auto ptrType = getPtrType(kIROp_ExistentialPtrType, concreteType);
+                auto ptrType = getPtrType(kIROp_ExistentialBoxType, concreteType);
                 return ptrType;
             }
         }
-#endif
 
         return (IRType*) findOrEmitHoistableInst(
             this,
@@ -2060,13 +2047,15 @@ namespace Slang
         {
             if(slotArgCount >= 2)
             {
-                // We are being asked to emit `wrapExistential(val, concreteType, witnessTable, ...) : someInterface`
-                // and we can instead just emit `makeExistential(val, witnessTable) : someInterface`
+                // We are being asked to emit `wrapExistential(value, concreteType, witnessTable, ...) : someInterface`
+                //
+                // We also know that a concrete value being wrapped will always be an existential box,
+                // so we expect that `value : ExistentialBox<T>` for some `T`.
+                //
+                // We want to emit `makeExistential(load(value), witnessTable)`.
                 //
                 auto deref = emitLoad(value);
                 return emitMakeExistential(type, deref, slotArgs[1]);
-
-//                return emitMakeExistential(type, value, slotArgs[1]);
             }
         }
 

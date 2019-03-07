@@ -1180,16 +1180,20 @@ RefPtr<TypeLayout> applyOffsetToTypeLayout(
     return newTypeLayout;
 }
 
+    /// Take a type layout that might include pending items and fold them into the layout.
 static RefPtr<TypeLayout> flushPendingItems(
     TypeLayoutContext const&    context,
     RefPtr<TypeLayout>          layout)
 {
     SLANG_UNUSED(context);
 
+    // If there are no pending items on the layout,
+    // then there is nothing to be done.
+    //
     if(layout->pendingItems.Count() == 0)
         return layout;
 
-    // Okay, we need to compute a new type layout that reflects
+    // We need to compute a new type layout that reflects
     // the resource usage of the provided `layout`, plus
     // any resource usage for the pending items.
     //
@@ -1201,14 +1205,23 @@ static RefPtr<TypeLayout> flushPendingItems(
     {
         auto itemTypeLayout = pendingItem.getTypeLayout();
 
-        // Okay, lets add its resource usage in!
+        // Any resources used by a pending item should be
+        // billed against the flushed layout we are computing.
         //
-        // TODO: need to handle unifform data correctly here
-
+        // TODO: We need to make this handlde ordinary/uniform
+        // data carefully, so that it respects alignment and
+        // other layout rules for the target.
+        //
+        // TODO: We should only be adding in resource usage
+        // that can be "hidden" by the type of parameter block
+        // being built (e.g., only a `ParamterBlock` that allocates
+        // full `set`s/`space`s can hide the `register`s/`binding`s
+        // used by resource fields).
+        //
         // TODO: we need to write something back to the item,
         // which should have a `VarLayout` or something like
         // that attached to it!
-
+        //
         for( auto resInfo : itemTypeLayout->resourceInfos )
         {
             layout->addResourceUsage(resInfo);
@@ -1436,13 +1449,17 @@ static bool usesOrdinaryData(RefPtr<TypeLayout> typeLayout)
     return usesResourceKind(typeLayout, LayoutResourceKind::Uniform);
 }
 
-    /// Doe we need to wrap the given element type in a constant buffer layout?
+    /// Do we need to wrap the given element type in a constant buffer layout?
 static bool needsConstantBuffer(RefPtr<TypeLayout> elementTypeLayout)
 {
+    // We need a constant buffer if the element type has ordinary/uniform data.
+    //
     if(usesOrdinaryData(elementTypeLayout))
         return true;
 
-
+    // We also need a constant buffer if there are any "pending"
+    // items that need ordinary/uniform data allocated to them.
+    //
     for( auto pendingItem : elementTypeLayout->pendingItems )
     {
         if(usesOrdinaryData(pendingItem.getTypeLayout()))

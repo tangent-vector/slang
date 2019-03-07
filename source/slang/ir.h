@@ -926,16 +926,13 @@ struct IRPtrTypeBase : IRType
     IR_PARENT_ISA(PtrTypeBase)
 };
 
-struct IRPtrType : IRPtrTypeBase
-{
-    IR_LEAF_ISA(PtrType)
-};
+SIMPLE_IR_TYPE(PtrType, PtrTypeBase)
+SIMPLE_IR_TYPE(RefType, PtrTypeBase)
 
 SIMPLE_IR_PARENT_TYPE(OutTypeBase, PtrTypeBase)
 SIMPLE_IR_TYPE(OutType, OutTypeBase)
 SIMPLE_IR_TYPE(InOutType, OutTypeBase)
-SIMPLE_IR_TYPE(RefType, OutTypeBase)
-SIMPLE_IR_TYPE(ExistentialPtrType, PtrTypeBase)
+SIMPLE_IR_TYPE(ExistentialBoxType, PtrTypeBase)
 
 struct IRFuncType : IRType
 {

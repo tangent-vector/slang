@@ -1863,6 +1863,13 @@ struct ScopeLayoutBuilder
             m_structLayout->mapVarToLayout.Add(firstVarLayout->varDecl.getDecl(), firstVarLayout);
         }
 
+        // Any "pending" items on a field type become "pending" items
+        // on the overall `struct` type layout.
+        //
+        // TODO: This logic ends up duplicated between here and the main
+        // `struct` layout logic in `type-layout.cpp`. If this gets any
+        // more complicated we should see if there is a way to share it.
+        //
         for( auto pendingItem : firstVarLayout->typeLayout->pendingItems )
         {
             m_structLayout->pendingItems.Add(pendingItem);
@@ -2006,6 +2013,11 @@ static void collectEntryPointParameters(
     {
         auto paramDeclRef = shaderParamInfo.paramDeclRef;
 
+        // When computing layout for an entry-point parameter,
+        // we want to make sure that the layout context has access
+        // to the existential type arguments (if any) that were
+        // provided for the entry-point existential type parameters (if any).
+        //
         context->layoutContext= context->layoutContext
             .withExistentialTypeArgs(
                 entryPoint->getExistentialTypeArgCount(),
@@ -2154,9 +2166,13 @@ static void collectParameters(
     // we will be able to look up the index of a global generic type parameter
     // when we see it referenced in the type of one of the shader parameters.
 
-
     for(auto& globalParamInfo : program->getShaderParams() )
     {
+        // When computing layout for a global shader parameter,
+        // we want to make sure that the layout context has access
+        // to the existential type arguments (if any) that were
+        // provided for the global existential type parameters (if any).
+        //
         context->layoutContext= context->layoutContext
             .withExistentialTypeArgs(
                 program->getExistentialTypeArgCount(),

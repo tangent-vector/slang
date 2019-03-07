@@ -304,16 +304,28 @@ namespace Slang
             Name*       name,
             Profile     profile);
 
+            /// Get the number of existential type parameters for the entry point.
         UInt getExistentialTypeParamCount() { return m_existentialSlots.paramTypes.Count(); }
+
+            /// Get the existential type parameter at `index`.
         Type* getExistentialTypeParam(UInt index) { return m_existentialSlots.paramTypes[index]; }
 
+            /// Get the number of arguments supplied for existential type parameters.
+            ///
+            /// Note that the number of arguments may not match the number of parameters.
+            /// In particular, an unspecialized entry point may have many parameters, but zero arguments.
         UInt getExistentialTypeArgCount() { return m_existentialSlots.args.Count(); }
+
+            /// Get the existential type argument (type and witness table) at `index`.
         ExistentialTypeSlots::Arg getExistentialTypeArg(UInt index) { return m_existentialSlots.args[index]; }
+
+            /// Get an array of all existential type arguments.
         ExistentialTypeSlots::Arg const* getExistentialTypeArgs() { return m_existentialSlots.args.Buffer(); }
 
+            /// Get an array of all entry-point shader parameters.
         List<ShaderParamInfo> const& getShaderParams() { return m_shaderParams; }
 
-        void _specializeExistentialSlots(
+        void _specializeExistentialTypeParams(
             List<RefPtr<Expr>> const&   args,
             DiagnosticSink*             sink);
 
@@ -947,17 +959,29 @@ namespace Slang
             ///
         RefPtr<IRModule> getOrCreateIRModule(DiagnosticSink* sink);
 
+            /// Get the number of existential type parameters for the program.
         UInt getExistentialTypeParamCount() { return m_globalExistentialSlots.paramTypes.Count(); }
+
+            /// Get the existential type parameter at `index`.
         Type* getExistentialTypeParam(UInt index) { return m_globalExistentialSlots.paramTypes[index]; }
 
+            /// Get the number of arguments supplied for existential type parameters.
+            ///
+            /// Note that the number of arguments may not match the number of parameters.
+            /// In particular, an unspecialized program may have many parameters, but zero arguments.
         UInt getExistentialTypeArgCount() { return m_globalExistentialSlots.args.Count(); }
+
+            /// Get the existential type argument (type and witness table) at `index`.
         ExistentialTypeSlots::Arg getExistentialTypeArg(UInt index) { return m_globalExistentialSlots.args[index]; }
+
+            /// Get an array of all existential type arguments.
         ExistentialTypeSlots::Arg const* getExistentialTypeArgs() { return m_globalExistentialSlots.args.Buffer(); }
 
+            /// Get an array of all global shader parameters.
         List<GlobalShaderParamInfo> const& getShaderParams() { return m_shaderParams; }
 
         void _collectShaderParams(DiagnosticSink* sink);
-        void _specializeExistentialSlots(
+        void _specializeExistentialTypeParams(
             List<RefPtr<Expr>> const&   args,
             DiagnosticSink*             sink);
 

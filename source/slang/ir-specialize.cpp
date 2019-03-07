@@ -1153,10 +1153,12 @@ struct SpecializationContext
         }
     }
 
+        /// Given a type being used as pointer, try to determin the type it points to.
     IRType* tryGetPointedToType(
         IRBuilder*  builder,
         IRType*     type)
     {
+        // The "true" pointers and the pointer-like stdlib types are the easy cases.
         if( auto ptrType = as<IRPtrTypeBase>(type) )
         {
             return ptrType->getValueType();
@@ -1165,8 +1167,19 @@ struct SpecializationContext
         {
             return ptrLikeType->getElementType();
         }
+        //
+        // A more interesting case arises when we have a `BindExistentials<P<T>, ...>`
+        // where `P<T>` is a pointer(-like) type.
+        //
         else if( auto bindExistentials = as<IRBindExistentialsType>(type) )
         {
+            // We know that `BindExistentials` won't introduce its own
+            // existential type parameters, nor will any of the pointer(-like)
+            // type constructors `P`.
+            //
+            // Thus we know that the type that is pointed to should be
+            // the same as `BindExistentials<T, ...>`.
+            //
             auto baseType = bindExistentials->getBaseType();
             if( auto baseElementType = tryGetPointedToType(builder, baseType) )
             {
@@ -1182,6 +1195,8 @@ struct SpecializationContext
                     existentialArgs.Buffer());
             }
         }
+
+        // TODO: We may need to handle other cases here.
 
         return nullptr;
     }
@@ -1251,42 +1266,29 @@ struct SpecializationContext
 
         if( auto baseInterfaceType = as<IRInterfaceType>(baseType) )
         {
-#if 0
             // A `BindExistentials<ISomeInterface, ConcreteType, ...>` can
-            // just be simplified to `ConcreteType`.
+            // just be simplified to `ExistentialBox<ConcreteType>`.
+            //
+            // Note: We do *not* simplify straight to `ConcreteType`, because
+            // that would mess up the layout for aggregate types that
+            // contain interfaces. The logical indirection introduced
+            // by `ExistentialBox<...>` will be handled by a later type
+            // legalization pass that moved the type "pointed to" by
+            // the box out of line from other fields.
 
-            // We always expect two slot operands, for the concrete type
-            // and the witness table.
+            // We always expect two slot operands, one for the concrete type
+            // and one for the witness table.
             //
             SLANG_ASSERT(slotOperandCount == 2);
             if(slotOperandCount <= 1) return;
-
-
-            auto newVal = type->getExistentialArg(0);
-
-            addUsersToWorkList(type);
-            type->replaceUsesWith(newVal);
-            type->removeAndDeallocate();
-            return;
-#else
-            // A `BindExistentials<ISomeInterface, ConcreteType, ...>` can
-            // just be simplified to `ExistentialPtr<ConcreteType>`.
-
-            // We always expect two slot operands, for the concrete type
-            // and the witness table.
-            //
-            SLANG_ASSERT(slotOperandCount == 2);
-            if(slotOperandCount <= 1) return;
-
 
             auto concreteType = (IRType*) type->getExistentialArg(0);
-            auto newVal = builder.getPtrType(kIROp_ExistentialPtrType, concreteType);
+            auto newVal = builder.getPtrType(kIROp_ExistentialBoxType, concreteType);
 
             addUsersToWorkList(type);
             type->replaceUsesWith(newVal);
             type->removeAndDeallocate();
             return;
-#endif
         }
         else if( auto basePtrLikeType = as<IRPointerLikeType>(baseType) )
         {
