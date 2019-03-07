@@ -6829,8 +6829,8 @@ String emitEntryPoint(
         // apply at this point?
         //
         eliminateDeadCode(compileRequest, irModule);
-#if 1
-        dumpIR(compileRequest, irModule, "AFTER DCE");
+#if 0
+        dumpIRIfEnabled(compileRequest, irModule, "AFTER DCE");
 #endif
         validateIRModuleIfEnabled(compileRequest, irModule);
 

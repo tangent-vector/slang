@@ -37,12 +37,10 @@ struct IRBuilder;
 struct LegalTypeImpl : RefObject
 {
 };
-struct PseudoPtrType;
+struct ImplicitDerefType;
 struct TuplePseudoType;
 struct PairPseudoType;
 struct PairInfo;
-
-typedef PseudoPtrType ImplicitDerefType;
 
 struct LegalType
 {
@@ -58,18 +56,10 @@ struct LegalType
         // going to represnet it as the pointed-to type
         implicitDeref,
 
-        // Logically, we have a pointer to a "heap-allocated" value
-        // that will be plugged in for an existential/interface-type slot,
-        // but physically we are going to have just a value of the pointed-to
-        // type, allocated out-of-line from ordinary storage
-        //
-        existentialBox,
-
         // A compound type was broken apart into its constituent fields,
         // so a tuple "pseduo-type" is being used to collect
         // those fields together.
-        resourceTuple,
-        existentialTuple,
+        tuple,
 
         // A type has to get split into "ordinary" and "special" parts,
         // each of which will be represented with its own `LegalType`.
@@ -94,35 +84,21 @@ struct LegalType
         return irType;
     }
 
-    static LegalType pseudoPtr(
-        Flavor              flavor,
-        LegalType const&    valueType);
-    bool isPseudoPtr();
-
     static LegalType implicitDeref(
         LegalType const& valueType);
 
-    static LegalType existentialBox(
-        LegalType const& valueType);
-
-    RefPtr<PseudoPtrType> getImplicitDeref() const
+    RefPtr<ImplicitDerefType> getImplicitDeref() const
     {
-        SLANG_ASSERT(flavor == Flavor::implicitDeref || flavor == Flavor::existentialBox);
-        return obj.as<PseudoPtrType>();
+        SLANG_ASSERT(flavor == Flavor::implicitDeref);
+        return obj.as<ImplicitDerefType>();
     }
 
     static LegalType tuple(
-        Flavor                      flavor,
-        RefPtr<TuplePseudoType>     tupleType);
-
-    static LegalType resourceTuple(
-        RefPtr<TuplePseudoType>     tupleType);
-    static LegalType existentialTuple(
         RefPtr<TuplePseudoType>     tupleType);
 
     RefPtr<TuplePseudoType> getTuple() const
     {
-        SLANG_ASSERT(flavor == Flavor::resourceTuple || flavor == Flavor::existentialTuple);
+        SLANG_ASSERT(flavor == Flavor::tuple);
         return obj.as<TuplePseudoType>();
     }
 
@@ -155,7 +131,7 @@ struct LegalType
 //  become just a `Foo` field, but which needs to be allocated
 //  out-of-line from the rest of its enclosing type.
 //
-struct PseudoPtrType : LegalTypeImpl
+struct ImplicitDerefType : LegalTypeImpl
 {
     LegalType valueType;
 };
@@ -197,7 +173,6 @@ struct PairInfo : RefObject
     {
         kFlag_hasOrdinary       = 0x1,
         kFlag_hasSpecial        = 0x2,
-//        kFlag_hasOrdinaryAndSpecial = kFlag_hasOrdinary | kFlag_hasSpecial,
     };
 
 
@@ -252,12 +227,6 @@ struct PairPseudoType : LegalTypeImpl
     // with a tuple).
     //
     LegalType specialType;
-
-    // Any fields with "existential box" types
-    // will get captured here (usually
-    // with an existential-box tuple).
-    //
-    LegalType existentialType;
 
     // The `pairInfo` field helps to tell us which members
     // of the original aggregate type appear on which side(s)
@@ -317,7 +286,6 @@ struct LegalVal
         implicitDeref,
         tuple,
         pair,
-        existentialBox,
     };
 
     Flavor              flavor = Flavor::none;
@@ -346,16 +314,7 @@ struct LegalVal
         return obj.as<TuplePseudoVal>();
     }
 
-    static LegalVal pseudoPtr(
-        Flavor flavor,
-        LegalVal const& val);
-
-    static LegalVal pseudoPtr(
-        LegalType::Flavor flavor,
-        LegalVal const& val);
-
     static LegalVal implicitDeref(LegalVal const& val);
-    static LegalVal existentialBox(LegalVal const& val);
 
     LegalVal getImplicitDeref();
 
@@ -363,7 +322,6 @@ struct LegalVal
     static LegalVal pair(
         LegalVal const&     ordinaryVal,
         LegalVal const&     specialVal,
-        LegalVal const&     existentialVal,
         RefPtr<PairInfo>    pairInfo);
 
     RefPtr<PairPseudoVal> getPair() const
@@ -388,18 +346,16 @@ struct PairPseudoVal : LegalValImpl
 {
     LegalVal ordinaryVal;
     LegalVal specialVal;
-    LegalVal existentialVal;
 
     // The info to tell us which fields
     // are on which side(s)
     RefPtr<PairInfo>  pairInfo;
 };
 
-struct PseudoPtrVal : LegalValImpl
+struct ImplicitDerefVal : LegalValImpl
 {
     LegalVal val;
 };
-typedef PseudoPtrVal ImplicitDerefVal;
 
 //
 

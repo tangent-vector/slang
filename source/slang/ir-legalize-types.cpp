@@ -40,76 +40,38 @@ LegalVal LegalVal::pair(RefPtr<PairPseudoVal> pairInfo)
 LegalVal LegalVal::pair(
     LegalVal const&     ordinaryVal,
     LegalVal const&     specialVal,
-    LegalVal const&     existentialVal,
     RefPtr<PairInfo>    pairInfo)
 {
-    if (ordinaryVal.flavor == LegalVal::Flavor::none
-        && existentialVal.flavor == LegalVal::Flavor::none)
+    if (ordinaryVal.flavor == LegalVal::Flavor::none)
         return specialVal;
 
-    if (specialVal.flavor == LegalVal::Flavor::none
-        && existentialVal.flavor == LegalVal::Flavor::none)
+    if (specialVal.flavor == LegalVal::Flavor::none)
         return ordinaryVal;
-
-    if (ordinaryVal.flavor == LegalVal::Flavor::none
-        && specialVal.flavor == LegalVal::Flavor::none)
-        return existentialVal;
 
     RefPtr<PairPseudoVal> obj = new PairPseudoVal();
     obj->ordinaryVal = ordinaryVal;
     obj->specialVal = specialVal;
-    obj->existentialVal = existentialVal;
     obj->pairInfo = pairInfo;
 
     return LegalVal::pair(obj);
 }
 
-LegalVal LegalVal::pseudoPtr(
-    Flavor          flavor,
+LegalVal LegalVal::implicitDeref(
     LegalVal const& val)
 {
-    SLANG_ASSERT(flavor == Flavor::implicitDeref || flavor == Flavor::existentialBox);
-
-    RefPtr<PseudoPtrVal> pseudoPtrVal = new PseudoPtrVal();
-    pseudoPtrVal->val = val;
+    RefPtr<ImplicitDerefVal> implicitDerefVal = new ImplicitDerefVal();
+    implicitDerefVal->val = val;
 
     LegalVal result;
-    result.flavor = flavor;
-    result.obj = pseudoPtrVal;
+    result.flavor = Flavor::implicitDeref;
+    result.obj = implicitDerefVal;
     return result;
-}
-
-LegalVal LegalVal::pseudoPtr(
-    LegalType::Flavor flavor,
-    LegalVal const& val)
-{
-    SLANG_ASSERT(flavor == LegalType::Flavor::implicitDeref || flavor == LegalType::Flavor::existentialBox);
-
-    switch( flavor )
-    {
-    case LegalType::Flavor::implicitDeref:   return pseudoPtr(Flavor::implicitDeref, val);
-    case LegalType::Flavor::existentialBox: return pseudoPtr(Flavor::existentialBox, val);
-
-    default:
-        return LegalVal();
-    }
-}
-
-
-LegalVal LegalVal::implicitDeref(LegalVal const& val)
-{
-    return pseudoPtr(Flavor::implicitDeref, val);
 }
 
 LegalVal LegalVal::getImplicitDeref()
 {
-    SLANG_ASSERT(flavor == Flavor::implicitDeref || flavor == Flavor::existentialBox);
+    SLANG_ASSERT(flavor == Flavor::implicitDeref);
     return as<ImplicitDerefVal>(obj)->val;
-}
-
-LegalVal LegalVal::existentialBox(LegalVal const& val)
-{
-    return pseudoPtr(Flavor::existentialBox, val);
 }
 
 struct IRTypeLegalizationContext
@@ -196,7 +158,6 @@ static void getArgumentValues(
         break;
 
     case LegalVal::Flavor::implicitDeref:
-    case LegalVal::Flavor::existentialBox:
         getArgumentValues(instArgs, val.getImplicitDeref());
         break;
 
@@ -205,7 +166,6 @@ static void getArgumentValues(
             auto pairVal = val.getPair();
             getArgumentValues(instArgs, pairVal->ordinaryVal);
             getArgumentValues(instArgs, pairVal->specialVal);
-            getArgumentValues(instArgs, pairVal->existentialVal);
         }
         break;
 
@@ -287,7 +247,6 @@ static LegalVal legalizeLoad(
         break;
 
     case LegalVal::Flavor::implicitDeref:
-    case LegalVal::Flavor::existentialBox:
         // We have turne a pointer(-like) type into its pointed-to (value)
         // type, and so the operation of loading goes away; we just use
         // the underlying value.
@@ -299,11 +258,9 @@ static LegalVal legalizeLoad(
 
             auto ordinaryVal = legalizeLoad(context, ptrPairVal->ordinaryVal);
             auto specialVal = legalizeLoad(context, ptrPairVal->specialVal);
-            auto existentialVal = legalizeLoad(context, ptrPairVal->existentialVal);
             return LegalVal::pair(
                 ordinaryVal,
                 specialVal,
-                existentialVal,
                 ptrPairVal->pairInfo);
         }
 
@@ -350,7 +307,6 @@ static LegalVal legalizeStore(
     break;
 
     case LegalVal::Flavor::implicitDeref:
-    case LegalVal::Flavor::existentialBox:
         switch( legalVal.flavor )
         {
             // TODO: what is the right behavior here?
@@ -364,7 +320,6 @@ static LegalVal legalizeStore(
             // the result accordingly...
             //
         case LegalVal::Flavor::implicitDeref:
-        case LegalVal::Flavor::existentialBox:
             return legalizeStore(context, legalPtrVal.getImplicitDeref(), legalVal.getImplicitDeref());
 
         default:
@@ -377,7 +332,6 @@ static LegalVal legalizeStore(
             auto valPair = legalVal.getPair();
             legalizeStore(context, destPair->ordinaryVal, valPair->ordinaryVal);
             legalizeStore(context, destPair->specialVal, valPair->specialVal);
-            legalizeStore(context, destPair->existentialVal, valPair->existentialVal);
             return LegalVal();
         }
 
@@ -452,7 +406,6 @@ static LegalVal legalizeFieldExtract(
                 fieldPairInfo = fieldPairType->pairInfo;
                 ordinaryType = fieldPairType->ordinaryType;
                 specialType = fieldPairType->specialType;
-                existentialType = fieldPairType->existentialType;
             }
 
             LegalVal ordinaryVal;
@@ -477,19 +430,9 @@ static LegalVal legalizeFieldExtract(
                     fieldKey);
             }
 
-            if (pairElement->flags & PairInfo::kFlag_hasExistential)
-            {
-                existentialVal = legalizeFieldExtract(
-                    context,
-                    existentialType,
-                    pairVal->existentialVal,
-                    fieldKey);
-            }
-
             return LegalVal::pair(
                 ordinaryVal,
                 specialVal,
-                existentialVal,
                 fieldPairInfo);
         }
         break;
@@ -559,7 +502,6 @@ static LegalVal legalizeFieldAddress(
         switch( type.flavor )
         {
         case LegalType::Flavor::implicitDeref:
-        case LegalType::Flavor::existentialBox:
             // TODO: Should this include a wrapper `implicitDeref` aroudn the result?
             return legalizeFieldAddress(
                 context,
@@ -601,7 +543,6 @@ static LegalVal legalizeFieldAddress(
                 fieldPairInfo = fieldPairType->pairInfo;
                 ordinaryType = fieldPairType->ordinaryType;
                 specialType = fieldPairType->specialType;
-                existentialType = fieldPairType->existentialType;
             }
 
             LegalVal ordinaryVal;
@@ -626,19 +567,9 @@ static LegalVal legalizeFieldAddress(
                     fieldKey);
             }
 
-            if (pairElement->flags & PairInfo::kFlag_hasExistential)
-            {
-                existentialVal = legalizeFieldAddress(
-                    context,
-                    existentialType,
-                    pairVal->existentialVal,
-                    fieldKey);
-            }
-
             return LegalVal::pair(
                 ordinaryVal,
                 specialVal,
-                existentialVal,
                 fieldPairInfo);
         }
         break;
@@ -667,7 +598,6 @@ static LegalVal legalizeFieldAddress(
         }
 
     case LegalVal::Flavor::implicitDeref:
-    case LegalVal::Flavor::existentialBox:
         {
             // The original value had a level of indirection
             // that is now being removed, so should not be
@@ -678,8 +608,7 @@ static LegalVal legalizeFieldAddress(
             //
             auto implicitDerefVal = legalPtrOperand.getImplicitDeref();
 
-            return LegalVal::pseudoPtr(
-                legalPtrOperand.flavor,
+            return LegalVal::implicitDeref(
                 legalizeFieldExtract(context,type, implicitDerefVal, fieldKey));
         }
 
@@ -735,13 +664,11 @@ static LegalVal legalizeGetElement(
 
             LegalType ordinaryType = type;
             LegalType specialType = type;
-            LegalType existentialType = type;
             if (type.flavor == LegalType::Flavor::pair)
             {
                 auto pairType = type.getPair();
                 ordinaryType = pairType->ordinaryType;
                 specialType = pairType->specialType;
-                existentialType = pairType->existentialType;
             }
 
             LegalVal ordinaryVal = legalizeGetElement(
@@ -756,16 +683,9 @@ static LegalVal legalizeGetElement(
                 pairVal->specialVal,
                 indexOperand);
 
-            LegalVal existentialVal = legalizeGetElement(
-                context,
-                existentialType,
-                pairVal->existentialVal,
-                indexOperand);
-
             return LegalVal::pair(
                 ordinaryVal,
                 specialVal,
-                existentialVal,
                 pairInfo);
         }
         break;
@@ -859,13 +779,11 @@ static LegalVal legalizeGetElementPtr(
 
             LegalType ordinaryType = type;
             LegalType specialType = type;
-            LegalType existentialType = type;
             if (type.flavor == LegalType::Flavor::pair)
             {
                 auto pairType = type.getPair();
                 ordinaryType = pairType->ordinaryType;
                 specialType = pairType->specialType;
-                existentialType = pairType->existentialType;
             }
 
             LegalVal ordinaryVal = legalizeGetElementPtr(
@@ -880,16 +798,9 @@ static LegalVal legalizeGetElementPtr(
                 pairVal->specialVal,
                 indexOperand);
 
-            LegalVal existentialVal = legalizeGetElementPtr(
-                context,
-                existentialType,
-                pairVal->existentialVal,
-                indexOperand);
-
             return LegalVal::pair(
                 ordinaryVal,
                 specialVal,
-                existentialVal,
                 pairInfo);
         }
         break;
@@ -931,7 +842,6 @@ static LegalVal legalizeGetElementPtr(
         }
 
     case LegalVal::Flavor::implicitDeref:
-    case LegalVal::Flavor::existentialBox:
         {
             // The original value used to be a pointer to an array,
             // and somebody is trying to get at an element pointer.
@@ -941,8 +851,7 @@ static LegalVal legalizeGetElementPtr(
             // implicit dereference).
             //
             auto implicitDerefVal = legalPtrOperand.getImplicitDeref();
-            return LegalVal::pseudoPtr(
-                legalPtrOperand.flavor,
+            return LegalVal::implicitDeref(
                 legalizeGetElement(
                     context,
                     type,
@@ -1013,7 +922,6 @@ static LegalVal legalizeMakeStruct(
             auto pairInfo = pairType->pairInfo;
             LegalType ordinaryType = pairType->ordinaryType;
             LegalType specialType = pairType->specialType;
-            LegalType existentialType = pairType->existentialType;
 
             List<LegalVal> ordinaryArgs;
             List<LegalVal> specialArgs;
@@ -1030,7 +938,6 @@ static LegalVal legalizeMakeStruct(
                     auto argPair = arg.getPair();
                     ordinaryArgs.Add(argPair->ordinaryVal);
                     specialArgs.Add(argPair->specialVal);
-                    existentialArgs.Add(argPair->existentialVal);
                 }
                 else if(ee.flags & Slang::PairInfo::kFlag_hasOrdinary)
                 {
@@ -1039,10 +946,6 @@ static LegalVal legalizeMakeStruct(
                 else if(ee.flags & Slang::PairInfo::kFlag_hasSpecial)
                 {
                     specialArgs.Add(arg);
-                }
-                else if(ee.flags & Slang::PairInfo::kFlag_hasExistential)
-                {
-                    existentialArgs.Add(arg);
                 }
             }
 
@@ -1058,13 +961,7 @@ static LegalVal legalizeMakeStruct(
                 specialArgs.Buffer(),
                 specialArgs.Count());
 
-            LegalVal existentialVal = legalizeMakeStruct(
-                context,
-                existentialType,
-                existentialArgs.Buffer(),
-                existentialArgs.Count());
-
-            return LegalVal::pair(ordinaryVal, specialVal, existentialVal, pairInfo);
+            return LegalVal::pair(ordinaryVal, specialVal, pairInfo);
         }
         break;
 
@@ -1197,7 +1094,7 @@ static LegalVal legalizeLocalVar(
     // If we've decided to do implicit deref on the type,
     // then go ahead and declare a value of the pointed-to type.
     LegalType maybeSimpleType = legalValueType;
-    while (maybeSimpleType.isPseudoPtr())
+    while(maybeSimpleType.flavor == LegalType::Flavor::implicitDeref)
     {
         maybeSimpleType = maybeSimpleType.getImplicitDeref()->valueType;
     }
@@ -1399,7 +1296,6 @@ static void addParamType(List<IRType*>& ioParamTypes, LegalType t)
         break;
 
     case LegalType::Flavor::implicitDeref:
-    case LegalType::Flavor::existentialBox:
     {
         auto imp = t.getImplicitDeref();
         addParamType(ioParamTypes, imp->valueType);
@@ -1410,7 +1306,6 @@ static void addParamType(List<IRType*>& ioParamTypes, LegalType t)
             auto pairInfo = t.getPair();
             addParamType(ioParamTypes, pairInfo->ordinaryType);
             addParamType(ioParamTypes, pairInfo->specialType);
-            addParamType(ioParamTypes, pairInfo->existentialType);
         }
         break;
     case LegalType::Flavor::tuple:
@@ -1614,7 +1509,6 @@ static LegalVal declareVars(
         break;
 
     case LegalType::Flavor::implicitDeref:
-    case LegalType::Flavor::existentialBox:
         {
             // Just declare a variable of the pointed-to type,
             // since we are removing the indirection.
@@ -1628,9 +1522,7 @@ static LegalVal declareVars(
                 varChain,
                 nameHint,
                 globalNameInfo);
-            return LegalVal::pseudoPtr(
-                type.flavor,
-                val);
+            return LegalVal::implicitDeref(val);
         }
         break;
 
@@ -1639,8 +1531,7 @@ static LegalVal declareVars(
             auto pairType = type.getPair();
             auto ordinaryVal    = declareVars(context, op, pairType->ordinaryType,      typeLayout, varChain, nameHint, globalNameInfo);
             auto specialVal     = declareVars(context, op, pairType->specialType,       typeLayout, varChain, nameHint, globalNameInfo);
-            auto existentialVal = declareVars(context, op, pairType->existentialType,   typeLayout, varChain, nameHint, globalNameInfo);
-            return LegalVal::pair(ordinaryVal, specialVal, existentialVal, pairType->pairInfo);
+            return LegalVal::pair(ordinaryVal, specialVal, pairType->pairInfo);
         }
 
     case LegalType::Flavor::tuple:

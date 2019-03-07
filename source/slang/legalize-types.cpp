@@ -7,64 +7,27 @@
 namespace Slang
 {
 
-LegalType LegalType::pseudoPtr(
-    Flavor              flavor,
+LegalType LegalType::implicitDeref(
     LegalType const&    valueType)
 {
-    SLANG_ASSERT(flavor == Flavor::implicitDeref || flavor == Flavor::existentialBox);
-
-    RefPtr<PseudoPtrType> obj = new PseudoPtrType();
+    RefPtr<ImplicitDerefType> obj = new ImplicitDerefType();
     obj->valueType = valueType;
 
     LegalType result;
-    result.flavor = flavor;
+    result.flavor = Flavor::implicitDeref;
     result.obj = obj;
     return result;
 }
 
-bool LegalType::isPseudoPtr()
-{
-    return flavor == Flavor::implicitDeref || flavor == Flavor::existentialBox;
-}
-
-
-LegalType LegalType::implicitDeref(
-    LegalType const& valueType)
-{
-    return pseudoPtr(Flavor::implicitDeref, valueType);
-}
-
-LegalType LegalType::existentialBox(
-    LegalType const& valueType)
-{
-    return pseudoPtr(Flavor::existentialBox, valueType);
-}
-
-
-
 LegalType LegalType::tuple(
-    Flavor                      flavor,
     RefPtr<TuplePseudoType>     tupleType)
 {
-    SLANG_ASSERT(flavor == Flavor::resourceTuple || flavor == Flavor::existentialTuple);
     SLANG_ASSERT(tupleType->elements.Count());
 
     LegalType result;
-    result.flavor = flavor;
+    result.flavor = Flavor::tuple;
     result.obj = tupleType;
     return result;
-}
-
-LegalType LegalType::resourceTuple(
-    RefPtr<TuplePseudoType>     tupleType)
-{
-    return tuple(Flavor::resourceTuple, tupleType);
-}
-
-LegalType LegalType::existentialTuple(
-    RefPtr<TuplePseudoType>     tupleType)
-{
-    return tuple(Flavor::existentialTuple, tupleType);
 }
 
 LegalType LegalType::pair(
@@ -168,8 +131,7 @@ struct TupleTypeBuilder
 
 
     List<OrdinaryElement> ordinaryElements;
-    List<TuplePseudoType::Element> resourceElements;
-    List<TuplePseudoType::Element> existentialElements;
+    List<TuplePseudoType::Element> specialElements;
 
     List<PairInfo::Element> pairElements;
 
@@ -178,25 +140,21 @@ struct TupleTypeBuilder
     bool anyComplex = false;
 
     // Did we have any fields that actually required
-    // storage in the resource part of things?
-    bool anyResource = false;
+    // storage in the "special" part of things?
+    bool anySpecial = false;
 
     // Did we have any fields that actually used ordinary storage?
     bool anyOrdinary = false;
-
-    // Did we have any fields from existential slots?
-    bool anyExistential = false;
 
     // Add a field to the (pseudo-)type we are building
     void addField(
         IRStructKey*    fieldKey,
         LegalType       legalFieldType,
         LegalType       legalLeafType,
-        bool            isResource)
+        bool            isSpecial)
     {
         LegalType ordinaryType;
-        LegalType resourceType;
-        LegalType existentialType;
+        LegalType specialType;
 
         RefPtr<PairInfo> elementPairInfo;
 
@@ -208,13 +166,13 @@ struct TupleTypeBuilder
                 // We need to add an actual field, but we need
                 // to check if it is a resource type to know
                 // whether it should go in the "ordinary" list or not.
-                if (!isResource)
+                if (!isSpecial)
                 {
                     ordinaryType = legalLeafType;
                 }
                 else
                 {
-                    resourceType = legalFieldType;
+                    specialType = legalFieldType;
                 }
             }
             break;
@@ -242,7 +200,7 @@ struct TupleTypeBuilder
                     fieldKey,
                     legalFieldType,
                     legalLeafType.getImplicitDeref()->valueType,
-                    isResource);
+                    isSpecial);
                 return;
             }
             break;
@@ -258,82 +216,24 @@ struct TupleTypeBuilder
                 //
                 // This is because the "ordinary" side of the legalization
                 // of `ConstantBuffer<Foo>` will still be a resource type.
-                if(isResource)
+                if(isSpecial)
                 {
-                    resourceType = legalFieldType;
+                    specialType = legalFieldType;
                 }
                 else
                 {
-                    // We might have nested `pair` types, to handle both
-                    // resource and existential fields, so we will walk
-                    // the "spine" of the pair to discover its structure.
-                    //
-                    // Note: the main alternative here would be to use
-                    // a "triple" type instead of a "pair" type in all cases.
-                    auto pp = legalLeafType;
-                    while(pp.flavor == LegalType::Flavor::pair)
-                    {
-                        auto ppType = pp.getPair();
-                        auto specialType = ppType->specialType;
-                        switch(specialType.flavor)
-                        {
-                        case LegalType::Flavor::resourceTuple:
-                            resourceType = specialType;
-                            break;
-
-                        case LegalType::Flavor::existentialTuple:
-                            existentialType = specialType;
-                            break;
-
-                        default:
-                            SLANG_UNEXPECTED("invalid special type during type legalization");
-                            break;
-                        }
-                    }
-
-
                     ordinaryType = pairType->ordinaryType;
+                    specialType = pairType->specialType;
 
-
-
-                    auto specialType = pairType->specialType;
-                    for(;;)
-                    {
-                        switch(specialType.flavor)
-                        {
-                        case LegalType:
-                        }
-                    }
-                    while(specialType->fl )
-                    resourceType = pairType->specialType;
-
-                    existentialType = pairType->existentialType;
                     elementPairInfo = pairType->pairInfo;
                 }
             }
             break;
 
-        case LegalType::Flavor::resourceTuple:
+        case LegalType::Flavor::tuple:
             {
                 // A resource tuple always represents "special" data
                 specialType = legalFieldType;
-            }
-            break;
-
-        case LegalType::Flavor::existentialTuple:
-            {
-                // An existential tuple always represents "existential" data
-                existentialType = legalFieldType;
-            }
-            break;
-
-        case LegalType::Flavor::existentialBox:
-            {
-                // When a field fills in an existential slot,
-                // we need to add the data more or less like
-                // a "special" field.
-                //
-                existentialType = legalLeafType.getImplicitDeref()->valueType;
             }
             break;
 
@@ -386,22 +286,9 @@ struct TupleTypeBuilder
             specialElements.Add(specialElement);
         }
 
-        if(existentialType.flavor != LegalType::Flavor::none)
-        {
-            anyExistential = true;
-            anyComplex = true;
-            pairElement.flags |= PairInfo::kFlag_hasExistential;
-
-            TuplePseudoType::Element existentialElement;
-            existentialElement.key = fieldKey;
-            existentialElement.type = existentialType;
-            existentialElements.Add(existentialElement);
-        }
-
         pairElement.type = LegalType::pair(
             ordinaryType,
             specialType,
-            existentialType,
             elementPairInfo);
         pairElements.Add(pairElement);
     }
@@ -427,7 +314,7 @@ struct TupleTypeBuilder
         // If this is an empty struct, return a none type
         // This helps get rid of emtpy structs that often trips up the 
         // downstream compiler
-        if (!anyOrdinary && !anySpecial && !anyComplex && !anyExistential)
+        if (!anyOrdinary && !anySpecial && !anyComplex)
             return LegalType();
 
         // If we didn't see anything "special"
@@ -518,35 +405,14 @@ struct TupleTypeBuilder
             specialType = LegalType::tuple(specialTuple);
         }
 
-        LegalType existentialType;
-        if (anyExistential)
-        {
-            RefPtr<TuplePseudoType> existentialTuple = new TuplePseudoType();
-            existentialTuple->elements = existentialElements;
-            existentialType = LegalType::tuple(existentialTuple);
-        }
-
-        // If there is only one kind of data in the triple,
-        // then it will get eliminated by the `LegalType::pair`
-        // constructor, and we needn't allocate a `PairInfo`.
-        //
-        // We will compute up front how many kinds of data
-        // we have, and only allocate the pointer if we
-        // really need to.
-        //
-        int kindCount = 0;
-        if(anyOrdinary) kindCount++;
-        if(anySpecial) kindCount++;
-        if(anyExistential) kindCount++;
-
         RefPtr<PairInfo> pairInfo;
-        if(kindCount > 1)
+        if(anyOrdinary && anySpecial)
         {
             pairInfo = new PairInfo();
             pairInfo->elements = pairElements;
         }
 
-        return LegalType::pair(ordinaryType, specialType, existentialType, pairInfo);
+        return LegalType::pair(ordinaryType, specialType, pairInfo);
     }
 
 };
@@ -587,7 +453,6 @@ static LegalType createLegalUniformBufferType(
         break;
 
     case LegalType::Flavor::implicitDeref:
-    case LegalType::Flavor::existentialBox:
         {
             // This is actually an annoying case, because
             // we are being asked to convert, e.g.,:
@@ -632,13 +497,11 @@ static LegalType createLegalUniformBufferType(
                 op,
                 pairType->ordinaryType);
             auto specialType = LegalType::implicitDeref(pairType->specialType);
-            auto existentialType = LegalType::implicitDeref(pairType->existentialType);
 
 
             return LegalType::pair(
                 ordinaryType,
                 specialType,
-                existentialType,
                 pairType->pairInfo);
         }
 
@@ -709,7 +572,6 @@ static LegalType createLegalPtrType(
         break;
 
     case LegalType::Flavor::implicitDeref:
-    case LegalType::Flavor::existentialBox:
         {
             // We are being asked to create a pointer type to something
             // that is implicitly dereferenced, meaning we had:
@@ -728,8 +590,7 @@ static LegalType createLegalPtrType(
             //
             // TODO: invetigate whether there are situations where this
             // will matter.
-            return LegalType::pseudoPtr(
-                legalValueType.flavor,
+            return LegalType::implicitDeref(
                 createLegalPtrType(
                     context,
                     op,
@@ -750,15 +611,10 @@ static LegalType createLegalPtrType(
                 context,
                 op,
                 pairType->specialType);
-            auto existentialType = createLegalPtrType(
-                context,
-                op,
-                pairType->existentialType);
 
             return LegalType::pair(
                 ordinaryType,
                 specialType,
-                existentialType,
                 pairType->pairInfo);
         }
 
@@ -853,10 +709,8 @@ static LegalType wrapLegalType(
         break;
 
     case LegalType::Flavor::implicitDeref:
-    case LegalType::Flavor::existentialBox:
         {
-            return LegalType::pseudoPtr(
-                legalType.flavor,
+            return LegalType::implicitDeref(
                 wrapLegalType(
                     context,
                     legalType,
@@ -880,16 +734,10 @@ static LegalType wrapLegalType(
                 pairType->specialType,
                 specialWrapper,
                 specialWrapper);
-            auto existentialType = wrapLegalType(
-                context,
-                pairType->existentialType,
-                ordinaryWrapper,
-                specialWrapper);
 
             return LegalType::pair(
                 ordinaryType,
                 specialType,
-                existentialType,
                 pairType->pairInfo);
         }
 
@@ -992,7 +840,7 @@ LegalType legalizeTypeImpl(
 
         auto legalValueType = legalizeType(context, existentialPtrType->getValueType());
 
-        return LegalType::existentialBox(legalValueType);
+        return LegalType::implicitDeref(legalValueType);
     }
     else if (auto ptrType = as<IRPtrTypeBase>(type))
     {
