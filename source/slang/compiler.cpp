@@ -243,6 +243,31 @@ namespace Slang
     }
 
     //
+    // EntryPointGroup
+    //
+
+    RefPtr<EntryPointGroup> EntryPointGroup::create(
+        Linkage*                        linkage,
+        List<RefPtr<EntryPoint>> const& entryPoints,
+        DiagnosticSink*                 sink)
+    {
+        RefPtr<EntryPointGroup> group = new EntryPointGroup(linkage);
+
+        for( auto entryPoint : entryPoints )
+        {
+            for( auto module : entryPoint->getModuleDependencies() )
+            {
+                group->m_dependencyList.addDependency(module);
+            }
+            group->m_entryPoints.add(entryPoint);
+        }
+
+        group->_collectShaderParams(sink);
+
+        return group;
+    }
+
+    //
 
     Profile Profile::LookUp(char const* name)
     {

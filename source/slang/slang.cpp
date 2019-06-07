@@ -36,7 +36,7 @@ namespace Slang {
 static const Guid IID_ISlangUnknown = SLANG_UUID_ISlangUnknown;
 static const Guid IID_ISlangBlob    = SLANG_UUID_ISlangBlob;
 static const Guid IID_ILinkage = SLANG_UUID_ILinkage;
-static const Guid IID_ISession = SLANG_UUID_ISession;
+static const Guid IID_IGlobalSession = SLANG_UUID_IGlobalSession;
 static const Guid IID_IModule = SLANG_UUID_IModule;
 
 Session::Session()
@@ -98,7 +98,7 @@ Session::Session()
 
 ISlangUnknown* Session::getInterface(const Guid& guid)
 {
-    if(guid == IID_ISlangUnknown || guid == IID_ISession)
+    if(guid == IID_ISlangUnknown || guid == IID_IGlobalSession)
         return asExternal(this);
     return nullptr;
 }
@@ -111,6 +111,10 @@ SLANG_NO_THROW SlangResult SLANG_MCALL Session::createLinkage(
 
     // TODO: There is nothing of use to copy from the `desc` right now.
     SLANG_UNUSED(desc);
+    if(desc.flags & slang::kLinkageFlag_FalcorCustomSharedKeywordSemantics)
+    {
+        linkage->m_useFalcorCustomSharedKeywordSemantics = true;
+    }
 
     *outLinkage = ComPtr<slang::ILinkage>(asExternal(linkage)).detach();
     return SLANG_OK;
@@ -369,7 +373,7 @@ ISlangUnknown* Linkage::getInterface(const Guid& guid)
     return nullptr;
 }
 
-SLANG_NO_THROW slang::ISession* SLANG_MCALL Linkage::getSession()
+SLANG_NO_THROW slang::IGlobalSession* SLANG_MCALL Linkage::getGlobalSession()
 {
     return asExternal(getSessionImpl());
 }
@@ -1020,13 +1024,15 @@ SlangResult FrontEndCompileRequest::executeActionsInner()
     if (getSink()->GetErrorCount() != 0)
         return SLANG_FAIL;
 
-    if ((compileFlags & SLANG_COMPILE_FLAG_NO_CODEGEN) == 0)
-    {
-        // Generate initial IR for all the translation
-        // units, if we are in a mode where IR is called for.
-        generateIR();
-    }
-
+    // We always generate IR for all the translation units.
+    //
+    // TODO: We may eventually have a mode where we skip
+    // IR codegen and only produce an AST (e.g., for use when
+    // debugging problems in the parser or semantic checking),
+    // but for now there are no cases where not having IR
+    // makes sense.
+    //
+    generateIR();
     if (getSink()->GetErrorCount() != 0)
         return SLANG_FAIL;
 
@@ -1168,7 +1174,7 @@ SlangResult EndToEndCompileRequest::executeActionsInner()
                 entryPointReq->getName(),
                 entryPointReq->getProfile());
 
-            specializedProgram->addEntryPoint(entryPoint);
+            specializedProgram->addEntryPoint(entryPoint, getSink());
         }
     }
 
@@ -1719,13 +1725,27 @@ void Program::addReferencedLeafModule(Module* module)
     m_filePathDependencyList.addDependency(module);
 }
 
-void Program::addEntryPoint(EntryPoint* entryPoint)
+void Program::addEntryPoint(EntryPoint* entryPoint, DiagnosticSink* sink)
 {
-    m_entryPoints.add(entryPoint);
+    List<RefPtr<EntryPoint>> entryPoints;
+    entryPoints.add(entryPoint);
 
-    for(auto module : entryPoint->getModuleDependencies())
+    RefPtr<EntryPointGroup> entryPointGroup = EntryPointGroup::create(getLinkageImpl(), entryPoints, sink);
+
+    addEntryPointGroup(entryPointGroup);
+}
+
+void Program::addEntryPointGroup(EntryPointGroup* entryPointGroup)
+{
+    m_entryPointGroups.add(entryPointGroup);
+
+    for(auto entryPoint : entryPointGroup->getEntryPoints())
     {
-        addReferencedModule(module);
+        m_entryPoints.add(entryPoint);
+        for(auto module : entryPoint->getModuleDependencies())
+        {
+            addReferencedModule(module);
+        }
     }
 }
 
@@ -1951,6 +1971,19 @@ static Slang::EndToEndCompileRequest* convert(SlangCompileRequest* request)
 SLANG_API SlangSession* spCreateSession(const char*)
 {
     return convert(new Slang::Session());
+}
+
+SLANG_API SlangResult slang_createGlobalSession(
+    SlangInt                apiVersion,
+    slang::IGlobalSession** outGlobalSession)
+{
+    if(apiVersion != 0)
+        return SLANG_E_NOT_IMPLEMENTED;
+
+    Slang::Session* globalSession = new Slang::Session();
+    Slang::ComPtr<slang::IGlobalSession> result(Slang::asExternal(globalSession));
+    *outGlobalSession = result.detach();
+    return SLANG_OK;
 }
 
 SLANG_API void spDestroySession(

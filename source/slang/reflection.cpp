@@ -86,6 +86,15 @@ static inline SlangReflectionEntryPoint* convert(EntryPointLayout* entryPoint)
     return (SlangReflectionEntryPoint*) entryPoint;
 }
 
+static inline EntryPointGroupLayout* convert(SlangEntryPointGroupLayout* entryPointGroup)
+{
+    return (EntryPointGroupLayout*) entryPointGroup;
+}
+
+static inline SlangEntryPointGroupLayout* convert(EntryPointGroupLayout* entryPointGroup)
+{
+    return (SlangEntryPointGroupLayout*) entryPointGroup;
+}
 
 static inline ProgramLayout* convert(SlangReflection* program)
 {
@@ -1388,7 +1397,7 @@ SLANG_API SlangReflectionEntryPoint* spReflection_findEntryPointByName(SlangRefl
     auto program = convert(inProgram);
     if(!program) return 0;
 
-    // TODO: improve on dumb linear search
+    // TODO: improve on naive linear search
     for(auto ep : program->entryPoints)
     {
         if(ep->entryPoint->getName()->text == name)
@@ -1398,6 +1407,74 @@ SLANG_API SlangReflectionEntryPoint* spReflection_findEntryPointByName(SlangRefl
     }
 
     return nullptr;
+}
+
+
+SLANG_API SlangInt spReflection_getEntryPointGroupCount(SlangReflection* inProgram)
+{
+    auto program = convert(inProgram);
+    if(!program) return 0;
+
+    return program->entryPointGroups.getCount();
+}
+
+SLANG_API SlangEntryPointGroupLayout* spReflection_getEntryPointGroupByIndex(SlangReflection* inProgram, SlangInt index)
+{
+    auto program = convert(inProgram);
+    if(!program) return 0;
+
+    if(index < 0) return nullptr;
+    if(index >= program->entryPointGroups.getCount()) return nullptr;
+
+    return convert(program->entryPointGroups[(int) index].Ptr());
+}
+
+SLANG_API SlangInt spEntryPointGroupLayout_getEntryPointCount(SlangEntryPointGroupLayout* inGroup)
+{
+    auto group = convert(inGroup);
+    if(!group) return 0;
+
+    return group->entryPoints.getCount();
+}
+
+SLANG_API SlangReflectionEntryPoint* spEntryPointGroupLayout_getEntryPointByIndex(SlangEntryPointGroupLayout* inGroup, SlangInt index)
+{
+    auto group = convert(inGroup);
+    if(!group) return 0;
+
+    if(index < 0) return nullptr;
+    if(index >= group->entryPoints.getCount()) return nullptr;
+
+    return convert(group->entryPoints[(int) index].Ptr());
+}
+
+SLANG_API SlangReflectionVariableLayout* spEntryPointGroupLayout_getVarLayout(SlangEntryPointGroupLayout* inGroup)
+{
+    auto group = convert(inGroup);
+    if(!group) return 0;
+
+    return convert(group->parametersLayout);
+}
+
+SLANG_API SlangInt spEntryPointGroupLayout_getParameterCount(SlangEntryPointGroupLayout* inGroup)
+{
+    auto groupLayout = convert(inGroup);
+    if(!groupLayout) return 0;
+
+    auto& params = groupLayout->group->getShaderParams();
+    return params.getCount();
+}
+
+SLANG_API SlangReflectionVariableLayout* spEntryPointGroupLayout_getParameterByIndex(SlangEntryPointGroupLayout* inGroup, SlangInt index)
+{
+    auto groupLayout = convert(inGroup);
+    if(!groupLayout) return nullptr;
+
+    auto& params = groupLayout->group->getShaderParams();
+    if(index < 0) return nullptr;
+    if(index >= params.getCount()) return nullptr;
+
+    return convert(getScopeStructLayout(groupLayout)->fields[index]);
 }
 
 

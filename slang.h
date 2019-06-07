@@ -1548,6 +1548,7 @@ extern "C"
     typedef struct SlangProgramLayout SlangProgramLayout;
     typedef struct SlangEntryPoint SlangEntryPoint;
     typedef struct SlangEntryPointLayout SlangEntryPointLayout;
+    typedef struct SlangEntryPointGroupLayout SlangEntryPointGroupLayout;
 
 //    typedef struct SlangReflection                  SlangReflection;
 //    typedef struct SlangReflectionEntryPoint        SlangReflectionEntryPoint;
@@ -1898,6 +1899,9 @@ extern "C"
     SLANG_API SlangReflectionEntryPoint* spReflection_getEntryPointByIndex(SlangReflection* reflection, SlangUInt index);
     SLANG_API SlangReflectionEntryPoint* spReflection_findEntryPointByName(SlangReflection* reflection, char const* name);
 
+    SLANG_API SlangInt spReflection_getEntryPointGroupCount(SlangReflection* reflection);
+    SLANG_API SlangEntryPointGroupLayout* spReflection_getEntryPointGroupByIndex(SlangReflection* reflection, SlangInt index);
+
     SLANG_API SlangUInt spReflection_getGlobalConstantBufferBinding(SlangReflection* reflection);
     SLANG_API size_t spReflection_getGlobalConstantBufferSize(SlangReflection* reflection);
 
@@ -1907,6 +1911,15 @@ extern "C"
         SlangInt                    specializationArgCount,
         SlangReflectionType* const* specializationArgs,
         ISlangBlob**                outDiagnostics);
+
+    // Entry point group reflection
+
+    SLANG_API SlangInt spEntryPointGroupLayout_getEntryPointCount(SlangEntryPointGroupLayout* group);
+    SLANG_API SlangReflectionEntryPoint* spEntryPointGroupLayout_getEntryPointByIndex(SlangEntryPointGroupLayout* group, SlangInt index);
+    SLANG_API SlangReflectionVariableLayout* spEntryPointGroupLayout_getVarLayout(SlangEntryPointGroupLayout* group);
+
+    SLANG_API SlangInt spEntryPointGroupLayout_getParameterCount(SlangEntryPointGroupLayout* group);
+    SLANG_API SlangReflectionVariableLayout* spEntryPointGroupLayout_getParameterByIndex(SlangEntryPointGroupLayout* group, SlangInt index);
 
 
 #ifdef __cplusplus
@@ -2413,6 +2426,35 @@ namespace slang
             return 0 != spReflectionEntryPoint_usesAnySampleRateInput((SlangReflectionEntryPoint*) this);
         }
     };
+    typedef EntryPointReflection EntryPointLayout;
+
+    struct EntryPointGroupLayout
+    {
+        SlangInt getEntryPointCount()
+        {
+            return spEntryPointGroupLayout_getEntryPointCount((SlangEntryPointGroupLayout*) this);
+        }
+
+        EntryPointReflection* getEntryPointByIndex(SlangInt index)
+        {
+            return (EntryPointReflection*) spEntryPointGroupLayout_getEntryPointByIndex((SlangEntryPointGroupLayout*) this, index);
+        }
+
+        VariableLayoutReflection* getVarLayout()
+        {
+            return (VariableLayoutReflection*) spEntryPointGroupLayout_getVarLayout((SlangEntryPointGroupLayout*) this);
+        }
+
+        SlangInt getParameterCount()
+        {
+            return spEntryPointGroupLayout_getParameterCount((SlangEntryPointGroupLayout*) this);
+        }
+
+        VariableLayoutReflection* getParameterByIndex(SlangInt index)
+        {
+            return (VariableLayoutReflection*) spEntryPointGroupLayout_getParameterByIndex((SlangEntryPointGroupLayout*) this, index);
+        }
+    };
 
     struct TypeParameterReflection
     {
@@ -2483,6 +2525,16 @@ namespace slang
             return (EntryPointReflection*) spReflection_getEntryPointByIndex((SlangReflection*) this, index);
         }
 
+        SlangInt getEntryPointGroupCount()
+        {
+            return spReflection_getEntryPointGroupCount((SlangReflection*) this);
+        }
+
+        EntryPointGroupLayout* getEntryPointGroupByIndex(SlangInt index)
+        {
+            return (EntryPointGroupLayout*) spReflection_getEntryPointGroupByIndex((SlangReflection*) this, index);
+        }
+
         SlangUInt getGlobalConstantBufferBinding()
         {
             return spReflection_getGlobalConstantBufferBinding((SlangReflection*)this);
@@ -2537,7 +2589,7 @@ namespace slang
     struct ILinkage;
     struct IModule;
     struct IProgram;
-    struct ISession;
+    struct IGlobalSession;
     struct ITarget;
 
     struct LinkageDesc;
@@ -2547,7 +2599,7 @@ namespace slang
 
         /** A session for interaction with the Slang library.
         */
-    struct ISession : public ISlangUnknown
+    struct IGlobalSession : public ISlangUnknown
     {
     public:
             /** Create a new linkage.
@@ -2560,10 +2612,18 @@ namespace slang
             char const*     name) = 0;
     };
 
-    #define SLANG_UUID_ISession { 0xc140b5fd, 0xc78, 0x452e, { 0xba, 0x7c, 0x1a, 0x1e, 0x70, 0xc7, 0xf7, 0x1c } };
+    #define SLANG_UUID_IGlobalSession { 0xc140b5fd, 0xc78, 0x452e, { 0xba, 0x7c, 0x1a, 0x1e, 0x70, 0xc7, 0xf7, 0x1c } };
+
+    typedef uint32_t LinkageFlags;
+    enum
+    {
+        kLinkageFlags_None = 0,
+        kLinkageFlag_FalcorCustomSharedKeywordSemantics = 1 << 0,
+    };
 
     struct LinkageDesc
     {
+        LinkageFlags flags = kLinkageFlags_None;
         //TODO: What needs to go in here...
     };
 
@@ -2572,9 +2632,9 @@ namespace slang
     struct ILinkage : public ISlangUnknown
     {
     public:
-            /** Get the session thas was used to create this linkage.
+            /** Get the global session thas was used to create this linkage.
             */
-        virtual SLANG_NO_THROW ISession* SLANG_MCALL getSession() = 0;
+        virtual SLANG_NO_THROW IGlobalSession* SLANG_MCALL getGlobalSession() = 0;
 
             /** Add an available code-generation target to the linkage.
             */
@@ -2726,6 +2786,21 @@ namespace slang
     };
     #define SLANG_UUID_ITarget { 0x81f1f953, 0x533b, 0x4eab, { 0x89, 0x7b, 0x85, 0x12, 0xd2, 0x8a, 0x5d, 0x1e } }
 
+}
+
+#define SLANG_API_VERSION 0
+
+SLANG_API SlangResult slang_createGlobalSession(
+    SlangInt                apiVersion,
+    slang::IGlobalSession** outGlobalSession);
+
+namespace slang
+{
+    inline SlangResult createGlobalSession(
+        slang::IGlobalSession** outGlobalSession)
+    {
+        return slang_createGlobalSession(SLANG_API_VERSION, outGlobalSession);
+    }
 }
 
 /**

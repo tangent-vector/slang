@@ -361,6 +361,55 @@ namespace Slang
         ModuleDependencyList m_dependencyList;
     };
 
+    class EntryPointGroup : public RefObject
+    {
+    public:
+        static RefPtr<EntryPointGroup> create(
+            Linkage*                        linkage,
+            List<RefPtr<EntryPoint>> const& entryPoints,
+            DiagnosticSink*                 sink);
+
+        Linkage* getLinkageImpl() { return m_linkage; }
+
+            /// Get the number of entry points in the group
+        Index getEntryPointCount() { return m_entryPoints.getCount(); }
+
+            /// Get the entry point at the given `index`.
+        RefPtr<EntryPoint> getEntryPoint(Index index) { return m_entryPoints[index]; }
+
+            /// Get the full ist of entry points in the group.
+        List<RefPtr<EntryPoint>> const& getEntryPoints() { return m_entryPoints; }
+
+            /// Get a list of modules that this entry point group depends on.
+            ///
+            /// This will include the dependencies of all of the entry points in the group.
+            ///
+        List<RefPtr<Module>> getModuleDependencies() { return m_dependencyList.getModuleList(); }
+
+            /// Get an array of all entry-point-group shader parameters.
+        List<ShaderParamInfo> const& getShaderParams() { return m_shaderParams; }
+
+    private:
+        EntryPointGroup(Linkage* linkage)
+            : m_linkage(linkage)
+        {}
+
+        void _collectShaderParams(DiagnosticSink* sink);
+
+        Linkage* m_linkage;
+        List<RefPtr<EntryPoint>> m_entryPoints;
+
+            /// Information about shader parameters to be associated with the entry-point group itself.
+            ///
+            /// This list captures parameters that logically belong to the group itself, rather than
+            /// to any specific entry point in the group.
+            ///
+        List<ShaderParamInfo> m_shaderParams;
+
+            /// Modules the entry point group depends on.
+        ModuleDependencyList m_dependencyList;
+    };
+
     enum class PassThroughMode : SlangPassThrough
     {
         None = SLANG_PASS_THROUGH_NONE,	// don't pass through: use Slang compiler
@@ -588,7 +637,7 @@ namespace Slang
 
         ISlangUnknown* getInterface(const Guid& guid);
 
-        SLANG_NO_THROW slang::ISession* SLANG_MCALL getSession() override;
+        SLANG_NO_THROW slang::IGlobalSession* SLANG_MCALL getGlobalSession() override;
         SLANG_NO_THROW slang::ITarget* SLANG_MCALL addTarget(
             slang::TargetDesc const&  desc) override;
         SLANG_NO_THROW SlangInt SLANG_MCALL getTargetCount() override;
@@ -752,6 +801,8 @@ namespace Slang
         DebugInfoLevel debugInfoLevel = DebugInfoLevel::None;
 
         OptimizationLevel optimizationLevel = OptimizationLevel::Default;
+
+        bool m_useFalcorCustomSharedKeywordSemantics = false;
 
     private:
         Session* m_session = nullptr;
@@ -975,6 +1026,12 @@ namespace Slang
             /// Get the full ist of entry points on the program.
         List<RefPtr<EntryPoint>> const& getEntryPoints() { return m_entryPoints; }
 
+
+        Index getEntryPointGroupCount() { return m_entryPointGroups.getCount(); }
+        RefPtr<EntryPointGroup> getEntryPointGroup(Index index) { return m_entryPointGroups[index]; }
+        List<RefPtr<EntryPointGroup>> const& getEntryPointGroups() { return m_entryPointGroups; }
+
+
             /// Get the substitution (if any) that represents how global generics are specialized.
         RefPtr<Substitutions> getGlobalGenericSubstitution() { return m_globalGenericSubst; }
 
@@ -1002,7 +1059,13 @@ namespace Slang
             ///
             /// This also adds everything the entry point depends on to the list of references.
             ///
-        void addEntryPoint(EntryPoint* entryPoint);
+        void addEntryPoint(EntryPoint* entryPoint, DiagnosticSink* sink);
+
+            /// Add an entry point group to the program
+            ///
+            /// This also adds everything the entry point group depends on to the list of references.
+            ///
+        void addEntryPointGroup(EntryPointGroup* entryPointGroup);
 
             /// Set the global generic argument substitution to use.
         void setGlobalGenericSubsitution(RefPtr<Substitutions> subst)
@@ -1076,6 +1139,9 @@ namespace Slang
 
         // Entry points that are part of the program.
         List<RefPtr<EntryPoint> > m_entryPoints;
+
+        // Entry points that are part of the program.
+        List<RefPtr<EntryPointGroup> > m_entryPointGroups;
 
         // Specializations for global generic parameters (if any)
         RefPtr<Substitutions> m_globalGenericSubst;
@@ -1359,7 +1425,7 @@ namespace Slang
     struct TypeCheckingCache;
     //
 
-    class Session : public RefObject, public slang::ISession
+    class Session : public RefObject, public slang::IGlobalSession
     {
     public:
         SLANG_REF_OBJECT_IUNKNOWN_ALL
@@ -1528,9 +1594,9 @@ namespace Slang
 // abstract over the conversion required for each pair of types.
 //
 
-inline slang::ISession* asExternal(Session* session)
+inline slang::IGlobalSession* asExternal(Session* session)
 {
-    return static_cast<slang::ISession*>(session);
+    return static_cast<slang::IGlobalSession*>(session);
 }
 
 inline slang::ILinkage* asExternal(Linkage* linkage)

@@ -684,6 +684,13 @@ public:
     List<RefPtr<TypeLayout>> taggedUnionTypeLayouts;
 };
 
+class EntryPointGroupLayout : public ScopeLayout
+{
+public:
+    RefPtr<EntryPointGroup> group;
+    List<RefPtr<EntryPointLayout>> entryPoints;
+};
+
 class GenericParamLayout : public Layout
 {
 public:
@@ -724,6 +731,10 @@ public:
     // and any entry-point-specific parameter data
     // will (eventually) belong there...
     List<RefPtr<EntryPointLayout>> entryPoints;
+
+    // Entry points can also be grouped for layout purposes (e.g., to form
+    // ray-tracing hit groups), so this array represents those groups
+    List<RefPtr<EntryPointGroupLayout>> entryPointGroups;
 
     List<RefPtr<GenericParamLayout>> globalGenericParams;
     Dictionary<String, GenericParamLayout*> globalGenericParamsMap;
