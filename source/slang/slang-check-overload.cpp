@@ -600,7 +600,7 @@ namespace Slang
         OverloadResolveContext&		context)
     {
         auto funcDecl = funcDeclRef.getDecl();
-        checkDecl(funcDecl);
+        ensureDecl(funcDecl, DeclCheckState::CanUseFuncSignature);
 
         // If this function is a redeclaration,
         // then we don't want to include it multiple times,
@@ -659,7 +659,7 @@ namespace Slang
         OverloadResolveContext&     context,
         RefPtr<Type>                resultType)
     {
-        checkDecl(ctorDeclRef.getDecl());
+        ensureDecl(ctorDeclRef, DeclCheckState::CanUseFuncSignature);
 
         // `typeItem` refers to the type being constructed (the thing
         // that was applied as a function) so we need to construct
@@ -684,7 +684,7 @@ namespace Slang
         DeclRef<GenericDecl>    genericDeclRef,
         OverloadResolveContext& context)
     {
-        checkDecl(genericDeclRef.getDecl());
+        ensureDecl(genericDeclRef, DeclCheckState::CanSpecializeGeneric);
 
         ConstraintSystem constraints;
         constraints.loc = context.loc;
@@ -735,6 +735,11 @@ namespace Slang
                 //
                 // So the question is then whether a mismatch during the
                 // unification step should be taken as an immediate failure...
+
+                if(genericDeclRef.GetName()->text == "test")
+                {
+                    int f = 9; SLANG_UNUSED(f);
+                }
 
                 TryUnifyTypes(constraints, context.getArgType(aa), GetType(params[aa]));
 #endif
@@ -1205,6 +1210,14 @@ namespace Slang
             context.baseExpr = funcOverloadExpr2->base;
         }
 
+        if(auto funcDeclRefExpr = as<DeclRefExpr>(funcExpr))
+        {
+            if(funcDeclRefExpr->declRef.GetName()->text == "test")
+            {
+                int f = 9; SLANG_UNUSED(f);
+            }
+        }
+
         // TODO: We should have a special case here where an `InvokeExpr`
         // with a single argument where the base/func expression names
         // a type should always be treated as an explicit type coercion
@@ -1341,7 +1354,7 @@ namespace Slang
     {
         if (auto genericDeclRef = baseItem.declRef.as<GenericDecl>())
         {
-            checkDecl(genericDeclRef.getDecl());
+            ensureDecl(genericDeclRef, DeclCheckState::CanSpecializeGeneric);
 
             OverloadCandidate candidate;
             candidate.flavor = OverloadCandidate::Flavor::Generic;

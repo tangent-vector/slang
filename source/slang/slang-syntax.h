@@ -307,19 +307,77 @@ namespace Slang
     // Represents how much checking has been applied to a declaration.
     enum class DeclCheckState : uint8_t
     {
-        // The declaration has been parsed, but not checked
+        // The declaration has been parsed, but
+        // is otherwise completely unchecked.
+        //
         Unchecked,
 
-        // We are in the process of checking the declaration "header"
-        // (those parts of the declaration needed in order to
-        // reference it)
-        CheckingHeader,
+        ModifieredChecked,
 
-        // We are done checking the declaration header.
-        CheckedHeader,
+        // The declaration's signature has been checked,
+        // to the point that it is ready to be referenced
+        // in other places (e.g., a variable has a type,
+        // a function has a signature, a type can be used
+        // as the type of another declaration, ...).
+        //
+        ReadyForReference,
 
-        // We have checked the declaration fully.
+        ReadyForBases,
+        ReadyForLookup = ReadyForBases,
+
+        // The declaration (and its children) have been
+        // checked enough that lookup operations can
+        // be done "through" this declaration.
+        //
+        ReadyForConformances,
+
+        // The declaration is fully checked, to the point
+        // that even body statements are validated.
+        //
         Checked,
+
+        CanEnumerateBases = ReadyForBases,
+        CanUseBaseOfInheritanceDecl = ReadyForBases,
+        CanUseTypeOfValueDecl = ReadyForReference,
+        CanUseExtensionTargetType = ReadyForBases,
+        CanUseAsType = ReadyForReference,
+        CanUseFuncSignature = ReadyForReference,
+        CanSpecializeGeneric = ReadyForReference,
+
+        CanReadInterfaceRequirements = ReadyForLookup,
+
+        BeingCheckedBit = 0x80,
+    };
+
+    struct DeclCheckStateExt
+    {
+    public:
+        DeclCheckStateExt() {}
+        DeclCheckStateExt(DeclCheckState state)
+            : raw(uint8_t(state))
+        {}
+
+        DeclCheckState getState() const { return DeclCheckState(raw & ~uint8_t(DeclCheckState::BeingCheckedBit)); }
+        void setState(DeclCheckState state)
+        {
+            raw = (raw & uint8_t(DeclCheckState::BeingCheckedBit)) | uint8_t(state);
+        }
+
+        bool isBeingChecked() const { return (raw & uint8_t(DeclCheckState::BeingCheckedBit)) != 0; }
+
+        void setIsBeingChecked(bool isBeingChecked)
+        {
+            raw = (raw & ~uint8_t(DeclCheckState::BeingCheckedBit))
+                | (isBeingChecked ? uint8_t(DeclCheckState::BeingCheckedBit) : 0);
+        }
+
+        bool operator>=(DeclCheckState state) const
+        {
+            return getState() >= state;
+        }
+
+    private:
+        uint8_t raw = 0;
     };
 
     void addModifier(
