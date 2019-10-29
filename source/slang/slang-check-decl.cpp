@@ -14,6 +14,388 @@
 
 namespace Slang
 {
+        /// Visitor to transition declarations to `DeclCheckState::CheckedModifiers`
+    struct SemanticsDeclModifiersVisitor
+        : public SemanticsDeclVisitorBase
+        , public DeclVisitor<SemanticsDeclModifiersVisitor>
+    {
+        SemanticsDeclModifiersVisitor(SharedSemanticsContext* shared)
+            : SemanticsDeclVisitorBase(shared)
+        {}
+
+        void visitDeclGroup(DeclGroup*) {}
+
+        void visitDecl(Decl* decl)
+        {
+            checkModifiers(decl);
+        }
+    };
+
+    struct SemanticsDeclHeaderVisitor
+        : public SemanticsDeclVisitorBase
+        , public DeclVisitor<SemanticsDeclHeaderVisitor>
+    {
+        SemanticsDeclHeaderVisitor(SharedSemanticsContext* shared)
+            : SemanticsDeclVisitorBase(shared)
+        {}
+
+        void visitDecl(Decl*) {}
+        void visitDeclGroup(DeclGroup*) {}
+
+        void checkVarDeclCommon(RefPtr<VarDeclBase> varDecl);
+
+        void visitVarDecl(VarDecl* varDecl)
+        {
+            checkVarDeclCommon(varDecl);
+        }
+
+        void visitImportDecl(ImportDecl* decl)
+        {
+            // We need to look for a module with the specified name
+            // (whether it has already been loaded, or needs to
+            // be loaded), and then put its declarations into
+            // the current scope.
+
+            auto name = decl->moduleNameAndLoc.name;
+            auto scope = decl->scope;
+
+            // Try to load a module matching the name
+            auto importedModule = findOrImportModule(
+                getLinkage(),
+                name,
+                decl->moduleNameAndLoc.loc,
+                getSink());
+
+            // If we didn't find a matching module, then bail out
+            if (!importedModule)
+                return;
+
+            // Record the module that was imported, so that we can use
+            // it later during code generation.
+            auto importedModuleDecl = importedModule->getModuleDecl();
+            decl->importedModuleDecl = importedModuleDecl;
+
+            // Add the declarations from the imported module into the scope
+            // that the `import` declaration is set to extend.
+            //
+            importModuleIntoScope(scope.Ptr(), importedModuleDecl);
+
+            // Record the `import`ed module (and everything it depends on)
+            // as a dependency of the module we are compiling.
+            if(auto module = getModule(decl))
+            {
+                module->addModuleDependency(importedModule);
+            }
+        }
+
+        void visitGenericTypeParamDecl(GenericTypeParamDecl* decl)
+        {
+            // TODO: could probably push checking the default value
+            // for a generic type parameter later.
+            //
+            decl->initType = CheckProperType(decl->initType);
+        }
+
+        void visitGenericValueParamDecl(GenericValueParamDecl* decl)
+        {
+            checkVarDeclCommon(decl);
+        }
+
+        void visitGenericTypeConstraintDecl(GenericTypeConstraintDecl* decl);
+
+        void visitInheritanceDecl(InheritanceDecl* inheritanceDecl);
+
+        void visitGenericDecl(GenericDecl* genericDecl);
+
+        void visitEnumDecl(EnumDecl* decl);
+
+        void visitTypeDefDecl(TypeDefDecl* decl)
+        {
+            decl->type = CheckProperType(decl->type);
+        }
+
+        void visitGlobalGenericParamDecl(GlobalGenericParamDecl* decl)
+        {
+            // global generic param only allowed in global scope
+            auto program = as<ModuleDecl>(decl->ParentDecl);
+            if (!program)
+                getSink()->diagnose(decl, Slang::Diagnostics::globalGenParamInGlobalScopeOnly);
+        }
+
+        void visitAssocTypeDecl(AssocTypeDecl* decl)
+        {
+            // assoctype only allowed in an interface
+            auto interfaceDecl = as<InterfaceDecl>(decl->ParentDecl);
+            if (!interfaceDecl)
+                getSink()->diagnose(decl, Slang::Diagnostics::assocTypeInInterfaceOnly);
+        }
+
+        void visitFuncDecl(FuncDecl* funcDecl)
+        {
+            auto resultType = funcDecl->ReturnType;
+            if(resultType.exp)
+            {
+                resultType = CheckProperType(resultType);
+            }
+            else
+            {
+                resultType = TypeExp(getSession()->getVoidType());
+            }
+            funcDecl->ReturnType = resultType;
+
+
+            HashSet<Name*> paraNames;
+            for (auto & para : funcDecl->GetParameters())
+            {
+                ensureDecl(para, DeclCheckState::ReadyForReference);
+
+                if (paraNames.Contains(para->getName()))
+                {
+                    getSink()->diagnose(para, Diagnostics::parameterAlreadyDefined, para->getName());
+                }
+                else
+                    paraNames.Add(para->getName());
+            }
+
+            // One last bit of validation: check if we are redeclaring an existing function
+            ValidateFunctionRedeclaration(funcDecl);
+        }
+
+        void visitParamDecl(ParamDecl* paramDecl)
+        {
+            // TODO: This logic should be shared with the other cases of
+            // variable declarations. The main reason I am not doing it
+            // yet is that we use a `ParamDecl` with a null type as a
+            // special case in attribute declarations, and that could
+            // trip up the ordinary variable checks.
+
+            auto typeExpr = paramDecl->type;
+            if(typeExpr.exp)
+            {
+                typeExpr = CheckUsableType(typeExpr);
+                paramDecl->type = typeExpr;
+            }
+        }
+
+        void visitConstructorDecl(ConstructorDecl* decl)
+        {
+            for (auto& paramDecl : decl->GetParameters())
+            {
+                ensureDecl(paramDecl, DeclCheckState::CanUseTypeOfValueDecl);
+            }
+
+            // We need to compute the result tyep for this declaration,
+            // since it wasn't filled in for us.
+            decl->ReturnType.type = findResultTypeForConstructorDecl(decl);
+        }
+
+        void visitSubscriptDecl(SubscriptDecl* decl)
+        {
+            for (auto& paramDecl : decl->GetParameters())
+            {
+                ensureDecl(paramDecl, DeclCheckState::CanUseTypeOfValueDecl);
+            }
+
+            decl->ReturnType = CheckUsableType(decl->ReturnType);
+
+            // If we have a subscript declaration with no accessor declarations,
+            // then we should create a single `GetterDecl` to represent
+            // the implicit meaning of their declaration, so:
+            //
+            //      subscript(uint index) -> T;
+            //
+            // becomes:
+            //
+            //      subscript(uint index) -> T { get; }
+            //
+
+            bool anyAccessors = false;
+            for(auto accessorDecl : decl->getMembersOfType<AccessorDecl>())
+            {
+                anyAccessors = true;
+            }
+
+            if(!anyAccessors)
+            {
+                RefPtr<GetterDecl> getterDecl = new GetterDecl();
+                getterDecl->loc = decl->loc;
+
+                getterDecl->ParentDecl = decl;
+                decl->Members.add(getterDecl);
+            }
+        }
+
+        void visitAccessorDecl(AccessorDecl* decl)
+        {
+            // An accessor must appear nested inside a subscript declaration (today),
+            // or a property declaration (when we add them). It will derive
+            // its return type from the outer declaration, so we handle both
+            // of these checks at the same place.
+            auto parent = decl->ParentDecl;
+            if (auto parentSubscript = as<SubscriptDecl>(parent))
+            {
+                ensureDecl(parentSubscript, DeclCheckState::CanUseTypeOfValueDecl);
+                decl->ReturnType = parentSubscript->ReturnType;
+            }
+            // TODO: when we add "property" declarations, check for them here
+            else
+            {
+                getSink()->diagnose(decl, Diagnostics::accessorMustBeInsideSubscriptOrProperty);
+            }
+        }
+    };
+
+    struct SemanticsDeclBasesVisitor
+        : public SemanticsDeclVisitorBase
+        , public DeclVisitor<SemanticsDeclBasesVisitor>
+    {
+        SemanticsDeclBasesVisitor(SharedSemanticsContext* shared)
+            : SemanticsDeclVisitorBase(shared)
+        {}
+
+        void visitDecl(Decl*) {}
+        void visitDeclGroup(DeclGroup*) {}
+
+        void visitInheritanceDecl(InheritanceDecl* inheritanceDecl);
+
+        void visitAggTypeDecl(AggTypeDecl* decl)
+        {
+            // TODO: We need to enumerate the bases here,
+            // and ideally form a "class precedence list"
+            // fromm them.
+
+            for( auto inheritanceDecl : decl->getMembersOfType<InheritanceDecl>() )
+            {
+                ensureDecl(inheritanceDecl, DeclCheckState::CanUseBaseOfInheritanceDecl);
+            }
+        }
+
+        void visitEnumDecl(EnumDecl* decl);
+
+        void visitExtensionDecl(ExtensionDecl* decl)
+        {
+            decl->targetType = CheckProperType(decl->targetType);
+
+            if (auto targetDeclRefType = as<DeclRefType>(decl->targetType))
+            {
+                // Attach our extension to that type as a candidate...
+                if (auto aggTypeDeclRef = targetDeclRefType->declRef.as<AggTypeDecl>())
+                {
+                    auto aggTypeDecl = aggTypeDeclRef.getDecl();
+                    decl->nextCandidateExtension = aggTypeDecl->candidateExtensions;
+                    aggTypeDecl->candidateExtensions = decl;
+                    return;
+                }
+            }
+            getSink()->diagnose(decl->targetType.exp, Diagnostics::unimplemented, "expected a nominal type here");
+        }
+    };
+
+    struct SemanticsDeclBodyVisitor
+        : public SemanticsDeclVisitorBase
+        , public DeclVisitor<SemanticsDeclBodyVisitor>
+    {
+        SemanticsDeclBodyVisitor(SharedSemanticsContext* shared)
+            : SemanticsDeclVisitorBase(shared)
+        {}
+
+        void visitDecl(Decl*) {}
+        void visitDeclGroup(DeclGroup*) {}
+
+        void checkVarDeclCommon(RefPtr<VarDeclBase> varDecl)
+        {
+            if (auto initExpr = varDecl->initExpr)
+            {
+                initExpr = CheckTerm(initExpr);
+                initExpr = coerce(varDecl->type.Ptr(), initExpr);
+                varDecl->initExpr = initExpr;
+            }
+        }
+
+        void visitVarDecl(VarDecl* varDecl)
+        {
+            checkVarDeclCommon(varDecl);
+        }
+
+        void visitEnumCaseDecl(EnumCaseDecl* decl)
+        {
+            // An enum case had better appear inside an enum!
+            //
+            // TODO: Do we need/want to support generic cases some day?
+            auto parentEnumDecl = as<EnumDecl>(decl->ParentDecl);
+            SLANG_ASSERT(parentEnumDecl);
+
+            // The tag type should have already been set by
+            // the surrounding `enum` declaration.
+            auto tagType = parentEnumDecl->tagType;
+            SLANG_ASSERT(tagType);
+
+            // Need to check the init expression, if present, since
+            // that represents the explicit tag for this case.
+            if(auto initExpr = decl->tagExpr)
+            {
+                initExpr = CheckExpr(initExpr);
+                initExpr = coerce(tagType, initExpr);
+
+                // We want to enforce that this is an integer constant
+                // expression, but we don't actually care to retain
+                // the value.
+                CheckIntegerConstantExpression(initExpr);
+
+                decl->tagExpr = initExpr;
+            }
+        }
+
+        void visitEnumDecl(EnumDecl* decl);
+
+        void visitFuncDecl(FuncDecl* funcDecl)
+        {
+            if (auto body = funcDecl->Body)
+            {
+                checkBodyStmt(body, funcDecl);
+            }
+        }
+
+        void visitParamDecl(ParamDecl* paramDecl)
+        {
+            auto typeExpr = paramDecl->type;
+
+            // The "initializer" expression for a parameter represents
+            // a default argument value to use if an explicit one is
+            // not supplied.
+            if(auto initExpr = paramDecl->initExpr)
+            {
+                // We must check the expression and coerce it to the
+                // actual type of the parameter.
+                //
+                initExpr = CheckExpr(initExpr);
+                initExpr = coerce(typeExpr.type, initExpr);
+                paramDecl->initExpr = initExpr;
+
+                // TODO: a default argument expression needs to
+                // conform to other constraints to be valid.
+                // For example, it should not be allowed to refer
+                // to other parameters of the same function (or maybe
+                // only the parameters to its left...).
+
+                // A default argument value should not be allowed on an
+                // `out` or `inout` parameter.
+                //
+                // TODO: we could relax this by requiring the expression
+                // to yield an lvalue, but that seems like a feature
+                // with limited practical utility (and an easy source
+                // of confusing behavior).
+                //
+                // Note: the `InOutModifier` class inherits from `OutModifier`,
+                // so we only need to check for the base case.
+                //
+                if(paramDecl->FindModifier<OutModifier>())
+                {
+                    getSink()->diagnose(initExpr, Diagnostics::outputParameterCannotHaveDefaultValue);
+                }
+            }
+        }
+    };
 
         /// Should the given `decl` nested in `parentDecl` be treated as a static rather than instance declaration?
     bool isEffectivelyStatic(
@@ -551,6 +933,96 @@ namespace Slang
         decl->checkState.setIsBeingChecked(false);
     }
 
+    static bool isUnsizedArrayType(Type* type)
+    {
+        // Not an array?
+        auto arrayType = as<ArrayExpressionType>(type);
+        if (!arrayType) return false;
+
+        // Explicit element count given?
+        auto elementCount = arrayType->ArrayLength;
+        if (elementCount) return true;
+
+        return true;
+    }
+
+    void SemanticsDeclHeaderVisitor::checkVarDeclCommon(RefPtr<VarDeclBase> varDecl)
+    {
+        // A variable that didn't have an explicit type written must
+        // have its type inferred from the initial-value expression.
+        //
+        if(!varDecl->type.exp)
+        {
+            // In this case we need to perform all checking of the
+            // variable (including semantic checking of the initial-value
+            // expression) during the first phase of checking.
+
+            auto initExpr = varDecl->initExpr;
+            if(!initExpr)
+            {
+                getSink()->diagnose(varDecl, Diagnostics::varWithoutTypeMustHaveInitializer);
+                varDecl->type.type = getSession()->getErrorType();
+            }
+            else
+            {
+                initExpr = CheckExpr(initExpr);
+
+                // TODO: We might need some additional steps here to ensure
+                // that the type of the expression is one we are okay with
+                // inferring. E.g., if we ever decide that integer and floating-point
+                // literals have a distinct type from the standard int/float types,
+                // then we would need to "decay" a literal to an explicit type here.
+
+                varDecl->initExpr = initExpr;
+                varDecl->type.type = initExpr->type;
+            }
+
+            // If we've gone down this path, then the variable
+            // declaration is actually pretty far along in checking
+            varDecl->SetCheckState(DeclCheckState::Checked);
+        }
+        else
+        {
+            // A variable with an explicit type is simpler, for the
+            // most part.
+
+            TypeExp typeExp = CheckUsableType(varDecl->type);
+            varDecl->type = typeExp;
+            if (varDecl->type.Equals(getSession()->getVoidType()))
+            {
+                getSink()->diagnose(varDecl, Diagnostics::invalidTypeVoid);
+            }
+
+            // If this is an unsized array variable, then we first want to give
+            // it a chance to infer an array size from its initializer
+            //
+            // TODO(tfoley): May need to extend this to handle the
+            // multi-dimensional case...
+            //
+            if(isUnsizedArrayType(varDecl->type))
+            {
+                if (auto initExpr = varDecl->initExpr)
+                {
+                    initExpr = CheckTerm(initExpr);
+                    initExpr = coerce(varDecl->type.Ptr(), initExpr);
+                    varDecl->initExpr = initExpr;
+
+                    maybeInferArraySizeForVariable(varDecl);
+
+                    varDecl->SetCheckState(DeclCheckState::Checked);
+                }
+            }
+            //
+            // Next we want to make sure that the declared (or inferred)
+            // size for the array meets whatever language-specific
+            // constraints we want to enforce (e.g., disallow empty
+            // arrays in specific cases)
+            //
+            validateArraySizeForVariable(varDecl);
+        }
+    }
+
+
     // Fill in default substitutions for the 'subtype' part of a type constraint decl
     void SemanticsVisitor::CheckConstraintSubType(TypeExp& typeExp)
     {
@@ -565,6 +1037,99 @@ namespace Slang
             }
         }
     }
+
+    void SemanticsDeclHeaderVisitor::visitGenericTypeConstraintDecl(GenericTypeConstraintDecl* decl)
+    {
+        // TODO: are there any other validations we can do at this point?
+        //
+        // There probably needs to be a kind of "occurs check" to make
+        // sure that the constraint actually applies to at least one
+        // of the parameters of the generic.
+        //
+        CheckConstraintSubType(decl->sub);
+        decl->sub = TranslateTypeNodeForced(decl->sub);
+        decl->sup = TranslateTypeNodeForced(decl->sup);
+    }
+
+    void SemanticsDeclHeaderVisitor::visitGenericDecl(GenericDecl* genericDecl)
+    {
+        genericDecl->SetCheckState(DeclCheckState::ReadyForLookup);
+
+        for (auto m : genericDecl->Members)
+        {
+            if (auto typeParam = as<GenericTypeParamDecl>(m))
+            {
+                ensureDecl(typeParam, DeclCheckState::ReadyForReference);
+            }
+            else if (auto valParam = as<GenericValueParamDecl>(m))
+            {
+                ensureDecl(valParam, DeclCheckState::ReadyForReference);
+            }
+            else if (auto constraint = as<GenericTypeConstraintDecl>(m))
+            {
+                ensureDecl(constraint, DeclCheckState::ReadyForReference);
+            }
+        }
+    }
+
+    void SemanticsDeclHeaderVisitor::visitInheritanceDecl(InheritanceDecl* inheritanceDecl)
+    {
+        // check the type being inherited from
+        auto base = inheritanceDecl->base;
+        CheckConstraintSubType(base);
+        base = TranslateTypeNode(base);
+        inheritanceDecl->base = base;
+
+        // For now we only allow inheritance from interfaces, so
+        // we will validate that the type expression names an interface
+
+        if(auto declRefType = as<DeclRefType>(base.type))
+        {
+            if(auto interfaceDeclRef = declRefType->declRef.as<InterfaceDecl>())
+            {
+                return;
+            }
+        }
+        else if(base.type.is<ErrorType>())
+        {
+            // If an error was already produced, don't emit a cascading error.
+            return;
+        }
+
+        // If type expression didn't name an interface, we'll emit an error here
+        // TODO: deal with the case of an error in the type expression (don't cascade)
+        getSink()->diagnose( base.exp, Diagnostics::expectedAnInterfaceGot, base.type);
+    }
+
+        // Concretize interface conformances so that we have witnesses as required for lookup.
+        // for lookup.
+    struct SemanticsDeclConformancesVisitor
+        : public SemanticsDeclVisitorBase
+        , public DeclVisitor<SemanticsDeclConformancesVisitor>
+    {
+        SemanticsDeclConformancesVisitor(SharedSemanticsContext* shared)
+            : SemanticsDeclVisitorBase(shared)
+        {}
+
+        void visitDecl(Decl*) {}
+        void visitDeclGroup(DeclGroup*) {}
+
+        // Any user-defined type may have declared interface conformances,
+        // which we should check.
+        //
+        void visitAggTypeDecl(AggTypeDecl* aggTypeDecl)
+        {
+            checkAggTypeConformance(aggTypeDecl);
+        }
+
+        // Conformances can also come via `extension` declarations, and
+        // we should check them against the type(s) being extended.
+        //
+        void visitExtensionDecl(ExtensionDecl* extensionDecl)
+        {
+            checkExtensionConformance(extensionDecl);
+        }
+    };
 
         /// Recursively ensure the tree of declarations under `decl` is in `state`.
         ///
@@ -1359,6 +1924,215 @@ namespace Slang
         getSink()->diagnose(loc, Diagnostics::invalidEnumTagType, type);
     }
 
+    void SemanticsDeclHeaderVisitor::visitEnumDecl(EnumDecl* decl)
+    {
+        // Look at inheritance clauses, and
+        // see if one of them is making the enum
+        // "inherit" from a concrete type.
+        // This will become the "tag" type
+        // of the enum.
+        RefPtr<Type>        tagType;
+        InheritanceDecl*    tagTypeInheritanceDecl = nullptr;
+        for(auto inheritanceDecl : decl->getMembersOfType<InheritanceDecl>())
+        {
+            ensureDecl(inheritanceDecl, DeclCheckState::CanUseBaseOfInheritanceDecl);
+
+            // Look at the type being inherited from.
+            auto superType = inheritanceDecl->base.type;
+
+            if(auto errorType = as<ErrorType>(superType))
+            {
+                // Ignore any erroneous inheritance clauses.
+                continue;
+            }
+            else if(auto declRefType = as<DeclRefType>(superType))
+            {
+                if(auto interfaceDeclRef = declRefType->declRef.as<InterfaceDecl>())
+                {
+                    // Don't consider interface bases as candidates for
+                    // the tag type.
+                    continue;
+                }
+            }
+
+            if(tagType)
+            {
+                // We already found a tag type.
+                getSink()->diagnose(inheritanceDecl, Diagnostics::enumTypeAlreadyHasTagType);
+                getSink()->diagnose(tagTypeInheritanceDecl, Diagnostics::seePreviousTagType);
+                break;
+            }
+            else
+            {
+                tagType = superType;
+                tagTypeInheritanceDecl = inheritanceDecl;
+            }
+        }
+
+        // If a tag type has not been set, then we
+        // default it to the built-in `int` type.
+        //
+        // TODO: In the far-flung future we may want to distinguish
+        // `enum` types that have a "raw representation" like this from
+        // ones that are purely abstract and don't expose their
+        // type of their tag.
+        if(!tagType)
+        {
+            tagType = getSession()->getIntType();
+        }
+        else
+        {
+            // TODO: Need to establish that the tag
+            // type is suitable. (e.g., if we are going
+            // to allow raw values for case tags to be
+            // derived automatically, then the tag
+            // type needs to be some kind of integer type...)
+            //
+            // For now we will just be harsh and require it
+            // to be one of a few builtin types.
+            validateEnumTagType(tagType, tagTypeInheritanceDecl->loc);
+        }
+        decl->tagType = tagType;
+
+
+        // An `enum` type should automatically conform to the `__EnumType` interface.
+        // The compiler needs to insert this conformance behind the scenes, and this
+        // seems like the best place to do it.
+        {
+            // First, look up the type of the `__EnumType` interface.
+            RefPtr<Type> enumTypeType = getSession()->getEnumTypeType();
+
+            RefPtr<InheritanceDecl> enumConformanceDecl = new InheritanceDecl();
+            enumConformanceDecl->ParentDecl = decl;
+            enumConformanceDecl->loc = decl->loc;
+            enumConformanceDecl->base.type = getSession()->getEnumTypeType();
+            decl->Members.add(enumConformanceDecl);
+
+            // The `__EnumType` interface has one required member, the `__Tag` type.
+            // We need to satisfy this requirement automatically, rather than require
+            // the user to actually declare a member with this name (otherwise we wouldn't
+            // let them define a tag value with the name `__Tag`).
+            //
+            RefPtr<WitnessTable> witnessTable = new WitnessTable();
+            enumConformanceDecl->witnessTable = witnessTable;
+
+            Name* tagAssociatedTypeName = getSession()->getNameObj("__Tag");
+            Decl* tagAssociatedTypeDecl = nullptr;
+            if(auto enumTypeTypeDeclRefType = enumTypeType.dynamicCast<DeclRefType>())
+            {
+                if(auto enumTypeTypeInterfaceDecl = as<InterfaceDecl>(enumTypeTypeDeclRefType->declRef.getDecl()))
+                {
+                    for(auto memberDecl : enumTypeTypeInterfaceDecl->Members)
+                    {
+                        if(memberDecl->getName() == tagAssociatedTypeName)
+                        {
+                            tagAssociatedTypeDecl = memberDecl;
+                            break;
+                        }
+                    }
+                }
+            }
+            if(!tagAssociatedTypeDecl)
+            {
+                SLANG_DIAGNOSE_UNEXPECTED(getSink(), decl, "failed to find built-in declaration '__Tag'");
+            }
+
+            // Okay, add the conformance witness for `__Tag` being satisfied by `tagType`
+            witnessTable->requirementDictionary.Add(tagAssociatedTypeDecl, RequirementWitness(tagType));
+
+            // TODO: we actually also need to synthesize a witness for the conformance of `tagType`
+            // to the `__BuiltinIntegerType` interface, because that is a constraint on the
+            // associated type `__Tag`.
+
+            // TODO: eventually we should consider synthesizing other requirements for
+            // the min/max tag values, or the total number of tags, so that people don't
+            // have to declare these as additional cases.
+
+            enumConformanceDecl->SetCheckState(DeclCheckState::Checked);
+        }
+    }
+
+    void SemanticsDeclBodyVisitor::visitEnumDecl(EnumDecl* decl)
+    {
+        auto enumType = DeclRefType::Create(
+            getSession(),
+            makeDeclRef(decl));
+
+        auto tagType = decl->tagType;
+
+        // Check the enum cases in order.
+        for(auto caseDecl : decl->getMembersOfType<EnumCaseDecl>())
+        {
+            // Each case defines a value of the enum's type.
+            //
+            // TODO: If we ever support enum cases with payloads,
+            // then they would probably have a type that is a
+            // `FunctionType` from the payload types to the
+            // enum type.
+            //
+            // TODO(tfoley): the case should grab its type  when
+            // doing its own header checking, rather than rely on this...
+            caseDecl->type.type = enumType;
+
+            ensureDecl(caseDecl, DeclCheckState::Checked);
+        }
+
+        // For any enum case that didn't provide an explicit
+        // tag value, derived an appropriate tag value.
+        IntegerLiteralValue defaultTag = 0;
+        for(auto caseDecl : decl->getMembersOfType<EnumCaseDecl>())
+        {
+            if(auto explicitTagValExpr = caseDecl->tagExpr)
+            {
+                // This tag has an initializer, so it should establish
+                // the tag value for a successor case that doesn't
+                // provide an explicit tag.
+
+                RefPtr<IntVal> explicitTagVal = TryConstantFoldExpr(explicitTagValExpr);
+                if(explicitTagVal)
+                {
+                    if(auto constIntVal = as<ConstantIntVal>(explicitTagVal))
+                    {
+                        defaultTag = constIntVal->value;
+                    }
+                    else
+                    {
+                        // TODO: need to handle other possibilities here
+                        getSink()->diagnose(explicitTagValExpr, Diagnostics::unexpectedEnumTagExpr);
+                    }
+                }
+                else
+                {
+                    // If this happens, then the explicit tag value expression
+                    // doesn't seem to be a constant after all. In this case
+                    // we expect the checking logic to have applied already.
+                }
+            }
+            else
+            {
+                // This tag has no initializer, so it should use
+                // the default tag value we are tracking.
+                RefPtr<IntegerLiteralExpr> tagValExpr = new IntegerLiteralExpr();
+                tagValExpr->loc = caseDecl->loc;
+                tagValExpr->type = QualType(tagType);
+                tagValExpr->value = defaultTag;
+
+                caseDecl->tagExpr = tagValExpr;
+            }
+
+            // Default tag for the next case will be one more than
+            // for the most recent case.
+            //
+            // TODO: We might consider adding a `[flags]` attribute
+            // that modifies this behavior to be `defaultTagForCase <<= 1`.
+            //
+            defaultTag++;
+        }
+    }
+
+
+//    HERE
+
     void SemanticsVisitor::getGenericParams(
         GenericDecl*                        decl,
         List<Decl*>&                        outParams,
@@ -1764,19 +2538,6 @@ namespace Slang
         return 1;
     }
 
-    static bool isUnsizedArrayType(Type* type)
-    {
-        // Not an array?
-        auto arrayType = as<ArrayExpressionType>(type);
-        if (!arrayType) return false;
-
-        // Explicit element count given?
-        auto elementCount = arrayType->ArrayLength;
-        if (elementCount) return true;
-
-        return true;
-    }
-
     void SemanticsVisitor::maybeInferArraySizeForVariable(VarDeclBase* varDecl)
     {
         // Not an array?
@@ -2043,749 +2804,6 @@ namespace Slang
         }
     }
 
-    struct SemanticsDeclModifiersVisitor
-        : public SemanticsDeclVisitorBase
-        , public DeclVisitor<SemanticsDeclModifiersVisitor>
-    {
-        SemanticsDeclModifiersVisitor(SharedSemanticsContext* shared)
-            : SemanticsDeclVisitorBase(shared)
-        {}
-
-        void visitDeclGroup(DeclGroup*) {}
-
-        void visitDecl(Decl* decl)
-        {
-            checkModifiers(decl);
-        }
-    };
-
-    struct SemanticsDeclHeaderVisitor
-        : public SemanticsDeclVisitorBase
-        , public DeclVisitor<SemanticsDeclHeaderVisitor>
-    {
-        SemanticsDeclHeaderVisitor(SharedSemanticsContext* shared)
-            : SemanticsDeclVisitorBase(shared)
-        {}
-
-        void visitDecl(Decl*) {}
-        void visitDeclGroup(DeclGroup*) {}
-
-        void checkVarDeclCommon(RefPtr<VarDeclBase> varDecl)
-        {
-            // A variable that didn't have an explicit type written must
-            // have its type inferred from the initial-value expression.
-            //
-            if(!varDecl->type.exp)
-            {
-                // In this case we need to perform all checking of the
-                // variable (including semantic checking of the initial-value
-                // expression) during the first phase of checking.
-
-                auto initExpr = varDecl->initExpr;
-                if(!initExpr)
-                {
-                    getSink()->diagnose(varDecl, Diagnostics::varWithoutTypeMustHaveInitializer);
-                    varDecl->type.type = getSession()->getErrorType();
-                }
-                else
-                {
-                    initExpr = CheckExpr(initExpr);
-
-                    // TODO: We might need some additional steps here to ensure
-                    // that the type of the expression is one we are okay with
-                    // inferring. E.g., if we ever decide that integer and floating-point
-                    // literals have a distinct type from the standard int/float types,
-                    // then we would need to "decay" a literal to an explicit type here.
-
-                    varDecl->initExpr = initExpr;
-                    varDecl->type.type = initExpr->type;
-                }
-
-                // If we've gone down this path, then the variable
-                // declaration is actually pretty far along in checking
-                varDecl->SetCheckState(DeclCheckState::Checked);
-            }
-            else
-            {
-                // A variable with an explicit type is simpler, for the
-                // most part.
-
-                TypeExp typeExp = CheckUsableType(varDecl->type);
-                varDecl->type = typeExp;
-                if (varDecl->type.Equals(getSession()->getVoidType()))
-                {
-                    getSink()->diagnose(varDecl, Diagnostics::invalidTypeVoid);
-                }
-
-                // If this is an unsized array variable, then we first want to give
-                // it a chance to infer an array size from its initializer
-                //
-                // TODO(tfoley): May need to extend this to handle the
-                // multi-dimensional case...
-                //
-                if(isUnsizedArrayType(varDecl->type))
-                {
-                    if (auto initExpr = varDecl->initExpr)
-                    {
-                        initExpr = CheckTerm(initExpr);
-                        initExpr = coerce(varDecl->type.Ptr(), initExpr);
-                        varDecl->initExpr = initExpr;
-
-                        maybeInferArraySizeForVariable(varDecl);
-
-                        varDecl->SetCheckState(DeclCheckState::Checked);
-                    }
-                }
-                //
-                // Next we want to make sure that the declared (or inferred)
-                // size for the array meets whatever language-specific
-                // constraints we want to enforce (e.g., disallow empty
-                // arrays in specific cases)
-                //
-                validateArraySizeForVariable(varDecl);
-            }
-        }
-
-        void visitVarDecl(VarDecl* varDecl)
-        {
-            checkVarDeclCommon(varDecl);
-        }
-
-        void visitImportDecl(ImportDecl* decl)
-        {
-            // We need to look for a module with the specified name
-            // (whether it has already been loaded, or needs to
-            // be loaded), and then put its declarations into
-            // the current scope.
-
-            auto name = decl->moduleNameAndLoc.name;
-            auto scope = decl->scope;
-
-            // Try to load a module matching the name
-            auto importedModule = findOrImportModule(
-                getLinkage(),
-                name,
-                decl->moduleNameAndLoc.loc,
-                getSink());
-
-            // If we didn't find a matching module, then bail out
-            if (!importedModule)
-                return;
-
-            // Record the module that was imported, so that we can use
-            // it later during code generation.
-            auto importedModuleDecl = importedModule->getModuleDecl();
-            decl->importedModuleDecl = importedModuleDecl;
-
-            // Add the declarations from the imported module into the scope
-            // that the `import` declaration is set to extend.
-            //
-            importModuleIntoScope(scope.Ptr(), importedModuleDecl);
-
-            // Record the `import`ed module (and everything it depends on)
-            // as a dependency of the module we are compiling.
-            if(auto module = getModule(decl))
-            {
-                module->addModuleDependency(importedModule);
-            }
-        }
-
-        void visitGenericTypeParamDecl(GenericTypeParamDecl* decl)
-        {
-            // TODO: could probably push checking the default value
-            // for a generic type parameter later.
-            //
-            decl->initType = CheckProperType(decl->initType);
-        }
-
-        void visitGenericValueParamDecl(GenericValueParamDecl* decl)
-        {
-            checkVarDeclCommon(decl);
-        }
-
-        void visitGenericTypeConstraintDecl(GenericTypeConstraintDecl* decl)
-        {
-            // TODO: are there any other validations we can do at this point?
-            //
-            // There probably needs to be a kind of "occurs check" to make
-            // sure that the constraint actually applies to at least one
-            // of the parameters of the generic.
-            //
-            CheckConstraintSubType(decl->sub);
-            decl->sub = TranslateTypeNodeForced(decl->sub);
-            decl->sup = TranslateTypeNodeForced(decl->sup);
-        }
-
-        void visitGenericDecl(GenericDecl* genericDecl)
-        {
-            genericDecl->SetCheckState(DeclCheckState::ReadyForLookup);
-
-            for (auto m : genericDecl->Members)
-            {
-                if (auto typeParam = as<GenericTypeParamDecl>(m))
-                {
-                    ensureDecl(typeParam, DeclCheckState::ReadyForReference);
-                }
-                else if (auto valParam = as<GenericValueParamDecl>(m))
-                {
-                    ensureDecl(valParam, DeclCheckState::ReadyForReference);
-                }
-                else if (auto constraint = as<GenericTypeConstraintDecl>(m))
-                {
-                    ensureDecl(constraint, DeclCheckState::ReadyForReference);
-                }
-            }
-        }
-
-        void visitTypeDefDecl(TypeDefDecl* decl)
-        {
-            decl->type = CheckProperType(decl->type);
-        }
-
-        void visitGlobalGenericParamDecl(GlobalGenericParamDecl* decl)
-        {
-            // global generic param only allowed in global scope
-            auto program = as<ModuleDecl>(decl->ParentDecl);
-            if (!program)
-                getSink()->diagnose(decl, Slang::Diagnostics::globalGenParamInGlobalScopeOnly);
-        }
-
-        void visitAssocTypeDecl(AssocTypeDecl* decl)
-        {
-            // assoctype only allowed in an interface
-            auto interfaceDecl = as<InterfaceDecl>(decl->ParentDecl);
-            if (!interfaceDecl)
-                getSink()->diagnose(decl, Slang::Diagnostics::assocTypeInInterfaceOnly);
-        }
-
-        void visitFuncDecl(FuncDecl* funcDecl)
-        {
-            auto resultType = funcDecl->ReturnType;
-            if(resultType.exp)
-            {
-                resultType = CheckProperType(resultType);
-            }
-            else
-            {
-                resultType = TypeExp(getSession()->getVoidType());
-            }
-            funcDecl->ReturnType = resultType;
-
-
-            HashSet<Name*> paraNames;
-            for (auto & para : funcDecl->GetParameters())
-            {
-                ensureDecl(para, DeclCheckState::ReadyForReference);
-
-                if (paraNames.Contains(para->getName()))
-                {
-                    getSink()->diagnose(para, Diagnostics::parameterAlreadyDefined, para->getName());
-                }
-                else
-                    paraNames.Add(para->getName());
-            }
-
-            // One last bit of validation: check if we are redeclaring an existing function
-            ValidateFunctionRedeclaration(funcDecl);
-        }
-
-        void visitParamDecl(ParamDecl* paramDecl)
-        {
-            // TODO: This logic should be shared with the other cases of
-            // variable declarations. The main reason I am not doing it
-            // yet is that we use a `ParamDecl` with a null type as a
-            // special case in attribute declarations, and that could
-            // trip up the ordinary variable checks.
-
-            auto typeExpr = paramDecl->type;
-            if(typeExpr.exp)
-            {
-                typeExpr = CheckUsableType(typeExpr);
-                paramDecl->type = typeExpr;
-            }
-        }
-
-        void visitConstructorDecl(ConstructorDecl* decl)
-        {
-            for (auto& paramDecl : decl->GetParameters())
-            {
-                ensureDecl(paramDecl, DeclCheckState::CanUseTypeOfValueDecl);
-            }
-
-            // We need to compute the result tyep for this declaration,
-            // since it wasn't filled in for us.
-            decl->ReturnType.type = findResultTypeForConstructorDecl(decl);
-        }
-
-        void visitSubscriptDecl(SubscriptDecl* decl)
-        {
-            for (auto& paramDecl : decl->GetParameters())
-            {
-                ensureDecl(paramDecl, DeclCheckState::CanUseTypeOfValueDecl);
-            }
-
-            decl->ReturnType = CheckUsableType(decl->ReturnType);
-
-            // If we have a subscript declaration with no accessor declarations,
-            // then we should create a single `GetterDecl` to represent
-            // the implicit meaning of their declaration, so:
-            //
-            //      subscript(uint index) -> T;
-            //
-            // becomes:
-            //
-            //      subscript(uint index) -> T { get; }
-            //
-
-            bool anyAccessors = false;
-            for(auto accessorDecl : decl->getMembersOfType<AccessorDecl>())
-            {
-                anyAccessors = true;
-            }
-
-            if(!anyAccessors)
-            {
-                RefPtr<GetterDecl> getterDecl = new GetterDecl();
-                getterDecl->loc = decl->loc;
-
-                getterDecl->ParentDecl = decl;
-                decl->Members.add(getterDecl);
-            }
-        }
-
-        void visitAccessorDecl(AccessorDecl* decl)
-        {
-            // An accessor must appear nested inside a subscript declaration (today),
-            // or a property declaration (when we add them). It will derive
-            // its return type from the outer declaration, so we handle both
-            // of these checks at the same place.
-            auto parent = decl->ParentDecl;
-            if (auto parentSubscript = as<SubscriptDecl>(parent))
-            {
-                ensureDecl(parentSubscript, DeclCheckState::CanUseTypeOfValueDecl);
-                decl->ReturnType = parentSubscript->ReturnType;
-            }
-            // TODO: when we add "property" declarations, check for them here
-            else
-            {
-                getSink()->diagnose(decl, Diagnostics::accessorMustBeInsideSubscriptOrProperty);
-            }
-        }
-
-
-    };
-
-    struct SemanticsDeclBasesVisitor
-        : public SemanticsDeclVisitorBase
-        , public DeclVisitor<SemanticsDeclBasesVisitor>
-    {
-        SemanticsDeclBasesVisitor(SharedSemanticsContext* shared)
-            : SemanticsDeclVisitorBase(shared)
-        {}
-
-        void visitDecl(Decl*) {}
-        void visitDeclGroup(DeclGroup*) {}
-
-        void visitInheritanceDecl(InheritanceDecl* inheritanceDecl)
-        {
-            // check the type being inherited from
-            auto base = inheritanceDecl->base;
-            CheckConstraintSubType(base);
-            base = TranslateTypeNode(base);
-            inheritanceDecl->base = base;
-
-            // For now we only allow inheritance from interfaces, so
-            // we will validate that the type expression names an interface
-
-            if(auto declRefType = as<DeclRefType>(base.type))
-            {
-                if(auto interfaceDeclRef = declRefType->declRef.as<InterfaceDecl>())
-                {
-                    return;
-                }
-            }
-            else if(base.type.is<ErrorType>())
-            {
-                // If an error was already produced, don't emit a cascading error.
-                return;
-            }
-
-            // If type expression didn't name an interface, we'll emit an error here
-            // TODO: deal with the case of an error in the type expression (don't cascade)
-            getSink()->diagnose( base.exp, Diagnostics::expectedAnInterfaceGot, base.type);
-        }
-
-        void visitAggTypeDecl(AggTypeDecl* decl)
-        {
-            // TODO: We need to enumerate the bases here,
-            // and ideally form a "class precedence list"
-            // fromm them.
-
-            for( auto inheritanceDecl : decl->getMembersOfType<InheritanceDecl>() )
-            {
-                ensureDecl(inheritanceDecl, DeclCheckState::CanUseBaseOfInheritanceDecl);
-            }
-        }
-
-        void visitEnumDecl(EnumDecl* decl)
-        {
-            // Look at inheritance clauses, and
-            // see if one of them is making the enum
-            // "inherit" from a concrete type.
-            // This will become the "tag" type
-            // of the enum.
-            RefPtr<Type>        tagType;
-            InheritanceDecl*    tagTypeInheritanceDecl = nullptr;
-            for(auto inheritanceDecl : decl->getMembersOfType<InheritanceDecl>())
-            {
-                ensureDecl(inheritanceDecl, DeclCheckState::CanUseBaseOfInheritanceDecl);
-
-                // Look at the type being inherited from.
-                auto superType = inheritanceDecl->base.type;
-
-                if(auto errorType = as<ErrorType>(superType))
-                {
-                    // Ignore any erroneous inheritance clauses.
-                    continue;
-                }
-                else if(auto declRefType = as<DeclRefType>(superType))
-                {
-                    if(auto interfaceDeclRef = declRefType->declRef.as<InterfaceDecl>())
-                    {
-                        // Don't consider interface bases as candidates for
-                        // the tag type.
-                        continue;
-                    }
-                }
-
-                if(tagType)
-                {
-                    // We already found a tag type.
-                    getSink()->diagnose(inheritanceDecl, Diagnostics::enumTypeAlreadyHasTagType);
-                    getSink()->diagnose(tagTypeInheritanceDecl, Diagnostics::seePreviousTagType);
-                    break;
-                }
-                else
-                {
-                    tagType = superType;
-                    tagTypeInheritanceDecl = inheritanceDecl;
-                }
-            }
-
-            // If a tag type has not been set, then we
-            // default it to the built-in `int` type.
-            //
-            // TODO: In the far-flung future we may want to distinguish
-            // `enum` types that have a "raw representation" like this from
-            // ones that are purely abstract and don't expose their
-            // type of their tag.
-            if(!tagType)
-            {
-                tagType = getSession()->getIntType();
-            }
-            else
-            {
-                // TODO: Need to establish that the tag
-                // type is suitable. (e.g., if we are going
-                // to allow raw values for case tags to be
-                // derived automatically, then the tag
-                // type needs to be some kind of integer type...)
-                //
-                // For now we will just be harsh and require it
-                // to be one of a few builtin types.
-                validateEnumTagType(tagType, tagTypeInheritanceDecl->loc);
-            }
-            decl->tagType = tagType;
-
-
-            // An `enum` type should automatically conform to the `__EnumType` interface.
-            // The compiler needs to insert this conformance behind the scenes, and this
-            // seems like the best place to do it.
-            {
-                // First, look up the type of the `__EnumType` interface.
-                RefPtr<Type> enumTypeType = getSession()->getEnumTypeType();
-
-                RefPtr<InheritanceDecl> enumConformanceDecl = new InheritanceDecl();
-                enumConformanceDecl->ParentDecl = decl;
-                enumConformanceDecl->loc = decl->loc;
-                enumConformanceDecl->base.type = getSession()->getEnumTypeType();
-                decl->Members.add(enumConformanceDecl);
-
-                // The `__EnumType` interface has one required member, the `__Tag` type.
-                // We need to satisfy this requirement automatically, rather than require
-                // the user to actually declare a member with this name (otherwise we wouldn't
-                // let them define a tag value with the name `__Tag`).
-                //
-                RefPtr<WitnessTable> witnessTable = new WitnessTable();
-                enumConformanceDecl->witnessTable = witnessTable;
-
-                Name* tagAssociatedTypeName = getSession()->getNameObj("__Tag");
-                Decl* tagAssociatedTypeDecl = nullptr;
-                if(auto enumTypeTypeDeclRefType = enumTypeType.dynamicCast<DeclRefType>())
-                {
-                    if(auto enumTypeTypeInterfaceDecl = as<InterfaceDecl>(enumTypeTypeDeclRefType->declRef.getDecl()))
-                    {
-                        for(auto memberDecl : enumTypeTypeInterfaceDecl->Members)
-                        {
-                            if(memberDecl->getName() == tagAssociatedTypeName)
-                            {
-                                tagAssociatedTypeDecl = memberDecl;
-                                break;
-                            }
-                        }
-                    }
-                }
-                if(!tagAssociatedTypeDecl)
-                {
-                    SLANG_DIAGNOSE_UNEXPECTED(getSink(), decl, "failed to find built-in declaration '__Tag'");
-                }
-
-                // Okay, add the conformance witness for `__Tag` being satisfied by `tagType`
-                witnessTable->requirementDictionary.Add(tagAssociatedTypeDecl, RequirementWitness(tagType));
-
-                // TODO: we actually also need to synthesize a witness for the conformance of `tagType`
-                // to the `__BuiltinIntegerType` interface, because that is a constraint on the
-                // associated type `__Tag`.
-
-                // TODO: eventually we should consider synthesizing other requirements for
-                // the min/max tag values, or the total number of tags, so that people don't
-                // have to declare these as additional cases.
-
-                enumConformanceDecl->SetCheckState(DeclCheckState::Checked);
-            }
-        }
-
-        void visitExtensionDecl(ExtensionDecl* decl)
-        {
-            decl->targetType = CheckProperType(decl->targetType);
-
-            if (auto targetDeclRefType = as<DeclRefType>(decl->targetType))
-            {
-                // Attach our extension to that type as a candidate...
-                if (auto aggTypeDeclRef = targetDeclRefType->declRef.as<AggTypeDecl>())
-                {
-                    auto aggTypeDecl = aggTypeDeclRef.getDecl();
-                    decl->nextCandidateExtension = aggTypeDecl->candidateExtensions;
-                    aggTypeDecl->candidateExtensions = decl;
-                    return;
-                }
-            }
-            getSink()->diagnose(decl->targetType.exp, Diagnostics::unimplemented, "expected a nominal type here");
-        }
-    };
-
-        // Concretize interface conformances so that we have witnesses as required for lookup.
-        // for lookup.
-
-    struct SemanticsDeclConformancesVisitor
-        : public SemanticsDeclVisitorBase
-        , public DeclVisitor<SemanticsDeclConformancesVisitor>
-    {
-        SemanticsDeclConformancesVisitor(SharedSemanticsContext* shared)
-            : SemanticsDeclVisitorBase(shared)
-        {}
-
-        void visitDecl(Decl*) {}
-        void visitDeclGroup(DeclGroup*) {}
-
-        // Any user-defined type may have declared interface conformances,
-        // which we should check.
-        //
-        void visitAggTypeDecl(AggTypeDecl* aggTypeDecl)
-        {
-            checkAggTypeConformance(aggTypeDecl);
-        }
-
-        // Conformances can also come via `extension` declarations, and
-        // we should check them against the type(s) being extended.
-        //
-        void visitExtensionDecl(ExtensionDecl* extensionDecl)
-        {
-            checkExtensionConformance(extensionDecl);
-        }
-    };
-
-    struct SemanticsDeclBodyVisitor
-        : public SemanticsDeclVisitorBase
-        , public DeclVisitor<SemanticsDeclBodyVisitor>
-    {
-        SemanticsDeclBodyVisitor(SharedSemanticsContext* shared)
-            : SemanticsDeclVisitorBase(shared)
-        {}
-
-        void visitDecl(Decl*) {}
-        void visitDeclGroup(DeclGroup*) {}
-
-        void checkVarDeclCommon(RefPtr<VarDeclBase> varDecl)
-        {
-            if (auto initExpr = varDecl->initExpr)
-            {
-                initExpr = CheckTerm(initExpr);
-                initExpr = coerce(varDecl->type.Ptr(), initExpr);
-                varDecl->initExpr = initExpr;
-            }
-        }
-
-        void visitVarDecl(VarDecl* varDecl)
-        {
-            checkVarDeclCommon(varDecl);
-        }
-
-        void visitEnumCaseDecl(EnumCaseDecl* decl)
-        {
-            // An enum case had better appear inside an enum!
-            //
-            // TODO: Do we need/want to support generic cases some day?
-            auto parentEnumDecl = as<EnumDecl>(decl->ParentDecl);
-            SLANG_ASSERT(parentEnumDecl);
-
-            // The tag type should have already been set by
-            // the surrounding `enum` declaration.
-            auto tagType = parentEnumDecl->tagType;
-            SLANG_ASSERT(tagType);
-
-            // Need to check the init expression, if present, since
-            // that represents the explicit tag for this case.
-            if(auto initExpr = decl->tagExpr)
-            {
-                initExpr = CheckExpr(initExpr);
-                initExpr = coerce(tagType, initExpr);
-
-                // We want to enforce that this is an integer constant
-                // expression, but we don't actually care to retain
-                // the value.
-                CheckIntegerConstantExpression(initExpr);
-
-                decl->tagExpr = initExpr;
-            }
-        }
-
-        void visitEnumDecl(EnumDecl* decl)
-        {
-            auto enumType = DeclRefType::Create(
-                getSession(),
-                makeDeclRef(decl));
-
-            auto tagType = decl->tagType;
-
-            // Check the enum cases in order.
-            for(auto caseDecl : decl->getMembersOfType<EnumCaseDecl>())
-            {
-                // Each case defines a value of the enum's type.
-                //
-                // TODO: If we ever support enum cases with payloads,
-                // then they would probably have a type that is a
-                // `FunctionType` from the payload types to the
-                // enum type.
-                //
-                // TODO(tfoley): the case should grab its type  when
-                // doing its own header checking, rather than rely on this...
-                caseDecl->type.type = enumType;
-
-                ensureDecl(caseDecl, DeclCheckState::Checked);
-            }
-
-            // For any enum case that didn't provide an explicit
-            // tag value, derived an appropriate tag value.
-            IntegerLiteralValue defaultTag = 0;
-            for(auto caseDecl : decl->getMembersOfType<EnumCaseDecl>())
-            {
-                if(auto explicitTagValExpr = caseDecl->tagExpr)
-                {
-                    // This tag has an initializer, so it should establish
-                    // the tag value for a successor case that doesn't
-                    // provide an explicit tag.
-
-                    RefPtr<IntVal> explicitTagVal = TryConstantFoldExpr(explicitTagValExpr);
-                    if(explicitTagVal)
-                    {
-                        if(auto constIntVal = as<ConstantIntVal>(explicitTagVal))
-                        {
-                            defaultTag = constIntVal->value;
-                        }
-                        else
-                        {
-                            // TODO: need to handle other possibilities here
-                            getSink()->diagnose(explicitTagValExpr, Diagnostics::unexpectedEnumTagExpr);
-                        }
-                    }
-                    else
-                    {
-                        // If this happens, then the explicit tag value expression
-                        // doesn't seem to be a constant after all. In this case
-                        // we expect the checking logic to have applied already.
-                    }
-                }
-                else
-                {
-                    // This tag has no initializer, so it should use
-                    // the default tag value we are tracking.
-                    RefPtr<IntegerLiteralExpr> tagValExpr = new IntegerLiteralExpr();
-                    tagValExpr->loc = caseDecl->loc;
-                    tagValExpr->type = QualType(tagType);
-                    tagValExpr->value = defaultTag;
-
-                    caseDecl->tagExpr = tagValExpr;
-                }
-
-                // Default tag for the next case will be one more than
-                // for the most recent case.
-                //
-                // TODO: We might consider adding a `[flags]` attribute
-                // that modifies this behavior to be `defaultTagForCase <<= 1`.
-                //
-                defaultTag++;
-            }
-        }
-
-        void visitFuncDecl(FuncDecl* funcDecl)
-        {
-            if (auto body = funcDecl->Body)
-            {
-                checkBodyStmt(body, funcDecl);
-            }
-        }
-
-        void visitParamDecl(ParamDecl* paramDecl)
-        {
-            auto typeExpr = paramDecl->type;
-
-            // The "initializer" expression for a parameter represents
-            // a default argument value to use if an explicit one is
-            // not supplied.
-            if(auto initExpr = paramDecl->initExpr)
-            {
-                // We must check the expression and coerce it to the
-                // actual type of the parameter.
-                //
-                initExpr = CheckExpr(initExpr);
-                initExpr = coerce(typeExpr.type, initExpr);
-                paramDecl->initExpr = initExpr;
-
-                // TODO: a default argument expression needs to
-                // conform to other constraints to be valid.
-                // For example, it should not be allowed to refer
-                // to other parameters of the same function (or maybe
-                // only the parameters to its left...).
-
-                // A default argument value should not be allowed on an
-                // `out` or `inout` parameter.
-                //
-                // TODO: we could relax this by requiring the expression
-                // to yield an lvalue, but that seems like a feature
-                // with limited practical utility (and an easy source
-                // of confusing behavior).
-                //
-                // Note: the `InOutModifier` class inherits from `OutModifier`,
-                // so we only need to check for the base case.
-                //
-                if(paramDecl->FindModifier<OutModifier>())
-                {
-                    getSink()->diagnose(initExpr, Diagnostics::outputParameterCannotHaveDefaultValue);
-                }
-            }
-        }
-    };
 
     static void _dispatchDeclCheckingVisitor(Decl* decl, DeclCheckState state, SharedSemanticsContext* shared)
     {
