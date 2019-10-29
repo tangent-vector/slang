@@ -304,71 +304,112 @@ namespace Slang
     // This fill assert-fail if the object doesn't represent a literal value.
     IntegerLiteralValue GetIntVal(RefPtr<IntVal> val);
 
-    // Represents how much checking has been applied to a declaration.
+        /// Represents how much checking has been applied to a declaration.
     enum class DeclCheckState : uint8_t
     {
-        // The declaration has been parsed, but
-        // is otherwise completely unchecked.
-        //
+            /// The declaration has been parsed, but
+            /// is otherwise completely unchecked.
+            ///
         Unchecked,
 
+            /// Basic checks on the modifiers of the declaration have been applied.
+            ///
+            /// For example, when a declaration has attributes, the transformation
+            /// of an attribute from the parsed-but-unchecked form into a checked
+            /// form (in which it has the appropriate C++ subclass) happens here.
+            ///
         ModifieredChecked,
 
-        // The declaration's signature has been checked,
-        // to the point that it is ready to be referenced
-        // in other places (e.g., a variable has a type,
-        // a function has a signature, a type can be used
-        // as the type of another declaration, ...).
-        //
+            /// The declaration's basic signature has been checked to the point that
+            /// it is ready to be referenced in other places.
+            ///
+            /// For a value declaration like a variable or function, this means that
+            /// the type of the declaration can be queried.
+            ///
+            /// For a type declaration like a `struct` or `typedef` this means
+            /// that a `Type` referring to that declaration can be formed.
+            ///
         ReadyForReference,
 
-        ReadyForBases,
-        ReadyForLookup = ReadyForBases,
+            /// The declaration is ready for lookup operations to be performed.
+            ///
+            /// For type declarations (e.g., aggregate types, generic type parameters)
+            /// this means that any base type or constraint clauses have been
+            /// sufficiently checked so that we can enumerate the inheritance
+            /// hierarchy of the type and discover all its members.
+            ///
+        ReadyForLookup,
 
-        // The declaration (and its children) have been
-        // checked enough that lookup operations can
-        // be done "through" this declaration.
-        //
+            /// Any conformance declared on the declaration have been validated.
+            ///
+            /// In particular, this step means that a "witness table" has been
+            /// created to show  how a type satisfies the requirements of any
+            /// interfaces it conforms to.
+            ///
         ReadyForConformances,
 
-        // The declaration is fully checked, to the point
-        // that even body statements are validated.
-        //
+            /// The declaration is fully checked.
+            ///
+            /// This step includes any validation of the declaration that is
+            /// immaterial to clients code using the declaration, but that is
+            /// nonetheless relevant to checking correctness.
+            ///
+            /// The canonical example here is checking the body of functions.
+            /// Client code cannot depend on *how* a function is implemented,
+            /// but we still need to (eventually) check the bodies of all
+            /// functions, so it belongs in the last phase of checking.
+            ///
         Checked,
 
-        CanEnumerateBases = ReadyForBases,
-        CanUseBaseOfInheritanceDecl = ReadyForBases,
+        // For convenience at sites that call `ensureDecl()`, we define
+        // some aliases for the above states that are expressed in terms
+        // of what client code needs to be able to do with a declaration.
+        //
+        // These aliases can be changed over time if we decide to add
+        // more phases to semantic checking.
+
+        CanEnumerateBases = ReadyForLookup,
+        CanUseBaseOfInheritanceDecl = ReadyForLookup,
         CanUseTypeOfValueDecl = ReadyForReference,
-        CanUseExtensionTargetType = ReadyForBases,
+        CanUseExtensionTargetType = ReadyForLookup,
         CanUseAsType = ReadyForReference,
         CanUseFuncSignature = ReadyForReference,
         CanSpecializeGeneric = ReadyForReference,
-
         CanReadInterfaceRequirements = ReadyForLookup,
-
-        BeingCheckedBit = 0x80,
     };
 
+        /// A `DeclCheckState` plus a bit to track whether a declaration is currently being checked.
     struct DeclCheckStateExt
     {
     public:
         DeclCheckStateExt() {}
         DeclCheckStateExt(DeclCheckState state)
-            : raw(uint8_t(state))
+            : m_raw(uint8_t(state))
         {}
 
-        DeclCheckState getState() const { return DeclCheckState(raw & ~uint8_t(DeclCheckState::BeingCheckedBit)); }
+        enum : uint8_t
+        {
+                /// A flag to indicate that a declaration is being checked.
+                ///
+                /// The value of this flag is chosen so that it can be
+                /// represented in the bits of a `DeclCheckState` without
+                /// colliding with the bits that represent actual states.
+                ///
+            kBeingCheckedBit = 0x80,
+        };
+
+        DeclCheckState getState() const { return DeclCheckState(m_raw & ~kBeingCheckedBit); }
         void setState(DeclCheckState state)
         {
-            raw = (raw & uint8_t(DeclCheckState::BeingCheckedBit)) | uint8_t(state);
+            m_raw = (m_raw & kBeingCheckedBit) | uint8_t(state);
         }
 
-        bool isBeingChecked() const { return (raw & uint8_t(DeclCheckState::BeingCheckedBit)) != 0; }
+        bool isBeingChecked() const { return (m_raw & kBeingCheckedBit) != 0; }
 
         void setIsBeingChecked(bool isBeingChecked)
         {
-            raw = (raw & ~uint8_t(DeclCheckState::BeingCheckedBit))
-                | (isBeingChecked ? uint8_t(DeclCheckState::BeingCheckedBit) : 0);
+            m_raw = (m_raw & ~kBeingCheckedBit)
+                | (isBeingChecked ? kBeingCheckedBit : 0);
         }
 
         bool operator>=(DeclCheckState state) const
@@ -377,7 +418,7 @@ namespace Slang
         }
 
     private:
-        uint8_t raw = 0;
+        uint8_t m_raw = 0;
     };
 
     void addModifier(

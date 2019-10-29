@@ -726,7 +726,7 @@ namespace Slang
         {
             DeclCheckState::ModifieredChecked,
             DeclCheckState::ReadyForReference,
-            DeclCheckState::ReadyForBases,
+            DeclCheckState::ReadyForLookup,
             DeclCheckState::ReadyForLookup,
             DeclCheckState::Checked
         };
@@ -2799,7 +2799,7 @@ namespace Slang
             SemanticsDeclHeaderVisitor(shared).dispatch(decl);
             break;
 
-        case DeclCheckState::ReadyForBases:
+        case DeclCheckState::ReadyForLookup:
             SemanticsDeclBasesVisitor(shared).dispatch(decl);
             break;
 

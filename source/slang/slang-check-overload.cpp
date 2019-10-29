@@ -736,11 +736,6 @@ namespace Slang
                 // So the question is then whether a mismatch during the
                 // unification step should be taken as an immediate failure...
 
-                if(genericDeclRef.GetName()->text == "test")
-                {
-                    int f = 9; SLANG_UNUSED(f);
-                }
-
                 TryUnifyTypes(constraints, context.getArgType(aa), GetType(params[aa]));
 #endif
             }
@@ -1208,14 +1203,6 @@ namespace Slang
         else if (auto funcOverloadExpr2 = as<OverloadedExpr2>(funcExpr))
         {
             context.baseExpr = funcOverloadExpr2->base;
-        }
-
-        if(auto funcDeclRefExpr = as<DeclRefExpr>(funcExpr))
-        {
-            if(funcDeclRefExpr->declRef.GetName()->text == "test")
-            {
-                int f = 9; SLANG_UNUSED(f);
-            }
         }
 
         // TODO: We should have a special case here where an `InvokeExpr`
