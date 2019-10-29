@@ -749,6 +749,25 @@ namespace Slang
         visitor->ensureDecl(decl, state);
     }
 
+    void SemanticsVisitor::ensureDeclBase(DeclBase* declBase, DeclCheckState state)
+    {
+        if(auto decl = as<Decl>(declBase))
+        {
+            ensureDecl(decl, state);
+        }
+        else if(auto declGroup = as<DeclGroup>(declBase))
+        {
+            for(auto dd : declGroup->decls)
+            {
+                ensureDecl(dd, state);
+            }
+        }
+        else
+        {
+            SLANG_UNEXPECTED("unknown case for declaration");
+        }
+    }
+
     bool SemanticsVisitor::isDeclUsableAsStaticMember(
         Decl*   decl)
     {
@@ -819,26 +838,6 @@ namespace Slang
         /// caller takes responsibility for doing so.
         ///
     static void _dispatchDeclCheckingVisitor(Decl* decl, DeclCheckState state, SharedSemanticsContext* shared);
-
-    void SemanticsVisitor::ensureDeclBase(DeclBase* declBase, DeclCheckState state)
-    {
-        if(auto decl = as<Decl>(declBase))
-        {
-            ensureDecl(decl, state);
-        }
-        else if(auto declGroup = as<DeclGroup>(declBase))
-        {
-            for(auto dd : declGroup->decls)
-            {
-                ensureDecl(dd, state);
-            }
-        }
-        else
-        {
-            SLANG_UNEXPECTED("unknown case for declaration");
-        }
-    }
-
 
     // Make sure a declaration has been checked, so we can refer to it.
     // Note that this may lead to us recursively invoking checking,
@@ -931,6 +930,48 @@ namespace Slang
         // errors the next time somebody calls `ensureDecl()` on it.
         //
         decl->checkState.setIsBeingChecked(false);
+    }
+
+        /// Recursively ensure the tree of declarations under `decl` is in `state`.
+        ///
+        /// This function does *not* handle declarations nested in function bodies
+        /// because those cannot be meaningfully checked outside of the context
+        /// of their surrounding statement(s).
+        ///
+    static void _ensureAllDeclsRec(
+        SemanticsDeclVisitorBase*   visitor,
+        Decl*                       decl,
+        DeclCheckState              state)
+    {
+        // Ensure `decl` itself first.
+        visitor->ensureDecl(decl, state);
+
+        // If `decl` is a container, then we want to ensure its children.
+        if(auto containerDecl = as<ContainerDecl>(decl))
+        {
+            // As an exception, if any of the child is a `ScopeDecl`,
+            // then that indicates that it represents a scope for local
+            // declarations under a statement (e.g., in a function body),
+            // and we don't want to check such local declarations here.
+            //
+            for(auto childDecl : containerDecl->Members)
+            {
+                if(as<ScopeDecl>(childDecl))
+                    continue;
+
+                _ensureAllDeclsRec(visitor, childDecl, state);
+            }
+        }
+
+        // Note: the "inner" declaration of a `GenericDecl` is currently
+        // not exposed as one of its children (despite a `GenericDecl`
+        // being a `ContainerDecl`), so we need to handle the inner
+        // declaration of a generic as another case here.
+        //
+        if(auto genericDecl = as<GenericDecl>(decl))
+        {
+            _ensureAllDeclsRec(visitor, genericDecl->inner, state);
+        }
     }
 
     static bool isUnsizedArrayType(Type* type)
@@ -1130,48 +1171,6 @@ namespace Slang
             checkExtensionConformance(extensionDecl);
         }
     };
-
-        /// Recursively ensure the tree of declarations under `decl` is in `state`.
-        ///
-        /// This function does *not* handle declarations nested in function bodies
-        /// because those cannot be meaningfully checked outside of the context
-        /// of their surrounding statement(s).
-        ///
-    static void _ensureAllDeclsRec(
-        SemanticsDeclVisitorBase*   visitor,
-        Decl*                       decl,
-        DeclCheckState              state)
-    {
-        // Ensure `decl` itself first.
-        visitor->ensureDecl(decl, state);
-
-        // If `decl` is a container, then we want to ensure its children.
-        if(auto containerDecl = as<ContainerDecl>(decl))
-        {
-            // As an exception, if any of the child is a `ScopeDecl`,
-            // then that indicates that it represents a scope for local
-            // declarations under a statement (e.g., in a function body),
-            // and we don't want to check such local declarations here.
-            //
-            for(auto childDecl : containerDecl->Members)
-            {
-                if(as<ScopeDecl>(childDecl))
-                    continue;
-
-                _ensureAllDeclsRec(visitor, childDecl, state);
-            }
-        }
-
-        // Note: the "inner" declaration of a `GenericDecl` is currently
-        // not exposed as one of its children (despite a `GenericDecl`
-        // being a `ContainerDecl`), so we need to handle the inner
-        // declaration of a generic as another case here.
-        //
-        if(auto genericDecl = as<GenericDecl>(decl))
-        {
-            _ensureAllDeclsRec(visitor, genericDecl->inner, state);
-        }
-    }
 
         /// Recursively register any builtin declarations that need to be attached to the `session`.
         ///
