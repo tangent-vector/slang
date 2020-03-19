@@ -81,12 +81,14 @@ RWStructuredBuffer<int> gOutputBuffer;
 // Now we'll define a global shader parameter for the
 // random number generation strategy.
 //
+//TEST_INPUT:object(type=MyStrategy):name=gStrategy
 IRandomNumberGenerationStrategy gStrategy;
 
 // The other parameter (for the modifier) will be attached
 // the entry point instead, so that we are testing both
 // cases.
 //
+//TEST_INPUT:object(type=MyModifier):name=modifier
 [numthreads(4, 1, 1)]
 void computeMain(
     uniform IModifier   modifier,

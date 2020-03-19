@@ -3,6 +3,10 @@
 
 #include <stdint.h>
 
+#ifndef SLANG_HANDLE_RESULT_FAIL
+#define SLANG_HANDLE_RESULT_FAIL(x) assert(!"failure")
+#endif
+
 #include "../../slang-com-helper.h"
 #include "../../source/core/slang-writer.h"
 
