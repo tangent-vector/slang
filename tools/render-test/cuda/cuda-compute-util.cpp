@@ -979,6 +979,10 @@ static SlangResult _loadAndInvokeComputeProgram(
     ScopeCUDAModule cudaModule;
     SLANG_RETURN_ON_FAIL(cudaModule.load(kernelDesc.codeBegin));
 
+    CUdeviceptr globalParamsSymbol = 0;
+    size_t globalParamsSymbolSize = 0;
+    cuModuleGetGlobal(&globalParamsSymbol, &globalParamsSymbolSize, cudaModule, "SLANG_globalParams");
+
     slang::EntryPointReflection* entryPoint = nullptr;
     auto entryPointCount = reflection->getEntryPointCount();
     SLANG_ASSERT(entryPointCount == 1);
@@ -1001,7 +1005,18 @@ static SlangResult _loadAndInvokeComputeProgram(
 
     // Work out the args
     CUdeviceptr uniformCUDAData = MemoryCUDAResource::getCUDAData(bindRoot.getRootValue());
-    CUdeviceptr entryPointCUDAData = MemoryCUDAResource::getCUDAData(bindRoot.getEntryPointValue());
+
+    auto entryPointBindValue = bindRoot.getEntryPointValue();
+    CUdeviceptr entryPointCUDAData = MemoryCUDAResource::getCUDAData(entryPointBindValue);
+    size_t entryPointDataSize = entryPointBindValue ? entryPointBindValue->m_sizeInBytes : 0;
+
+    void* entryPointHostData = nullptr;
+    if(entryPointDataSize)
+    {
+        entryPointHostData = alloca(entryPointDataSize);
+        cudaMemcpy(entryPointHostData, (void*)entryPointCUDAData, entryPointDataSize, cudaMemcpyDeviceToHost);
+    }
+
 
     // NOTE! These are pointers to the cuda memory pointers
     void* args[] = { &entryPointCUDAData , &uniformCUDAData };
@@ -1009,14 +1024,32 @@ static SlangResult _loadAndInvokeComputeProgram(
     SlangUInt numThreadsPerAxis[3];
     entryPoint->getComputeThreadGroupSize(3, numThreadsPerAxis);
 
+    cudaMemcpyAsync(
+        (void*) globalParamsSymbol,
+        (void*) uniformCUDAData,
+        globalParamsSymbolSize,
+        cudaMemcpyDeviceToDevice,
+        cudaStream);
+
     // Launch
+
+    void* extraOptions[] = {
+        CU_LAUNCH_PARAM_BUFFER_POINTER, (void*) entryPointHostData,
+        CU_LAUNCH_PARAM_BUFFER_SIZE, &entryPointDataSize,
+        CU_LAUNCH_PARAM_END,
+    };
+
     auto cudaLaunchResult = cuLaunchKernel(cudaEntryPoint,
         dispatchSize[0], dispatchSize[1], dispatchSize[2], 
         int(numThreadsPerAxis[0]), int(numThreadsPerAxis[1]), int(numThreadsPerAxis[2]),        // Threads per block
         0,              // Shared memory size
         cudaStream,     // Stream. 0 is no stream.
-        args,           // Args
-        nullptr);       // extra
+
+        nullptr,
+        extraOptions);
+
+    //        args,           // Args
+//        nullptr);       // extra
 
     SLANG_CUDA_RETURN_ON_FAIL(cudaLaunchResult);
 

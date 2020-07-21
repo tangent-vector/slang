@@ -242,20 +242,19 @@ Result linkAndOptimizeIR(
         CollectEntryPointUniformParamsOptions passOptions;
         switch( target )
         {
-        default:
+        case CodeGenTarget::CUDASource:
             break;
 
         case CodeGenTarget::CPPSource:
-        case CodeGenTarget::CUDASource:
             passOptions.alwaysCreateCollectedParam = true;
+        default:
+            collectEntryPointUniformParams(irModule, passOptions);
+        #if 0
+            dumpIRIfEnabled(compileRequest, irModule, "ENTRY POINT UNIFORMS COLLECTED");
+        #endif
+            validateIRModuleIfEnabled(compileRequest, irModule);
             break;
         }
-
-        collectEntryPointUniformParams(irModule, passOptions);
-    #if 0
-        dumpIRIfEnabled(compileRequest, irModule, "ENTRY POINT UNIFORMS COLLECTED");
-    #endif
-        validateIRModuleIfEnabled(compileRequest, irModule);
     }
 
     switch( target )
@@ -630,11 +629,11 @@ Result linkAndOptimizeIR(
 
     switch( target )
     {
+    case CodeGenTarget::CUDASource:
     default:
         break;
 
     case CodeGenTarget::CPPSource:
-    case CodeGenTarget::CUDASource:
         moveGlobalVarInitializationToEntryPoints(irModule);
         introduceExplicitGlobalContext(irModule, target);
         convertEntryPointPtrParamsToRawPtrs(irModule);
