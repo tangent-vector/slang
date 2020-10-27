@@ -69,6 +69,16 @@ struct SpecializationContext
         //
         if(!inst) return true;
 
+        // An interface requirement entry should always be considered
+        // to be fully specialized, even if it hasn't been visited.
+        //
+        // Note: This logic is here to stop a circularity, where we
+        // can't mark an interface as used until its requirements are
+        // used, etc.
+        //
+        if(inst->op == kIROp_InterfaceRequirementEntry)
+            return true;
+
         return fullySpecializedInsts.Contains(inst);
     }
 
@@ -618,6 +628,7 @@ struct SpecializationContext
         return nullptr;
     }
 
+#if 0
     void maybeInsertGetExistentialValue(IRInst* inst)
     {
         // If inst has `ExistentialBox` type, we need to make sure
@@ -644,6 +655,7 @@ struct SpecializationContext
             }
         }
     }
+#endif
 
     // All of the machinery for generic specialization
     // has been defined above, so we will now walk
@@ -714,7 +726,7 @@ struct SpecializationContext
 
             // If inst represents a value of ExistentialBox type, all its uses
             // must be through a `GetValueFromExistentialBox` inst.
-            maybeInsertGetExistentialValue(inst);
+//            maybeInsertGetExistentialValue(inst);
 
             // For each instruction we process, we want to perform
             // a few steps.
@@ -1131,8 +1143,22 @@ struct SpecializationContext
         // (which implicitly determines the concrete type), and
         // the witness table `w.
         //
-        if(as<IRMakeExistential>(inst))
+        if( auto makeExistential = as<IRMakeExistential>(inst) )
+        {
+#if 1
+            // We need to be careful about the type that we'd be specializing
+            // to, since it needs to be visible to both the caller and calee.
+            //
+            auto concreteVal = makeExistential->getWrappedValue();
+            auto concreteType = concreteVal->getDataType();
+
+            // TODO: We probably need/want a more robust test here.
+            if(concreteType->op == kIROp_ExtractExistentialType)
+                return false;
+#endif
+
             return true;
+        }
 
         // A `wrapExistential(v, T0,w0, T1, w1, ...)` instruction
         // is just a generalization of `makeExistential`, so it
@@ -1531,7 +1557,11 @@ struct SpecializationContext
     UInt calcExistentialBoxSlotCount(IRType* type)
     {
     top:
-        if( as<IRExistentialBoxType>(type) )
+        if( as<IRBoundInterfaceType>(type) )
+        {
+            return 2;
+        }
+        else if( as<IRInterfaceType>(type) )
         {
             return 2;
         }
@@ -1793,13 +1823,15 @@ struct SpecializationContext
             auto index = inst->getIndex();
 
             auto val = wrapInst->getWrappedValue();
+            auto ptrType = cast<IRPtrTypeBase>(val->getDataType());
+            auto arrayType = cast<IRArrayTypeBase>(ptrType->getValueType());
+            auto elementType = arrayType->getElementType();
+
             auto resultType = inst->getFullType();
 
             IRBuilder builder;
             builder.sharedBuilder = &sharedBuilderStorage;
             builder.setInsertBefore(inst);
-
-            auto elementType = cast<IRArrayTypeBase>(val->getDataType())->getElementType();
 
             List<IRInst*> slotOperands;
             UInt slotOperandCount = wrapInst->getSlotOperandCount();
@@ -1809,7 +1841,8 @@ struct SpecializationContext
                 slotOperands.add(wrapInst->getSlotOperand(ii));
             }
 
-            auto newElementAddr = builder.emitElementAddress(elementType, val, index);
+            auto elementPtrType = builder.getPtrType(ptrType->op, elementType);
+            auto newElementAddr = builder.emitElementAddress(elementPtrType, val, index);
 
             auto newWrapExistentialInst = builder.emitWrapExistential(
                 resultType, newElementAddr, slotOperandCount, slotOperands.getBuffer());
@@ -1870,24 +1903,15 @@ struct SpecializationContext
 
         if( auto baseInterfaceType = as<IRInterfaceType>(baseType) )
         {
-            // A `BindExistentials<ISomeInterface, ConcreteType, ...>` can
-            // just be simplified to `ExistentialBox<ConcreteType>`.
-            //
-            // Note: We do *not* simplify straight to `ConcreteType`, because
-            // that would mess up the layout for aggregate types that
-            // contain interfaces. The logical indirection introduced
-            // by `ExistentialBox<...>` will be handled by a later type
-            // legalization pass that moved the type "pointed to" by
-            // the box out of line from other fields.
-
             // We always expect two slot operands, one for the concrete type
             // and one for the witness table.
             //
             SLANG_ASSERT(slotOperandCount == 2);
-            if(slotOperandCount <= 1) return;
+            if(slotOperandCount < 2) return;
 
             auto concreteType = (IRType*) type->getExistentialArg(0);
-            auto newVal = builder.getExistentialBoxType(concreteType, baseInterfaceType);
+            auto witnessTable = type->getExistentialArg(1);
+            auto newVal = builder.getBoundInterfaceType(baseInterfaceType, concreteType, witnessTable);
 
             addUsersToWorkList(type);
             type->replaceUsesWith(newVal);

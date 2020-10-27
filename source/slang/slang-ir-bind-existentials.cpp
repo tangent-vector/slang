@@ -318,8 +318,22 @@ struct BindExistentialSlots
         // new ones we'll be making.
         //
         List<IRUse*> usesToReplace;
-        for(auto use = inst->firstUse; use; use = use->nextUse )
+        for( auto use = inst->firstUse; use; use = use->nextUse )
+        {
+            // TODO: We don't want to replace uses that are
+            // just referring to an instruction to identify
+            // it (e.g., a global shader parameter)
+            //
+            auto user = use->getUser();
+            if(as<IRDecoration>(user))
+                continue;
+            if(as<IRAttr>(user))
+                continue;
+            if(as<IRLayout>(user))
+                continue;
+
             usesToReplace.add(use);
+        }
 
         // Now we can loop over our list of uses and replace each.
         //
@@ -329,6 +343,10 @@ struct BindExistentialSlots
             // use site.
             //
             builder.setInsertBefore(use->getUser());
+
+            // First, we extract the value stored in the "box" which
+            // is conceptually still a value of the original "full" type.
+            //
             auto newVal = builder.emitWrapExistential(
                 fullType,
                 inst,

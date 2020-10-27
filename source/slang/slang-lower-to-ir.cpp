@@ -1214,8 +1214,9 @@ struct ValLoweringVisitor : ValVisitor<ValLoweringVisitor, LoweredValInfo, Lower
             UNREACHABLE_RETURN(LoweredValInfo());
         }
 
+        auto subType = lowerType(context, val->sub);
         auto irWitnessTableBaseType = lowerType(context, supDeclRefType);
-        auto irWitnessTable = getBuilder()->createWitnessTable(irWitnessTableBaseType);
+        auto irWitnessTable = getBuilder()->createWitnessTable(irWitnessTableBaseType, subType);
 
         // Now we will iterate over the requirements (members) of the
         // interface and try to synthesize an appropriate value for each.
@@ -5223,7 +5224,7 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
                     {
                         // Need to construct a sub-witness-table
                         auto irWitnessTableBaseType = lowerType(subContext, astReqWitnessTable->baseType);
-                        irSatisfyingWitnessTable = subBuilder->createWitnessTable(irWitnessTableBaseType);
+                        irSatisfyingWitnessTable = subBuilder->createWitnessTable(irWitnessTableBaseType, irWitnessTable->getConcreteType());
                         auto mangledName = getMangledNameForConformanceWitness(
                             subContext->astBuilder,
                             astReqWitnessTable->witnessedType,
@@ -5349,7 +5350,14 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
         auto irWitnessTableBaseType = lowerType(subContext, superType);
 
         // Create the IR-level witness table
-        auto irWitnessTable = subBuilder->createWitnessTable(irWitnessTableBaseType);
+        auto irWitnessTable = subBuilder->createWitnessTable(irWitnessTableBaseType, nullptr);
+
+        // Register the value now, rather than later, to avoid any possible infinite recursion.
+        setGlobalValue(context, inheritanceDecl, LoweredValInfo::simple(irWitnessTable));
+
+        auto irSubType = lowerType(subContext, subType);
+        irWitnessTable->setOperand(0, irSubType);
+
         addLinkageDecoration(context, irWitnessTable, inheritanceDecl, mangledName.getUnownedSlice());
         if (parentDecl->findModifier<PublicModifier>())
         {
@@ -5357,8 +5365,6 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
             subBuilder->addKeepAliveDecoration(irWitnessTable);
         }
 
-        // Register the value now, rather than later, to avoid any possible infinite recursion.
-        setGlobalValue(context, inheritanceDecl, LoweredValInfo::simple(irWitnessTable));
 
         // Make sure that all the entries in the witness table have been filled in,
         // including any cases where there are sub-witness-tables for conformances
@@ -5973,6 +5979,7 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
         return LoweredValInfo::simple(assocType);
     }
 
+#if 0
     Dictionary<IRType*, IRWitnessTable*> placeholderWitnessTables;
     IRWitnessTable* getPlaceholderWitnessTable(IRType* type)
     {
@@ -5982,6 +5989,7 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
         placeholderWitnessTables[type] = w;
         return w;
     }
+#endif
 
     LoweredValInfo visitInterfaceDecl(InterfaceDecl* decl)
     {
@@ -6038,6 +6046,7 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
         for (auto assocTypeDecl : decl->getMembersOfType<AssocTypeDecl>())
         {
             ensureDecl(subContext, assocTypeDecl);
+#if 0
             // The type constraints on an associated type lowers to a dummy
             // witness table, since only the type of the witness table matters.
             for (auto constraintDecl : assocTypeDecl->getMembersOfType<TypeConstraintDecl>())
@@ -6046,6 +6055,7 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
                 auto placeholderWitnessTable = getPlaceholderWitnessTable(constraintInterfaceType);
                 setValue(context, constraintDecl, LoweredValInfo::simple(placeholderWitnessTable));
             }
+#endif
         }
 
         UInt entryIndex = 0;
@@ -6089,10 +6099,13 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
                         lowerType(context, constraintDecl->getSup().type);
                     auto witnessTableType =
                         getBuilder()->getWitnessTableType(constraintInterfaceType);
-                    irInterface->setOperand(entryIndex,
-                        subBuilder->createInterfaceRequirementEntry(constraintKey,
-                            witnessTableType));
+
+                    auto constraintEntry = subBuilder->createInterfaceRequirementEntry(constraintKey,
+                            witnessTableType);
+                    irInterface->setOperand(entryIndex, constraintEntry);
                     entryIndex++;
+
+                    setValue(context, constraintDecl, LoweredValInfo::simple(constraintEntry));
                 }
             }
             else
@@ -8124,6 +8137,11 @@ IRTypeLayout* lowerTypeLayout(
 
         IRMatrixTypeLayout::Builder builder(context->irBuilder, matrixTypeLayout->mode);
         return _lowerTypeLayoutCommon(context, &builder, matrixTypeLayout);
+    }
+    else if( auto existentialTypeLayout = as<ExistentialTypeLayout>(typeLayout) )
+    {
+        IRExistentialTypeLayout::Builder builder(context->irBuilder);
+        return _lowerTypeLayoutCommon(context, &builder, existentialTypeLayout);
     }
     else
     {

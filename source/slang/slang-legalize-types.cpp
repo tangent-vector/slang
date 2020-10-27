@@ -1172,19 +1172,31 @@ LegalType legalizeTypeImpl(
     {
         return LegalType::simple(type);
     }
-    else if( auto existentialPtrType = as<IRExistentialBoxType>(type))
+    else if( auto pseudoPtrType = as<IRPseudoPtrType>(type))
     {
-        // We want to transform an `ExistentialBox<T>` into just
-        // a `T`, with an `implicitDeref` to make sure that any
-        // pointer-related operations on the box Just Work.
+        // The type `PseudoPtr<T>` represents a type that conceptually
+        // behaves like a pointer to a `T`, but on a target platform
+        // that can't actually handle such a type.
         //
-        // Note: the logic here doesn't have to deal with moving
-        // existential-type fields to the end of their outer
-        // type(s) because that is mostly dealt with in the 
-        // case for struct types below.
+        // This type will be legalized by storing the `T` value somwhere
+        // else (so that it doesn't impact the layout of the parent
+        // `struct` type or other context it is placed in), without
+        // an actual indirection on that `T` value.
         //
-        auto legalValueType = legalizeType(context, existentialPtrType->getValueType());
-        return LegalType::implicitDeref(legalValueType);
+        // (Note that the logic for moving pseudo-pointer fields to
+        // the end of their outer type(s) is not dealt with here because
+        // it is mostly handled in the case for `struct` types below).
+        //
+        auto legalConcreteType = legalizeType(context, pseudoPtrType->getValueType());
+
+        // Code using the pseudo-pointer will have needed to "dereference"
+        // it to get from the `PseudoPtr<T>` to a plain `T`, and we now
+        // need to implicitly ignore that level of indirection when
+        // subequent operations directly reference the `T` we are
+        // producing via legalization.
+        //
+        return legalConcreteType;
+//        return LegalType::implicitDeref(legalConcreteType);
     }
     else if (auto ptrType = as<IRPtrTypeBase>(type))
     {
@@ -1310,7 +1322,7 @@ IRTypeLayout* getDerefTypeLayout(
     return typeLayout;
 }
 
-IRVarLayout* getFieldLayout(
+static IRVarLayout* getFieldLayoutImpl(
     IRTypeLayout*     typeLayout,
     IRInst*         fieldKey)
 {
@@ -1343,6 +1355,25 @@ IRVarLayout* getFieldLayout(
                 return ff->getLayout();
             }
         }
+    }
+
+    return nullptr;
+}
+
+IRVarLayout* getFieldLayout(
+    IRTypeLayout*   typeLayout,
+    IRInst*         fieldKey)
+{
+    if (!typeLayout)
+        return nullptr;
+
+    if(auto fieldLayout = getFieldLayoutImpl(typeLayout, fieldKey))
+        return fieldLayout;
+
+    if(auto pendingTypeLayout = typeLayout->getPendingDataTypeLayout())
+    {
+        if(auto fieldLayout = getFieldLayoutImpl(pendingTypeLayout, fieldKey))
+            return fieldLayout;
     }
 
     return nullptr;

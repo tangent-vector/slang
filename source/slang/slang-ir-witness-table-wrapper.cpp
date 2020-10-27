@@ -176,6 +176,13 @@ namespace Slang
             auto interfaceType = cast<IRInterfaceType>(witnessTable->getConformanceType());
             if (isBuiltin(interfaceType))
                 return;
+
+            auto concreteType = witnessTable->getConcreteType();
+            // Need to consider whether layout is such that this type "fits"
+            // in the any-value area and thus can be packed/unpacked.
+            if(!sharedContext->doesTypeFitInAnyValue(concreteType, interfaceType))
+                return;
+
             for (auto child : witnessTable->getChildren())
             {
                 auto entry = as<IRWitnessTableEntry>(child);

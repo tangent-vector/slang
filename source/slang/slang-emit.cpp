@@ -203,7 +203,7 @@ Result linkAndOptimizeIR(
     // use sites.
     //
     bindExistentialSlots(irModule, sink);
-#if 0
+#if 1
     dumpIRIfEnabled(compileRequest, irModule, "EXISTENTIALS BOUND");
 #endif
     validateIRModuleIfEnabled(compileRequest, irModule);
@@ -227,7 +227,7 @@ Result linkAndOptimizeIR(
     // passed using constant buffers.
     //
     collectGlobalUniformParameters(irModule, outLinkedIR.globalScopeVarLayout);
-#if 0
+#if 1
     dumpIRIfEnabled(compileRequest, irModule, "GLOBAL UNIFORMS COLLECTED");
 #endif
     validateIRModuleIfEnabled(compileRequest, irModule);
@@ -307,20 +307,33 @@ Result linkAndOptimizeIR(
 
     eliminateDeadCode(irModule);
 
+    LowerGenericsOptions lowerGenericsOptions = kLowerGeneicsOptions_None;
     switch (target)
     {
     case CodeGenTarget::CPPSource:
     case CodeGenTarget::CUDASource:
-        // For targets that supports dynamic dispatch, we need to lower the
-        // generics / interface types to ordinary functions and types using
-        // function pointers.
-        dumpIRIfEnabled(compileRequest, irModule, "BEFORE-LOWER-GENERICS");
-        lowerGenerics(targetRequest, irModule, sink);
-        dumpIRIfEnabled(compileRequest, irModule, "LOWER-GENERICS");
+        lowerGenericsOptions |= kLowerGenericsOption_AllowDynamicDispatch;
         break;
+
     default:
         break;
     }
+    switch (target)
+    {
+    case CodeGenTarget::CPPSource:
+        break;
+
+    default:
+        lowerGenericsOptions |= kLowerGenericsOption_SpecializeDispatchToKnownTargets;
+        break;
+    }
+
+    // For targets that supports dynamic dispatch, we need to lower the
+    // generics / interface types to ordinary functions and types using
+    // function pointers.
+    dumpIRIfEnabled(compileRequest, irModule, "BEFORE-LOWER-GENERICS");
+    lowerGenerics(targetRequest, irModule, sink, lowerGenericsOptions);
+    dumpIRIfEnabled(compileRequest, irModule, "LOWER-GENERICS");
 
     if (sink->getErrorCount() != 0)
         return SLANG_FAIL;
@@ -571,7 +584,7 @@ Result linkAndOptimizeIR(
             break;
         }
 
-        legalizeByteAddressBufferOps(session, irModule, byteAddressBufferOptions);
+        legalizeByteAddressBufferOps(session, targetRequest, irModule, byteAddressBufferOptions);
     }
 
     // For CUDA targets only, we will need to turn operations

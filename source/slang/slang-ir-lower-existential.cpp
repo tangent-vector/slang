@@ -83,12 +83,12 @@ namespace Slang
             processExtractExistentialElement(inst, 0);
         }
 
-        void processGetValueFromExistentialBox(IRGetValueFromExistentialBox* inst)
+        void processGetValueFromBoundInterface(IRGetValueFromBoundInterface* inst)
         {
             // Currently we do not translate on HLSL/GLSL targets,
             // since we don't attempt to actually layout the value inside an fixed sized
             // existential box for these targets.
-            if (isCPUTarget(sharedContext->targetReq) || isCUDATarget(sharedContext->targetReq))
+//            if (isCPUTarget(sharedContext->targetReq) || isCUDATarget(sharedContext->targetReq))
             {
                 IRBuilder builderStorage;
                 auto builder = &builderStorage;
@@ -96,13 +96,40 @@ namespace Slang
                 builder->setInsertBefore(inst);
 
                 auto element = extractTupleElement(builder, inst->getOperand(0), 2);
-                // TODO: it is not technically sound to use `getAddress` on a temporary value.
-                // We probably need to develop a mechanism to allow a temporary value to be used
-                // in the place of a pointer.
-                auto elementAddr =
-                    builder->emitGetAddress(builder->getPtrType(element->getDataType()), element);
-                auto reinterpretAddr = builder->emitBitCast(inst->getDataType(), elementAddr);
-                inst->replaceUsesWith(reinterpretAddr);
+                auto elementType = element->getDataType();
+
+                IRInst* replacement = nullptr;
+                if(as<IRPseudoPtrType>(elementType))
+                {
+                    replacement = element; // TODO: need to emit a pseudo-load here...
+                }
+                else
+                {
+                    SLANG_ASSERT(as<IRAnyValueType>(elementType));
+                    replacement = builder->emitUnpackAnyValue(inst->getFullType(), element);
+                }
+#if 0
+
+                if(as<IRAnyValueType>(element->getDataType()))
+                {
+                    // TODO: it is not technically sound to use `getAddress` on a temporary value.
+                    // We probably need to develop a mechanism to allow a temporary value to be used
+                    // in the place of a pointer.
+                    auto elementAddr =
+                        builder->emitGetAddress(builder->getPtrType(element->getDataType()), element);
+                    auto reinterpretAddr = builder->emitBitCast(inst->getDataType(), elementAddr);
+                }
+                else
+                {
+                    // If we hit this case, then the payload field in the tuple is
+                    // expected to be a "pseudo-pointer," which needs to be converted
+                    // into an actual value of the correct type via a pseudo-load.
+                    //
+                    SLANG_ASSERT(as<IRPseudoPtrType>(element->getDataType()));
+                }
+#endif
+
+                inst->replaceUsesWith(replacement);
                 inst->removeAndDeallocate();
             }
         }
@@ -113,9 +140,9 @@ namespace Slang
             {
                 processMakeExistential(makeExistential);
             }
-            else if (auto getExistentialValue = as<IRGetValueFromExistentialBox>(inst))
+            else if (auto getValueFromBoundInterface = as<IRGetValueFromBoundInterface>(inst))
             {
-                processGetValueFromExistentialBox(getExistentialValue);
+                processGetValueFromBoundInterface(getValueFromBoundInterface);
             }
             else if (auto extractExistentialVal = as<IRExtractExistentialValue>(inst))
             {

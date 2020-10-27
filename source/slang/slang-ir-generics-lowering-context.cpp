@@ -66,7 +66,7 @@ namespace Slang
 
         // For now the only type info we encapsualte is type size.
         IRSizeAndAlignment sizeAndAlignment;
-        getNaturalSizeAndAlignment((IRType*)typeInst, &sizeAndAlignment);
+        getNaturalSizeAndAlignment(targetReq, (IRType*)typeInst, &sizeAndAlignment);
         builder->addRTTITypeSizeDecoration(result, sizeAndAlignment.size);
 
         // Give a name to the rtti object.
@@ -118,12 +118,13 @@ namespace Slang
         }
         if (anyValueSize == kInvalidAnyValueSize)
         {
-            sink->diagnose(type->sourceLoc, Diagnostics::dynamicInterfaceLacksAnyValueSizeAttribute, type);
+            anyValueSize = kDefaultAnyValueSize;
+//            sink->diagnose(type->sourceLoc, Diagnostics::dynamicInterfaceLacksAnyValueSizeAttribute, type);
         }
         return builder->getAnyValueType(anyValueSize);
     }
 
-    IRType* SharedGenericsLoweringContext::lowerType(IRBuilder* builder, IRInst* paramType, const Dictionary<IRInst*, IRInst*>& typeMapping)
+    IRType* SharedGenericsLoweringContext::lowerType(IRBuilder* builder, IRInst* paramType, const Dictionary<IRInst*, IRInst*>& typeMapping, IRType* concreteType)
     {
         if (!paramType)
             return nullptr;
@@ -137,7 +138,7 @@ namespace Slang
             return builder->getRTTIHandleType();
         }
 
-        IRIntegerValue anyValueSize = kInvalidAnyValueSize;
+//        IRIntegerValue anyValueSize = kInvalidAnyValueSize;
         switch (paramType->op)
         {
         case kIROp_WitnessTableType:
@@ -151,19 +152,22 @@ namespace Slang
             {
                 if (isBuiltin(anyValueSizeDecor->getConstraintType()))
                     return (IRType*)paramType;
-                anyValueSize = getInterfaceAnyValueSize(anyValueSizeDecor->getConstraintType(), paramType->sourceLoc);
+                auto anyValueSize = getInterfaceAnyValueSize(anyValueSizeDecor->getConstraintType(), paramType->sourceLoc);
                 return builder->getAnyValueType(anyValueSize);
             }
-            sink->diagnose(paramType, Diagnostics::unconstrainedGenericParameterNotAllowedInDynamicFunction, paramType);
-            return builder->getAnyValueType(kInvalidAnyValueSize);
+//            sink->diagnose(paramType, Diagnostics::unconstrainedGenericParameterNotAllowedInDynamicFunction, paramType);
+            return builder->getAnyValueType(kDefaultAnyValueSize);
         }
         case kIROp_ThisType:
+        {
+
             if (isBuiltin(cast<IRThisType>(paramType)->getConstraintType()))
                 return (IRType*)paramType;
-            anyValueSize = getInterfaceAnyValueSize(
+            auto anyValueSize = getInterfaceAnyValueSize(
                 cast<IRThisType>(paramType)->getConstraintType(),
                 paramType->sourceLoc);
             return builder->getAnyValueType(anyValueSize);
+        }
         case kIROp_AssociatedType:
         {
             return lowerAssociatedType(builder, paramType);
@@ -172,12 +176,49 @@ namespace Slang
         {
             if (isBuiltin(paramType))
                 return (IRType*)paramType;
-            // An existential type translates into a tuple of (AnyValue, WitnessTable, RTTI*)
-            anyValueSize = getInterfaceAnyValueSize(paramType, paramType->sourceLoc);
+
+            // TODO(tfoley) if `concreteType` is set, then we need to take it into account
+            // and make sure that the tuple we build either slots it into the "any value"
+            // if it will fit, or as a kind of pseudo-ptr if it doesn't fit.
+            //
+            auto anyValueSize = getInterfaceAnyValueSize(paramType, paramType->sourceLoc);
+
+            IRType* pendingType = nullptr;
+            if( concreteType )
+            {
+                IRSizeAndAlignment sizeAndAlignment;
+                Result result = getNaturalSizeAndAlignment(targetReq, concreteType, &sizeAndAlignment);
+                if(SLANG_FAILED(result) || (sizeAndAlignment.size > anyValueSize))
+                {
+                    // The value does not fit, either because it is too large,
+                    // or because it includes types that cannot be stored
+                    // in uniform/ordinary memory for this target.
+                    //
+                    // We need to construct a placeholder to represent the data
+                    // that will actually be stored out-of-line, with the understanding
+                    // that the placeholder will be moved to the correct location
+                    // by a later type legalization step.
+
+                    // TODO: actually construct something here...
+                    pendingType = builder->getPseudoPtrType(concreteType);
+                }
+            }
+
+            // An existential type translates into a tuple of (RTTI, witness table, any-value)
             auto anyValueType = builder->getAnyValueType(anyValueSize);
             auto witnessTableType = builder->getWitnessTableIDType((IRType*)paramType);
             auto rttiType = builder->getRTTIHandleType();
-            auto tupleType = builder->getTupleType(rttiType, witnessTableType, anyValueType);
+
+            IRType* tupleType = nullptr;
+            if( pendingType )
+            {
+                tupleType = builder->getTupleType(rttiType, witnessTableType, pendingType, anyValueType);
+            }
+            else
+            {
+                tupleType = builder->getTupleType(rttiType, witnessTableType, anyValueType);
+            }
+
             return tupleType;
         }
         case kIROp_lookup_interface_method:
@@ -196,12 +237,12 @@ namespace Slang
                 interfaceType,
                 lookupInterface->getRequirementKey());
             SLANG_ASSERT(reqVal && reqVal->op == kIROp_AssociatedType);
-            return lowerType(builder, reqVal, typeMapping);
+            return lowerType(builder, reqVal, typeMapping, nullptr);
         }
-        case kIROp_ExistentialBoxType:
+        case kIROp_BoundInterfaceType:
         {
-            auto existentialBoxType = static_cast<IRExistentialBoxType*>(paramType);
-            return lowerType(builder, existentialBoxType->getInterfaceType(), typeMapping);
+            auto boundInterfaceType = static_cast<IRBoundInterfaceType*>(paramType);
+            return lowerType(builder, boundInterfaceType->getInterfaceType(), typeMapping, boundInterfaceType->getConcreteType());
         }
         default:
         {
@@ -209,7 +250,7 @@ namespace Slang
             List<IRInst*> loweredOperands;
             for (UInt i = 0; i < paramType->getOperandCount(); i++)
             {
-                loweredOperands.add(lowerType(builder, paramType->getOperand(i), typeMapping));
+                loweredOperands.add(lowerType(builder, paramType->getOperand(i), typeMapping, nullptr));
                 if (loweredOperands.getLast() != paramType->getOperand(i))
                     translated = true;
             }
@@ -237,12 +278,35 @@ namespace Slang
 
     IRIntegerValue SharedGenericsLoweringContext::getInterfaceAnyValueSize(IRInst* type, SourceLoc usageLocation)
     {
+        SLANG_UNUSED(usageLocation);
+
         if (auto decor = type->findDecoration<IRAnyValueSizeDecoration>())
         {
             return decor->getSize();
         }
-        sink->diagnose(type->sourceLoc, Diagnostics::dynamicInterfaceLacksAnyValueSizeAttribute, type);
-        sink->diagnose(usageLocation, Diagnostics::seeInterfaceUsage, type);
-        return kInvalidAnyValueSize;
+        return kDefaultAnyValueSize;
+//        sink->diagnose(type->sourceLoc, Diagnostics::dynamicInterfaceLacksAnyValueSizeAttribute, type);
+//        sink->diagnose(usageLocation, Diagnostics::seeInterfaceUsage, type);
+//        return kInvalidAnyValueSize;
     }
+
+
+    bool SharedGenericsLoweringContext::doesTypeFitInAnyValue(IRType* concreteType, IRInterfaceType* interfaceType)
+    {
+        auto anyValueSize = getInterfaceAnyValueSize(interfaceType, interfaceType->sourceLoc);
+
+        IRSizeAndAlignment sizeAndAlignment;
+        Result result = getNaturalSizeAndAlignment(targetReq, concreteType, &sizeAndAlignment);
+        if(SLANG_FAILED(result) || (sizeAndAlignment.size > anyValueSize))
+        {
+            // The value does not fit, either because it is too large,
+            // or because it includes types that cannot be stored
+            // in uniform/ordinary memory for this target.
+            //
+            return false;
+        }
+
+        return true;
+    }
+
 }

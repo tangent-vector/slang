@@ -107,14 +107,16 @@ namespace Slang
     }
 
     void lowerGenerics(
-        TargetRequest* targetReq,
-        IRModule* module,
-        DiagnosticSink* sink)
+        TargetRequest*          targetReq,
+        IRModule*               module,
+        DiagnosticSink*         sink,
+        LowerGenericsOptions    options)
     {
         SharedGenericsLoweringContext sharedContext;
         sharedContext.targetReq = targetReq;
         sharedContext.module = module;
         sharedContext.sink = sink;
+        sharedContext.options = options;
 
         // Replace all `makeExistential` insts with `makeExistentialWithRTTI`
         // before making any other changes. This is necessary because a parameter of
@@ -142,9 +144,12 @@ namespace Slang
         if (sink->getErrorCount() != 0)
             return;
 
-        generateWitnessTableWrapperFunctions(&sharedContext);
-        if (sink->getErrorCount() != 0)
-            return;
+//        if( options & kLowerGenericsOption_AllowDynamicDispatch )
+        {
+            generateWitnessTableWrapperFunctions(&sharedContext);
+            if (sink->getErrorCount() != 0)
+                return;
+        }
 
         generateAnyValueMarshallingFunctions(&sharedContext);
         if (sink->getErrorCount() != 0)

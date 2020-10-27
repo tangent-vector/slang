@@ -238,6 +238,13 @@ struct CollectGlobalUniformParametersContext
             }
             for( auto use : uses )
             {
+                auto user = use->user;
+                if(auto layoutAttr = as<IRStructFieldLayoutAttr>(user))
+                {
+                    layoutAttr->setOperand(0, fieldKey);
+                    continue;
+                }
+
                 // For each use site for the global parameter, we will
                 // insert new code right before the instruction that uses
                 // the parameter.
@@ -250,7 +257,6 @@ struct CollectGlobalUniformParametersContext
                 // so that these loads can be merged/moved without concern
                 // for aliasing.
                 //
-                auto user = use->user;
                 builder->setInsertBefore(user);
 
                 IRInst* value = nullptr;
