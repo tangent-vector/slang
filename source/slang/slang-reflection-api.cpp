@@ -1251,6 +1251,85 @@ namespace Slang
             return index;
         }
 
+        void _addDescriptorRanges(
+            TypeLayout*                                 typeLayout,
+            BindingRangePathLink*                       path,
+            LayoutSize                                  multiplier,
+            TypeLayout::ExtendedInfo::BindingRangeInfo& bindingRange)
+        {
+            bindingRange.descriptorSetIndex = -1;
+            bindingRange.firstDescriptorRangeIndex = 0;
+
+            for(auto resInfo : typeLayout->resourceInfos)
+            {
+                auto kind = resInfo.kind;
+                auto bindingType = _calcBindingType(typeLayout, kind);
+
+                // This leaf field will map to a single binding range and,
+                // if it is appropriate, a single descriptor range.
+                //
+                auto count = resInfo.count * multiplier;
+                auto indexOffset = _calcIndexOffset(path, kind);
+                auto spaceOffset = _calcSpaceOffset(path, kind);
+
+                switch( kind )
+                {
+                case LayoutResourceKind::RegisterSpace:
+                case LayoutResourceKind::VaryingInput:
+                case LayoutResourceKind::VaryingOutput:
+                case LayoutResourceKind::HitAttributes:
+                case LayoutResourceKind::RayPayload:
+                    // Resource kinds that represent "varying" input/output
+                    // do not manifest as entries in API descriptor tables.
+                    //
+                    // TODO: Neither do root constants, if we are being
+                    // precise. This API really needs to carefully match
+                    // the semantics of the target platform/API in terms
+                    // of what things are descriptor-bound and which are
+                    // not, so that a user can easily allocate the platform-specific
+                    // descriptor sets using this info.
+                    //
+                    // (That said, we are purposefully *not* breaking apart
+                    // samplers and SRV/UAV/CBV stuff for our D3D reflection
+                    // of descriptor sets. It seems like the policy here
+                    // really requires careful thought)
+                    //
+                    // TODO: Maybe the best answer is to leave decomposition
+                    // of stuff into descriptor sets up to the application
+                    // layer? This is especially true if a common case would
+                    // be an application that doesn't support arbitrary manual
+                    // binding of parameters to register/spaces.
+                    //
+                    break;
+
+                default:
+                    {
+                        TypeLayout::ExtendedInfo::DescriptorRangeInfo descriptorRange;
+                        descriptorRange.kind = kind;
+                        descriptorRange.bindingType = bindingType;
+                        descriptorRange.count = count;
+                        descriptorRange.indexOffset = indexOffset;
+
+                        RefPtr<TypeLayout::ExtendedInfo::DescriptorSetInfo> descriptorSet;
+                        if( bindingRange.descriptorSetIndex == -1 )
+                        {
+                            bindingRange.descriptorSetIndex = _findOrAddDescriptorSet(spaceOffset);
+                            descriptorSet = m_extendedInfo->m_descriptorSets[bindingRange.descriptorSetIndex];
+                            bindingRange.firstDescriptorRangeIndex = descriptorSet->descriptorRanges.getCount();
+                        }
+                        else
+                        {
+                            descriptorSet = m_extendedInfo->m_descriptorSets[bindingRange.descriptorSetIndex];
+                        }
+
+                        descriptorSet->descriptorRanges.add(descriptorRange);
+                        bindingRange.descriptorRangeCount++;
+                    }
+                    break;
+                }
+            }
+        }
+
         void addRangesRec(TypeLayout* typeLayout, BindingRangePathLink* path, LayoutSize multiplier)
         {
             if( auto structTypeLayout = as<StructTypeLayout>(typeLayout) )
@@ -1537,47 +1616,36 @@ namespace Slang
             }
             else if(asInterfaceType(typeLayout->type))
             {
-                // An `interface` type should introduce a sub-object range,
-                // with no concrete descriptor ranges to store its value
-                // (since we don't know until runtime what type of
-                // value will be plugged in).
+                // An `interface` type should introduce a binding range and a matching
+                // sub-object range.
                 //
-
-                LayoutResourceKind kind = LayoutResourceKind::ExistentialObjectParam;
-                auto count = multiplier;
-                auto spaceOffset = _calcSpaceOffset(path, kind);
-
-                Int descriptorSetIndex = _findOrAddDescriptorSet(spaceOffset);
-                auto descriptorSet = m_extendedInfo->m_descriptorSets[descriptorSetIndex];
-
                 TypeLayout::ExtendedInfo::BindingRangeInfo bindingRange;
                 bindingRange.leafTypeLayout = typeLayout;
                 bindingRange.bindingType = SLANG_BINDING_TYPE_EXISTENTIAL_VALUE;
                 bindingRange.count = multiplier;
-                bindingRange.descriptorSetIndex = descriptorSetIndex;
-                bindingRange.firstDescriptorRangeIndex = descriptorSet->descriptorRanges.getCount();
-                bindingRange.descriptorRangeCount = 1;
 
                 TypeLayout::ExtendedInfo::SubObjectRangeInfo subObjectRange;
                 subObjectRange.bindingRangeIndex = m_extendedInfo->m_bindingRanges.getCount();
 
+                // Depending on the target, an interface or existential-typed
+                // field may need to introduce one or more concrete descriptor
+                // ranges.
+                //
+                // We will defer to the `_addDescriptorRanges` subroutine, to
+                // add all relevant descriptor ranges required based on the
+                // type of data stored in `typeLayout`.
+                //
+                _addDescriptorRanges(typeLayout, path, multiplier, bindingRange);
+
                 m_extendedInfo->m_bindingRanges.add(bindingRange);
                 m_extendedInfo->m_subObjectRanges.add(subObjectRange);
             }
-            // TODO: We need to handle `interface` types here, because they are
-            // another case that introduces a "sub-object" for the purposes of
-            // application-side allocation.
-            //
-            // TODO: There are a few cases of "leaf" fields that might
-            // still result in multiple descriptors (or at least multiple
-            // `LayoutResourceKind`s) depending on the target.
-            //
-            // For eample, combined texture-sampler types should be treated
-            // as "leaf" fields for this code (since a portable engine would
-            // need to abstract over them), but would map to two descriptors
-            // on targets that don't actually support combining them.
             else
             {
+                // Here we have the catch-all case that handles "leaf" fields
+                // that should never introduce a sub-object range, but might
+                // need to introduce a binding range and/or descriptor ranges.
+
                 Int resourceKindCount = typeLayout->resourceInfos.getCount();
                 if(resourceKindCount == 0)
                 {
@@ -1589,11 +1657,27 @@ namespace Slang
                 }
                 else
                 {
-                    // `resourceKindCount` should be 1 in most cases.
-                    // However if this field is a buffer of existential type,
-                    // the resourceInfo array will contain additional ExistentialTypeParam
-                    // and ExistentialObjectParam entries. These entries doesn't affect the
-                    // logic here, so we only need to care about the first entry.
+                    // We expect that in most cases `resourceKindCount` will be
+                    // one, because a given "leaf" field usually only consumes
+                    // a single kind of resources, but there are still cases
+                    // that will violate this expectation.
+                    //
+                    // TODO: The logic here currently only looks at the *first*
+                    // entry int the `resourceInfos` array, which is not
+                    // necessarily guaranteed to represent the most important
+                    // kind of resources consumed by a parameter (most other
+                    // places in the code do *not* treat the order of entries
+                    // in that array as significant). The logic here is relying
+                    // on the ordering to allow us to ignore the existential-value
+                    // and existential-type cases, and we may need to be careful
+                    // about that choice.
+                    //
+                    // TODO: The choice here to only include a descriptor range
+                    // for the first resource kind that is present already seems
+                    // suspect. We could seemingly invoke `_addDescriptorRanges`
+                    // here ot ensure that all the resource kinds a type consumes
+                    // are properly reflected.
+                    //
                     auto& resInfo = typeLayout->resourceInfos[0];
                     LayoutResourceKind kind = resInfo.kind;
 

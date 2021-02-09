@@ -310,6 +310,14 @@ public:
             SlangInt rangeIndexInDescriptorSet =
                 m_elementTypeLayout->getBindingRangeFirstDescriptorRangeIndex(r);
 
+            // TODO: This logic assumes that for any binding range that might consume
+            // multiple kinds of resources, the descriptor range for its uniform
+            // usage will be the first one in the range.
+            //
+            // We need to decide whether that assumption is one we intend to support
+            // applications making, or whether they should be forced to perform a
+            // linear search over the descriptor ranges for a specific binding range.
+            //
             auto uniformOffset = m_elementTypeLayout->getDescriptorSetDescriptorRangeIndexOffset(
                 descriptorSetIndex, rangeIndexInDescriptorSet);
 
@@ -464,6 +472,17 @@ public:
         return SLANG_OK;
     }
     virtual SLANG_NO_THROW Result SLANG_MCALL
+        setDeviceData(size_t offset, void* data, size_t size)
+    {
+        size = Math::Min(size, bufferResource->getDesc()->sizeInBytes - offset);
+        SLANG_CUDA_RETURN_ON_FAIL(cudaMemcpy(
+            (uint8_t*)bufferResource->m_cudaMemory + offset,
+            data,
+            size,
+            cudaMemcpyHostToDevice));
+        return SLANG_OK;
+    }
+    virtual SLANG_NO_THROW Result SLANG_MCALL
         getObject(ShaderOffset const& offset, IShaderObject** object)
     {
         auto subObjectIndex =
@@ -480,17 +499,37 @@ public:
     virtual SLANG_NO_THROW Result SLANG_MCALL
         setObject(ShaderOffset const& offset, IShaderObject* object)
     {
-        auto subObjectIndex =
-            getLayout()->m_bindingRanges[offset.bindingRangeIndex].baseIndex + offset.bindingArrayIndex;
+        auto layout = getLayout();
+        SLANG_ASSERT(offset.bindingRangeIndex >= 0);
+        SLANG_ASSERT(offset.bindingRangeIndex < layout->m_bindingRanges.getCount());
+        auto& bindingRange = layout->m_bindingRanges[offset.bindingRangeIndex];
+
+        auto subObjectIndex = bindingRange.baseIndex + offset.bindingArrayIndex;
         SLANG_ASSERT(
-            offset.uniformOffset ==
-            getLayout()->m_bindingRanges[offset.bindingRangeIndex].uniformOffset +
+            offset.uniformOffset == bindingRange.uniformOffset +
                 offset.bindingArrayIndex * sizeof(void*));
         auto cudaObject = dynamic_cast<CUDAShaderObject*>(object);
         if (subObjectIndex >= objects.getCount())
             objects.setCount(subObjectIndex + 1);
         objects[subObjectIndex] = cudaObject;
-        return setData(offset, &cudaObject->bufferResource->m_cudaMemory, sizeof(void*));
+
+        switch( bindingRange.bindingType )
+        {
+        default:
+            SLANG_RETURN_ON_FAIL(setData(offset, &cudaObject->bufferResource->m_cudaMemory, sizeof(void*)));
+            break;
+
+        case slang::BindingType::ExistentialValue:
+            // TODO: handle the "does it fit" logic
+            {
+                auto valueSize = cudaObject->m_layout->getElementTypeLayout()->getSize();
+                auto valueOffset = 16;
+                SLANG_RETURN_ON_FAIL(setDeviceData(offset.uniformOffset + valueOffset, cudaObject->getBuffer(), valueSize));
+            }
+            break;
+        }
+
+        return SLANG_OK;
     }
     virtual SLANG_NO_THROW Result SLANG_MCALL
         setResource(ShaderOffset const& offset, IResourceView* resourceView)
@@ -614,6 +653,19 @@ public:
             size);
         return SLANG_OK;
     }
+
+    virtual SLANG_NO_THROW Result SLANG_MCALL
+        setDeviceData(size_t offset, void* data, size_t size)
+    {
+        size = Math::Min(size, uniformBufferSize - offset);
+        SLANG_CUDA_RETURN_ON_FAIL(cudaMemcpy(
+            (uint8_t*)hostBuffer + offset,
+            data,
+            size,
+            cudaMemcpyDeviceToHost));
+        return SLANG_OK;
+    }
+
 
     virtual SLANG_NO_THROW void* SLANG_MCALL getBuffer() override
     {
@@ -818,7 +870,6 @@ private:
     virtual SLANG_NO_THROW SlangResult SLANG_MCALL initialize(const Desc& desc, void* inWindowHandle) override
     {
         SLANG_RETURN_ON_FAIL(slangContext.initialize(desc.slang, SLANG_PTX, "sm_5_1"));
-
         SLANG_RETURN_ON_FAIL(RendererBase::initialize(desc, inWindowHandle));
 
         SLANG_RETURN_ON_FAIL(_initCuda(reportType));
