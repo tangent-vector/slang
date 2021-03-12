@@ -769,32 +769,6 @@ public:
         return static_cast<CPUShaderObjectLayout*>(m_layout.Ptr());
     }
 
-#if 0
-    virtual SLANG_NO_THROW Result SLANG_MCALL initBuffer(IDevice* device, size_t bufferSize)
-    {
-        BufferResource::Desc bufferDesc;
-        bufferDesc.init(bufferSize);
-        bufferDesc.cpuAccessFlags |= IResource::AccessFlag::Write;
-        ComPtr<IBufferResource> constantBuffer;
-        SLANG_RETURN_ON_FAIL(renderer->createBufferResource(
-            IResource::Usage::ConstantBuffer, bufferDesc, nullptr, constantBuffer.writeRef()));
-        bufferResource = dynamic_cast<MemoryCUDAResource*>(constantBuffer.get());
-        return SLANG_OK;
-    }
-#endif
-
-#if 0
-    virtual SLANG_NO_THROW void* SLANG_MCALL getBuffer()
-    {
-        return bufferResource ? bufferResource->m_cudaMemory : nullptr;
-    }
-
-    virtual SLANG_NO_THROW size_t SLANG_MCALL getBufferSize()
-    {
-        return bufferResource ? bufferResource->getDesc()->sizeInBytes : 0;
-    }
-#endif
-
     virtual SLANG_NO_THROW slang::TypeLayoutReflection* SLANG_MCALL getElementTypeLayout() override
     {
         return getLayout()->getElementTypeLayout();
@@ -1171,8 +1145,8 @@ private:
                 *outObject = nullptr;
                 return SLANG_E_NO_INTERFACE;
             }
-            virtual SLANG_NO_THROW uint32_t SLANG_MCALL addRef() { return 1; }
-            virtual SLANG_NO_THROW uint32_t SLANG_MCALL release() { return 1; }
+            virtual SLANG_NO_THROW uint32_t SLANG_MCALL addRef() SLANG_OVERRIDE { return 1; }
+            virtual SLANG_NO_THROW uint32_t SLANG_MCALL release() SLANG_OVERRIDE { return 1; }
 
         public:
             CommandWriter* m_writer;
@@ -1231,8 +1205,8 @@ private:
                 *outObject = nullptr;
                 return SLANG_E_NO_INTERFACE;
             }
-            virtual SLANG_NO_THROW uint32_t SLANG_MCALL addRef() { return 1; }
-            virtual SLANG_NO_THROW uint32_t SLANG_MCALL release() { return 1; }
+            virtual SLANG_NO_THROW uint32_t SLANG_MCALL addRef() SLANG_OVERRIDE { return 1; }
+            virtual SLANG_NO_THROW uint32_t SLANG_MCALL release() SLANG_OVERRIDE { return 1; }
 
         public:
             CommandWriter* m_writer;
