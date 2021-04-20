@@ -336,7 +336,7 @@ Result linkAndOptimizeIR(
     // TODO(DG): There are multiple DCE steps here, which need to be changed
     //   so that they don't just throw out any non-entry point code
     // Debugging code for IR transformations...
-#if 0
+#if 1
     dumpIRIfEnabled(compileRequest, irModule, "SPECIALIZED");
 #endif
     validateIRModuleIfEnabled(compileRequest, irModule);

@@ -3,7 +3,6 @@
 // This test puts interface-type shader parameters
 // inside of structure types to make sure that works
 
-//TEST(compute, vulkan):COMPARE_COMPUTE_EX:-cpu -compute
 //TEST(compute):COMPARE_COMPUTE_EX:-slang -compute
 //TEST(compute):COMPARE_COMPUTE_EX:-slang -compute -dx12 -profile sm_6_0 -use-dxil
 //TEST(compute, vulkan):COMPARE_COMPUTE_EX:-vk -compute
@@ -76,8 +75,11 @@ void computeMain(
     let tid = dispatchThreadID.x;
 
     let inputVal : int = tid;
-    let outputVal = test(inputVal, gStrategy, stuff.modifier)
-        + stuff.extra*stuff.extra;
+    let outputVal =
+    //test(inputVal, gStrategy, stuff.modifier)
+        //+
+        stuff.extra*stuff.extra
+        ;
 
     gOutputBuffer[tid] = outputVal;
 }
