@@ -1056,6 +1056,32 @@ SLANG_API SlangReflectionVariableLayout* spReflectionTypeLayout_getSpecializedTy
     }
 }
 
+SLANG_API SlangInt spReflectionType_getSpecializedTypeArgCount(SlangReflectionType* inType)
+{
+    auto type = convert(inType);
+    if(!type) return 0;
+
+    auto specializedType = as<ExistentialSpecializedType>(type);
+    if(!specializedType) return 0;
+
+    return specializedType->args.getCount();
+}
+
+SLANG_API SlangReflectionType* spReflectionType_getSpecializedTypeArgType(SlangReflectionType* inType, SlangInt index)
+{
+    auto type = convert(inType);
+    if(!type) return nullptr;
+
+    auto specializedType = as<ExistentialSpecializedType>(type);
+    if(!specializedType) return nullptr;
+
+    if(index < 0) return nullptr;
+    if(index >= specializedType->args.getCount()) return nullptr;
+
+    auto argType = as<Type>(specializedType->args[index].val);
+    return convert(argType);
+}
+
 namespace Slang
 {
     struct BindingRangePathLink
