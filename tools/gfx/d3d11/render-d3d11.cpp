@@ -1237,12 +1237,16 @@ protected:
             return SLANG_OK;
         }
     public:
-        virtual Result bindObject(D3D11Device* device, RootBindingState* bindingState)
+        Result bindOrdinaryDataBufferAndResources(D3D11Device* device, RootBindingState* bindingState)
         {
-            ShaderObjectLayoutImpl* layout = getLayout();
-
-            Index baseRangeIndex = 0;
             SLANG_RETURN_ON_FAIL(_bindOrdinaryDataBufferIfNeeded(device, bindingState));
+            SLANG_RETURN_ON_FAIL(bindResources(device, bindingState));
+            return SLANG_OK;
+        }
+
+        Result bindResources(D3D11Device* device, RootBindingState* bindingState)
+        {
+            auto layout = getLayout();
 
             for (auto sampler : m_samplers)
                 bindingState->samplerBindings.add(sampler ? sampler->m_sampler.get() : nullptr);
@@ -1253,9 +1257,67 @@ protected:
             for (auto uav : m_uavs)
                 bindingState->uavBindings.add(uav ? uav->m_uav : nullptr);
 
-            for (auto subObject : m_objects)
-                subObject->bindObject(device, bindingState);
-            
+            for(auto const& subObjectRange : layout->getSubObjectRanges())
+            {
+                auto const& bindingRange = layout->getBindingRange(subObjectRange.bindingRangeIndex);
+                switch(bindingRange.bindingType)
+                {
+                default:
+                    break;
+
+                case slang::BindingType::ConstantBuffer:
+                case slang::BindingType::ParameterBlock:
+                    {
+                        Index count = bindingRange.count;
+                        Index baseIndex = bindingRange.baseIndex;
+                        for(Index i = 0; i < count; ++i)
+                        {
+                            auto subObject = m_objects[ baseIndex + i ];
+                            subObject->bindOrdinaryDataBufferAndResources(device, bindingState);
+                        }
+                    }
+                    break;
+                }
+            }
+
+            return SLANG_OK;
+        }
+
+        Result bindPendingResources(D3D11Device* device, RootBindingState* bindingState)
+        {
+            auto layout = getLayout();
+            for(auto const& subObjectRange : layout->getSubObjectRanges())
+            {
+                auto const& bindingRange = layout->getBindingRange(subObjectRange.bindingRangeIndex);
+                Index count = bindingRange.count;
+                Index baseIndex = bindingRange.baseIndex;
+                switch(bindingRange.bindingType)
+                {
+                default:
+                    break;
+
+                case slang::BindingType::ConstantBuffer:
+                case slang::BindingType::ParameterBlock:
+                    {
+                        for(Index i = 0; i < count; ++i)
+                        {
+                            auto subObject = m_objects[ baseIndex + i ];
+                            subObject->bindPendingResources(device, bindingState);
+                        }
+                    }
+                    break;
+
+                case slang::BindingType::ExistentialValue:
+                    {
+                        for(Index i = 0; i < count; ++i)
+                        {
+                            auto subObject = m_objects[ baseIndex + i ];
+                            subObject->bindResources(device, bindingState);
+                        }
+                    }
+                    break;
+                }
+            }
             return SLANG_OK;
         }
 
@@ -1350,21 +1412,30 @@ protected:
             return SLANG_OK;
         }
 
-    protected:
-        virtual Result bindObject(D3D11Device* device, RootBindingState* bindingState) override
+        Result bindRootObject(D3D11Device* device, RootBindingState* bindingState)
         {
-            SLANG_RETURN_ON_FAIL(Super::bindObject(device, bindingState));
+            SLANG_RETURN_ON_FAIL(Super::bindOrdinaryDataBufferAndResources(device, bindingState));
 
             auto entryPointCount = m_entryPoints.getCount();
             for (Index i = 0; i < entryPointCount; ++i)
             {
                 auto entryPoint = m_entryPoints[i];
-                SLANG_RETURN_ON_FAIL(entryPoint->bindObject(device, bindingState));
+                SLANG_RETURN_ON_FAIL(entryPoint->bindOrdinaryDataBufferAndResources(device, bindingState));
+            }
+
+            SLANG_RETURN_ON_FAIL(Super::bindPendingResources(device, bindingState));
+
+            for (Index i = 0; i < entryPointCount; ++i)
+            {
+                auto entryPoint = m_entryPoints[i];
+                SLANG_RETURN_ON_FAIL(entryPoint->bindPendingResources(device, bindingState));
             }
 
             return SLANG_OK;
         }
 
+
+    protected:
         Result init(IDevice* device, RootShaderObjectLayoutImpl* layout)
         {
             SLANG_RETURN_ON_FAIL(Super::init(device, layout));
@@ -2954,12 +3025,14 @@ void D3D11Device::bindRootShaderObject(IShaderObject* shaderObject)
     RefPtr<PipelineStateBase> specializedPipeline;
     maybeSpecializePipeline(m_currentPipelineState, rootShaderObjectImpl, specializedPipeline);
     setPipelineState(specializedPipeline.Ptr());
-    
+
+    //    auto specializedProgramLayout = specializedPipeline->getProgram<ShaderProgramImpl>()->slangProgram->getLayout();
+
     m_rootBindingState.samplerBindings.clear();
     m_rootBindingState.srvBindings.clear();
     m_rootBindingState.uavBindings.clear();
     m_rootBindingState.constantBuffers.clear();
-    static_cast<ShaderObjectImpl*>(shaderObject)->bindObject(this, &m_rootBindingState);
+    rootShaderObjectImpl->bindRootObject(this, &m_rootBindingState);
     switch (m_currentPipelineState->desc.type)
     {
     case PipelineType::Compute:

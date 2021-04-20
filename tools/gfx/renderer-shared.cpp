@@ -466,7 +466,8 @@ Result RendererBase::maybeSpecializePipeline(
             specializedPipelineState->unspecializedPipelineState = currentPipeline;
             shaderCache.addSpecializedPipeline(pipelineKey, specializedPipelineState);
         }
-        outNewPipeline = static_cast<PipelineStateBase*>(specializedPipelineState.Ptr());
+        auto specializedPipelineStateBase = static_cast<PipelineStateBase*>(specializedPipelineState.Ptr());
+        outNewPipeline = specializedPipelineStateBase;
     }
     return SLANG_OK;
 }

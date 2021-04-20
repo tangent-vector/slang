@@ -76,8 +76,8 @@ void computeMain(
 
     let inputVal : int = tid;
     let outputVal =
-    //test(inputVal, gStrategy, stuff.modifier)
-        //+
+        test(inputVal, gStrategy, stuff.modifier)
+        +
         stuff.extra*stuff.extra
         ;
 
