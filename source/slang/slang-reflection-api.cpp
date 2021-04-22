@@ -1084,21 +1084,55 @@ SLANG_API SlangReflectionType* spReflectionType_getSpecializedTypeArgType(SlangR
 
 namespace Slang
 {
-    struct BindingRangePathLink
+        /// A chain of `VarLayout`s that can be summed to provide offset information for a nested field.
+    struct SimpleBindingRangePathLink
     {
-        BindingRangePathLink(
-            BindingRangePathLink*   parent,
+        SimpleBindingRangePathLink()
+        {}
+
+        SimpleBindingRangePathLink(
+            SimpleBindingRangePathLink*   parent,
             VarLayout*              var)
             : parent(parent)
             , var(var)
         {}
 
-        BindingRangePathLink*   parent;
-        VarLayout*              var;
+        SimpleBindingRangePathLink* parent = nullptr;
+        VarLayout*                  var = nullptr;
+    };
+
+    struct BindingRangePath
+    {
+        SimpleBindingRangePathLink* primary = nullptr;
+        SimpleBindingRangePathLink* pending = nullptr;
+    };
+
+    struct ExtendedBindingRangePath : BindingRangePath
+    {
+        ExtendedBindingRangePath(
+            BindingRangePath const& parent,
+            VarLayout*              varLayout)
+        {
+            primaryLink = SimpleBindingRangePathLink(parent.primary, varLayout);
+            primary = &primaryLink;
+
+            if(auto pendingLayout = varLayout->pendingVarLayout)
+            {
+                pendingLink = SimpleBindingRangePathLink(parent.pending, pendingLayout);
+                pending = &pendingLink;
+            }
+            else
+            {
+                pending = parent.pending;
+            }
+        }
+
+        SimpleBindingRangePathLink primaryLink;
+        SimpleBindingRangePathLink pendingLink;
     };
 
 
-    Int _calcIndexOffset(BindingRangePathLink* path, LayoutResourceKind kind)
+    Int _calcIndexOffset(SimpleBindingRangePathLink* path, LayoutResourceKind kind)
     {
         Int result = 0;
         for( auto link = path; link; link = link->parent )
@@ -1111,7 +1145,7 @@ namespace Slang
         return result;
     }
 
-    Int _calcSpaceOffset(BindingRangePathLink* path, LayoutResourceKind kind)
+    Int _calcSpaceOffset(SimpleBindingRangePathLink* path, LayoutResourceKind kind)
     {
         Int result = 0;
         for( auto link = path; link; link = link->parent )
@@ -1293,7 +1327,24 @@ namespace Slang
             return index;
         }
 
-        void addRangesRec(TypeLayout* typeLayout, BindingRangePathLink* path, LayoutSize multiplier)
+        RefPtr<VarLayout> createPendingDataVarLayout(TypeLayout* typeLayout, BindingRangePath const& path)
+        {
+            auto pendingTypeLayout = typeLayout->pendingDataTypeLayout;
+            if(!pendingTypeLayout) return nullptr;
+
+            RefPtr<VarLayout> pendingVarLayout = new VarLayout();
+            pendingVarLayout->typeLayout = pendingTypeLayout;
+
+            for(auto typeResInfo : pendingTypeLayout->resourceInfos)
+            {
+                auto kind = typeResInfo.kind;
+                pendingVarLayout->findOrAddResourceInfo(kind)->index = _calcIndexOffset(path.pending, kind);
+            }
+
+            return pendingVarLayout;
+        }
+
+        void addRangesRec(TypeLayout* typeLayout, BindingRangePath const& path, LayoutSize multiplier)
         {
             if( auto structTypeLayout = as<StructTypeLayout>(typeLayout) )
             {
@@ -1313,9 +1364,8 @@ namespace Slang
 
                     auto fieldTypeLayout = fieldVarLayout->getTypeLayout();
 
-
-                    BindingRangePathLink fieldLink(path, fieldVarLayout);
-                    addRangesRec(fieldTypeLayout, &fieldLink, multiplier);
+                    ExtendedBindingRangePath fieldPath(path, fieldVarLayout);
+                    addRangesRec(fieldTypeLayout, fieldPath, multiplier);
                 }
                 return;
             }
@@ -1362,7 +1412,7 @@ namespace Slang
                 {
                     if( spaceOffset == -1 )
                     {
-                        spaceOffset = _calcSpaceOffset(path, kind);
+                        spaceOffset = _calcSpaceOffset(path.primary, kind);
                     }
 
                     kind = resInfo.kind;
@@ -1422,10 +1472,11 @@ namespace Slang
                 //
                 TypeLayout::ExtendedInfo::SubObjectRangeInfo subObjectRange;
                 subObjectRange.bindingRangeIndex = bindingRangeIndex;
+                subObjectRange.pendingDataVarLayout = createPendingDataVarLayout(typeLayout, path);
                 subObjectRange.spaceOffset = 0;
                 if (kind == LayoutResourceKind::RegisterSpace && path)
                 {
-                    auto resInfo = path->var->FindResourceInfo(LayoutResourceKind::RegisterSpace);
+                    auto resInfo = path.primary->var->FindResourceInfo(LayoutResourceKind::RegisterSpace);
                     subObjectRange.spaceOffset = resInfo->index;
                 }
                 // It is possible that the sub-object has descriptor ranges
@@ -1514,7 +1565,7 @@ namespace Slang
                                 descriptorRange.kind = resInfo.kind;
                                 descriptorRange.bindingType = _calcBindingType(typeLayout, resInfo.kind);
                                 descriptorRange.count = multiplier;
-                                descriptorRange.indexOffset = _calcIndexOffset(path, resInfo.kind);
+                                descriptorRange.indexOffset = _calcIndexOffset(path.primary, resInfo.kind);
 
                                 if( resInfo.kind == LayoutResourceKind::PushConstantBuffer )
                                 {
@@ -1574,12 +1625,12 @@ namespace Slang
                             // up binding information, to ensure that the descriptor ranges
                             // that get enumerated here have correct register/binding offsets.
                             //
-                            BindingRangePathLink elementPath(path, parameterGroupTypeLayout->elementVarLayout);
+                            ExtendedBindingRangePath elementPath(path, parameterGroupTypeLayout->elementVarLayout);
 
                             Index bindingRangeCountBefore = m_extendedInfo->m_bindingRanges.getCount();
                             Index subObjectRangeCountBefore = m_extendedInfo->m_subObjectRanges.getCount();
 
-                            addRangesRec(parameterGroupTypeLayout->elementVarLayout->typeLayout, &elementPath, multiplier);
+                            addRangesRec(parameterGroupTypeLayout->elementVarLayout->typeLayout, elementPath, multiplier);
 
                             m_extendedInfo->m_bindingRanges.setCount(bindingRangeCountBefore);
                             m_extendedInfo->m_subObjectRanges.setCount(subObjectRangeCountBefore);
@@ -1602,10 +1653,6 @@ namespace Slang
                 // An `interface` type should introduce a binding range and a matching
                 // sub-object range.
                 //
-                // We currently do *not* allocate any descriptor ranges to represent
-                // an interface-type field, since the only direct storage required
-                // is all uniform/ordinary data.
-                //
                 TypeLayout::ExtendedInfo::BindingRangeInfo bindingRange;
                 bindingRange.leafTypeLayout = typeLayout;
                 bindingRange.bindingType = SLANG_BINDING_TYPE_EXISTENTIAL_VALUE;
@@ -1614,12 +1661,61 @@ namespace Slang
                 bindingRange.descriptorRangeCount = 0;
                 bindingRange.firstDescriptorRangeIndex = 0;
 
+                _calcSpaceOffset(path.primary, LayoutResourceKind::Uniform);
+
+                // If the interface-type field was statically specialized in the layout,
+                // then we should have "pending" layout information for it, and any
+                // of the fields of that pending data type should also contribute
+                // to the layout we are computing here (insofar as they should be added
+                // as descriptor ranges).
+                //
+                // TODO: One complication is that we probably want the layout of a specialized
+                // type to share a common prefix with the unspecialized case, so that we'd like
+                // these descriptor ranges to come *after* all the other ones.
+                //
+#if 0
+                if(auto pendingLayout = typeLayout->pendingDataTypeLayout)
+                {
+                    // If we have 
+
+                    Index descriptorSetIndex = -1;
+                    for(auto resInfo : pendingLayout->resourceInfos)
+                    {
+                        Index space = _calcSpaceOffset(path.pending, resInfo.kind);
+                        descriptorSetIndex = _findOrAddDescriptorSet(space);
+                    }
+
+                    if(descriptorSetIndex != -1)
+                    {
+                        auto descriptorSet = m_extendedInfo->m_descriptorSets[descriptorSetIndex];
+                        bindingRange.descriptorSetIndex = descriptorSetIndex;
+                        bindingRange.firstDescriptorRangeIndex = descriptorSet->descriptorRanges.getCount();
+                    }
+
+                    // We want to erase out the binding ranges for the contained
+                    // data and only keep the desriptor ranges, because those
+                    // are what we need/want to allocate into the parent object.
+                    auto bindingRangeCountBefore = m_extendedInfo->m_bindingRanges.getCount();
+
+
+                    BindingRangePath pendingPath;
+                    pendingPath.primary = path.pending;
+                    addRangesRec(pendingLayout, pendingPath, multiplier);
+
+                    m_extendedInfo->m_bindingRanges.setCount(bindingRangeCountBefore);
+
+                    if(descriptorSetIndex != -1)
+                    {
+                        auto descriptorSet = m_extendedInfo->m_descriptorSets[descriptorSetIndex];
+                        bindingRange.descriptorRangeCount = descriptorSet->descriptorRanges.getCount() - bindingRange.firstDescriptorRangeIndex;
+                    }
+
+                }
+#endif
+
                 TypeLayout::ExtendedInfo::SubObjectRangeInfo subObjectRange;
                 subObjectRange.bindingRangeIndex = m_extendedInfo->m_bindingRanges.getCount();
-
-                // TODO: if we have "pending" layout information that tells us where
-                // data for the sub-object range has been allocated, then we need
-                // a way to reference that data here.
+                subObjectRange.pendingDataVarLayout = createPendingDataVarLayout(typeLayout, path);
 
                 m_extendedInfo->m_bindingRanges.add(bindingRange);
                 m_extendedInfo->m_subObjectRanges.add(subObjectRange);
@@ -1756,8 +1852,8 @@ namespace Slang
                     // `resInfo` representing resouce usage.
                     //
                     auto count = resInfo.count * multiplier;
-                    auto indexOffset = _calcIndexOffset(path, kind);
-                    auto spaceOffset = _calcSpaceOffset(path, kind);
+                    auto indexOffset = _calcIndexOffset(path.primary, kind);
+                    auto spaceOffset = _calcSpaceOffset(path.primary, kind);
 
                     TypeLayout::ExtendedInfo::DescriptorRangeInfo descriptorRange;
                     descriptorRange.kind = kind;
@@ -1793,7 +1889,8 @@ namespace Slang
             context.m_typeLayout = typeLayout;
             context.m_extendedInfo = extendedInfo;
 
-            context.addRangesRec(typeLayout, nullptr, 1);
+            BindingRangePath rootPath;
+            context.addRangesRec(typeLayout, rootPath, 1);
 
             typeLayout->m_extendedInfo = extendedInfo;
         }
@@ -2058,6 +2155,25 @@ SLANG_API SlangInt spReflectionTypeLayout_getSubObjectRangeSpaceOffset(
 
     return extTypeLayout->m_subObjectRanges[subObjectRangeIndex].spaceOffset;
 }
+
+SLANG_API SlangReflectionVariableLayout* spReflectionTypeLayout_getSubObjectRangePendingDataOffset(
+    SlangReflectionTypeLayout* inTypeLayout,
+    SlangInt subObjectRangeIndex)
+{
+    auto typeLayout = convert(inTypeLayout);
+    if (!typeLayout)
+        return 0;
+
+    auto extTypeLayout = Slang::getExtendedTypeLayout(typeLayout);
+
+    if (subObjectRangeIndex < 0)
+        return 0;
+    if (subObjectRangeIndex >= extTypeLayout->m_subObjectRanges.getCount())
+        return 0;
+
+    return convert(extTypeLayout->m_subObjectRanges[subObjectRangeIndex].pendingDataVarLayout);
+}
+
 
 
 #if 0

@@ -3662,6 +3662,20 @@ RefPtr<ProgramLayout> generateParameterBindings(
         cbInfo->index = globalConstantBufferBinding.index;
     }
 
+    // If existential specialization got applied anywhere along the way,
+    // we realistically want to construct an `ExistentialSpecializedTypeLayout`
+    // to represent that fact, so that the client of the API can get reflection/layout
+    // information that inherently includes it...
+    //
+    // (Is this right, or should we just handle this by letting existential-specialized
+    // stuff reflect as only the initial part in "flat" reflection, and requiring the
+    // user to reflect the "pending" part separately? That would make it easy to get
+    // the root `VarLayout` for all the stuff, and then recurse, I suppose.)
+    //
+    // The hard part is that descriptor ranges don't really need/want to deal with
+    // any of the problems here: we just want to know what to allocate.
+    //
+
     programLayout->parametersLayout = globalScopeVarLayout;
 
     {

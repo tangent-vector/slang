@@ -978,13 +978,15 @@ public:
             {
                 uint32_t spaceOffset = 0; // The `space` index as specified in shader.
 
+                enum { kRangeTypeCount = 4 };
+
                     /// An offset to apply for each D3D12 register class, as given
                     /// by a `D3D12_DESCRIPTOR_RANGE_TYPE`.
                     ///
                     /// Note that the `D3D12_DESCRIPTOR_RANGE_TYPE` enumeration has
                     /// values between 0 and 3, inclusive.
                     ///
-                uint32_t offsetForRangeType[4] = {0, 0, 0, 0};
+                uint32_t offsetForRangeType[kRangeTypeCount] = {0, 0, 0, 0};
 
                 uint32_t& operator[](D3D12_DESCRIPTOR_RANGE_TYPE type)
                 {
@@ -995,6 +997,45 @@ public:
                 {
                     return offsetForRangeType[int(type)];
                 }
+
+                BindingRegisterOffset()
+                {}
+
+                BindingRegisterOffset(slang::VariableLayoutReflection* varLayout)
+                {
+                    if(varLayout)
+                    {
+                        spaceOffset                                             = (UINT) varLayout->getOffset(SLANG_PARAMETER_CATEGORY_REGISTER_SPACE);
+                        offsetForRangeType[D3D12_DESCRIPTOR_RANGE_TYPE_CBV]     = (UINT) varLayout->getOffset(SLANG_PARAMETER_CATEGORY_CONSTANT_BUFFER);
+                        offsetForRangeType[D3D12_DESCRIPTOR_RANGE_TYPE_SRV]     = (UINT) varLayout->getOffset(SLANG_PARAMETER_CATEGORY_SHADER_RESOURCE);
+                        offsetForRangeType[D3D12_DESCRIPTOR_RANGE_TYPE_UAV]     = (UINT) varLayout->getOffset(SLANG_PARAMETER_CATEGORY_UNORDERED_ACCESS);
+                        offsetForRangeType[D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER] = (UINT) varLayout->getOffset(SLANG_PARAMETER_CATEGORY_SAMPLER_STATE);
+                    }
+                }
+
+                void operator+=(BindingRegisterOffset const& other)
+                {
+                    spaceOffset += other.spaceOffset;
+                    for(int i = 0; i < kRangeTypeCount; ++i)
+                    {
+                        offsetForRangeType[i] += other.offsetForRangeType[i];
+                    }
+                }
+
+            };
+
+            struct BindingRegisterOffsetPair
+            {
+                BindingRegisterOffset primary;
+                BindingRegisterOffset pending;
+
+                BindingRegisterOffsetPair()
+                {}
+
+                BindingRegisterOffsetPair(slang::VariableLayoutReflection* varLayout)
+                    : primary(varLayout)
+                    , pending(varLayout->getPendingDataLayout())
+                {}
             };
 
                 /// Add a new descriptor set to the layout being computed.
@@ -1129,18 +1170,12 @@ public:
                 /// to apply appropriate space/register offsets to the bindings and parameter
                 ///  blocks inside the layout.
                 ///
-            void addBindingRangesAndParameterBlocks(
+            void addResourceBindingRangesAndParameterBlocks(
                 slang::VariableLayoutReflection*    varLayout,
                 Index                               physicalDescriptorSetIndex)
             {
-                BindingRegisterOffset offset;
-                offset.spaceOffset                          = (UINT) varLayout->getOffset(SLANG_PARAMETER_CATEGORY_REGISTER_SPACE);
-                offset[D3D12_DESCRIPTOR_RANGE_TYPE_CBV]     = (UINT) varLayout->getOffset(SLANG_PARAMETER_CATEGORY_CONSTANT_BUFFER);
-                offset[D3D12_DESCRIPTOR_RANGE_TYPE_SRV]     = (UINT) varLayout->getOffset(SLANG_PARAMETER_CATEGORY_SHADER_RESOURCE);
-                offset[D3D12_DESCRIPTOR_RANGE_TYPE_UAV]     = (UINT) varLayout->getOffset(SLANG_PARAMETER_CATEGORY_UNORDERED_ACCESS);
-                offset[D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER] = (UINT) varLayout->getOffset(SLANG_PARAMETER_CATEGORY_SAMPLER_STATE);
-
-                addBindingRangesAndParameterBlocks(varLayout->getTypeLayout(), physicalDescriptorSetIndex, offset);
+                BindingRegisterOffsetPair offset(varLayout);
+                addResourceBindingRangesAndParameterBlocks(varLayout->getTypeLayout(), physicalDescriptorSetIndex, offset);
             }
 
                 /// Add binding ranges and parameter blocks to the root signature.
@@ -1155,10 +1190,19 @@ public:
                 /// The `offset` encodes information about space and/or register offsets that
                 /// should be applied to descrptor ranges.
                 ///
-            void addBindingRangesAndParameterBlocks(
+            void addResourceBindingRangesAndParameterBlocks(
                 slang::TypeLayoutReflection*        typeLayout,
                 Index                               physicalDescriptorSetIndex,
-                BindingRegisterOffset const&        offset)
+                BindingRegisterOffsetPair const&    offset)
+            {
+                addResourceBindingRanges(typeLayout, physicalDescriptorSetIndex, offset);
+                addParameterBlocks(typeLayout, physicalDescriptorSetIndex, offset);
+            }
+
+            void addResourceBindingRanges(
+                slang::TypeLayoutReflection*        typeLayout,
+                Index                               physicalDescriptorSetIndex,
+                BindingRegisterOffsetPair const&    offset)
             {
                 // Our first task is to add the binding ranges for stuff that is
                 // directly contained in `typeLayout` rather than via sub-objects.
@@ -1188,68 +1232,56 @@ public:
                     // For binding ranges that don't represent sub-objects, we will add
                     // all of the descriptor ranges they encompass to the root signature.
                     //
-                    addBindingRange(typeLayout, physicalDescriptorSetIndex, offset, bindingRangeIndex);
+                    addBindingRange(typeLayout, physicalDescriptorSetIndex, offset.primary, bindingRangeIndex);
                 }
 
                 // Next we need to add any sub binding ranges in `ConstantBuffer` bindings.
                 // 
-                Index subObjectCount = typeLayout->getSubObjectRangeCount();
-                for (Index subObjectRangeIndex = 0; subObjectRangeIndex < subObjectCount; subObjectRangeIndex++)
+                Index subObjectRangeCount = typeLayout->getSubObjectRangeCount();
+                for (Index subObjectRangeIndex = 0; subObjectRangeIndex < subObjectRangeCount; subObjectRangeIndex++)
                 {
                     auto bindingRangeIndex = typeLayout->getSubObjectRangeBindingRangeIndex(subObjectRangeIndex);
                     auto bindingType = typeLayout->getBindingRangeType(bindingRangeIndex);
-                    switch (bindingType)
-                    {
-                    case slang::BindingType::ConstantBuffer:
-                        {
-                            // Constant buffer ranges (for `ConstantBuffer<ConcreteType>`) will "leak" their
-                            // binding ranges into the surrounding type, so we can add them here like any other
-                            // binding range.
-                            //
-                            // Note: It would be valid to allow `slang::BindingType::ConstantBuffer` to be handled
-                            // in the earlier loop, but that would mean that descriptor ranges coming directly
-                            // from the fields of `typeLayout` could be broken up with ranges coming from constant-buffer
-                            // sub-objects. By moving the handling of constant buffers to this later loop, we
-                            // guarantee that the descritpors used by non-sub-object binding ranges are all
-                            // contiguous.
-                            //
-                            // This call will add all descriptor ranges reported in `typeLayout` that is associated
-                            // with `bindingRangeIndex`.
-                            //
-                            addBindingRange(
-                                typeLayout,
-                                physicalDescriptorSetIndex,
-                                offset,
-                                bindingRangeIndex);
+                    if(bindingType != slang::BindingType::ConstantBuffer)
+                        continue;
 
-                            // We also need to recurse into the element type of the constant buffer to add
-                            // any binding ranges defined in the element type.
-                            auto subObjectType =
-                                typeLayout->getBindingRangeLeafTypeLayout(bindingRangeIndex);
-                            BindingRegisterOffset subOffset;
-                            subOffset.spaceOffset =
-                                offset.spaceOffset +
-                                (uint32_t)typeLayout->getSubObjectRangeSpaceOffset(
-                                    subObjectRangeIndex);
-                            addParameterBlocks(
-                                _unwrapParameterGroups(subObjectType),
-                                physicalDescriptorSetIndex,
-                                subOffset);
-                        }
-                        break;
-                    default:
-                        break;
-                    }
+                    addBindingRange(
+                        typeLayout,
+                        physicalDescriptorSetIndex,
+                        offset.primary,
+                        bindingRangeIndex);
                 }
 
-                addParameterBlocks(typeLayout, physicalDescriptorSetIndex, offset);
+#if 0
+                // Finally we need to add resource binding ranges related to existential (interface) typed
+                // sub-objects that have been statically specialized so that they have "pending" bindings
+                // that need to be placed into the full layout.
+                //
+                for (Index subObjectRangeIndex = 0; subObjectRangeIndex < subObjectRangeCount; subObjectRangeIndex++)
+                {
+                    auto bindingRangeIndex = typeLayout->getSubObjectRangeBindingRangeIndex(subObjectRangeIndex);
+                    auto bindingType = typeLayout->getBindingRangeType(bindingRangeIndex);
+                    if(bindingType != slang::BindingType::ExistentialValue)
+                        continue;
+
+                    addBindingRange(
+                        typeLayout,
+                        physicalDescriptorSetIndex,
+                        offset.pending,
+                        bindingRangeIndex);
+                }
+#endif
+
+                BindingRegisterOffsetPair pendingOffset;
+                pendingOffset.primary = offset.pending;
+                addPendingResourceBindingRanges(typeLayout, physicalDescriptorSetIndex, pendingOffset);
             }
 
                 /// Add child parameter blocks defined in `typeLayout` to the root signature.
             void addParameterBlocks(
-                slang::TypeLayoutReflection* typeLayout,
-                Index physicalDescriptorSetIndex,
-                BindingRegisterOffset const& offset)
+                slang::TypeLayoutReflection*        typeLayout,
+                Index                               physicalDescriptorSetIndex,
+                BindingRegisterOffsetPair const&    offset)
             {
                 Index subObjectCount = typeLayout->getSubObjectRangeCount();
                 for (Index subObjectRangeIndex = 0; subObjectRangeIndex < subObjectCount;
@@ -1263,6 +1295,24 @@ public:
                     auto bindingType = typeLayout->getBindingRangeType(bindingRangeIndex);
                     switch (bindingType)
                     {
+                    case slang::BindingType::ConstantBuffer:
+                        {
+                            // We also need to recurse into the element type of the constant buffer to add
+                            // any binding ranges defined in the element type.
+                            auto subObjectType =
+                                typeLayout->getBindingRangeLeafTypeLayout(bindingRangeIndex);
+                            auto spaceOffset = (uint32_t)typeLayout->getSubObjectRangeSpaceOffset(subObjectRangeIndex);
+
+                            BindingRegisterOffsetPair subOffset;
+                            subOffset.primary.spaceOffset = offset.primary.spaceOffset + spaceOffset;
+                            subOffset.pending.spaceOffset = offset.pending.spaceOffset + spaceOffset;
+                            addParameterBlocks(
+                                _unwrapParameterGroups(subObjectType),
+                                physicalDescriptorSetIndex,
+                                subOffset);
+                        }
+                        break;
+
                     case slang::BindingType::ParameterBlock:
                         {
                             // A parameter block (`ParameterBlock<ConcreteType>`) will always map to
@@ -1295,8 +1345,9 @@ public:
                             // this point, because `register` offsets from outside of the block
                             // don't affect layout within the block.
                             //
-                            BindingRegisterOffset blockOffset;
-                            blockOffset.spaceOffset = offset.spaceOffset + (uint32_t)spaceOffset;
+                            BindingRegisterOffsetPair blockOffset;
+                            blockOffset.primary.spaceOffset = offset.primary.spaceOffset + (uint32_t)spaceOffset;
+                            blockOffset.pending.spaceOffset = offset.pending.spaceOffset + (uint32_t)spaceOffset;
 
                             // Note: there is an important subtlety going on here. We are passing in
                             // the type `blockTypeLayout` which corresponds to
@@ -1313,15 +1364,15 @@ public:
                                     blockPhysicalDescriptorSetIndex,
                                     D3D12_DESCRIPTOR_RANGE_TYPE_CBV,
                                     0,
-                                    blockOffset.spaceOffset,
+                                    blockOffset.primary.spaceOffset,
                                     1);
-                                blockOffset.offsetForRangeType[D3D12_DESCRIPTOR_RANGE_TYPE_CBV] = 1;
+                                blockOffset.primary.offsetForRangeType[D3D12_DESCRIPTOR_RANGE_TYPE_CBV] = 1;
                             }
 
                             // Once we have all the details worked out, we can write the binding
                             // ranges for the block's type into the newly-allocated descriptor set.
                             //
-                            addBindingRangesAndParameterBlocks(
+                            addResourceBindingRangesAndParameterBlocks(
                                 elementLayout, blockPhysicalDescriptorSetIndex, blockOffset);
                         }
                         break;
@@ -1334,7 +1385,106 @@ public:
                         break;
                     }
                 }
+
+//                addPendingParameterBlocks(typeLayout, physicalDescriptorSetIndex, offset);
             }
+
+            void addPendingResourceBindingRanges(
+                slang::TypeLayoutReflection* typeLayout,
+                Index physicalDescriptorSetIndex,
+                BindingRegisterOffsetPair const& offset)
+            {
+                Index subObjectRangeCount = typeLayout->getSubObjectRangeCount();
+                for (Index subObjectRangeIndex = 0; subObjectRangeIndex < subObjectRangeCount; subObjectRangeIndex++)
+                {
+                    auto bindingRangeIndex = typeLayout->getSubObjectRangeBindingRangeIndex(subObjectRangeIndex);
+                    auto bindingType = typeLayout->getBindingRangeType(bindingRangeIndex);
+                    switch (bindingType)
+                    {
+                    case slang::BindingType::ExistentialValue:
+                        {
+                            // Any nested binding ranges in the sub-object will "leak" into the
+                            // binding ranges for the surrounding context.
+                            //
+                            auto subObjectTypeLayout = typeLayout->getBindingRangeLeafTypeLayout(bindingRangeIndex);
+                            auto specializedTypeLayout = subObjectTypeLayout->getPendingDataTypeLayout();
+                            if(specializedTypeLayout)
+                            {
+                                // TODO: We need to compute the offsets that should be applied to
+                                // any resources bound via the sub-object.
+                                BindingRegisterOffsetPair subOffset = offset;
+                                subOffset.primary += BindingRegisterOffset(typeLayout->getSubObjectRangePendingDataOffset(subObjectRangeIndex));
+
+                                addResourceBindingRanges(specializedTypeLayout, physicalDescriptorSetIndex, subOffset);
+                            }
+                        }
+                        break;
+
+                    case slang::BindingType::ConstantBuffer:
+                        {
+                            auto subObjectTypeLayout = typeLayout->getBindingRangeLeafTypeLayout(bindingRangeIndex);
+                            auto elementTypeLayout = subObjectTypeLayout->getElementTypeLayout();
+                            SLANG_ASSERT(elementTypeLayout);
+
+                            BindingRegisterOffsetPair subOffset = offset;
+                            subOffset.primary += BindingRegisterOffset(typeLayout->getSubObjectRangePendingDataOffset(subObjectRangeIndex));
+
+                            addPendingResourceBindingRanges(elementTypeLayout, physicalDescriptorSetIndex, subOffset);
+                        }
+                        break;
+
+                    default:
+                        break;
+                    }
+                }
+            }
+
+#if 0
+            void addPendingParameterBlocks(
+                slang::TypeLayoutReflection* typeLayout,
+                Index physicalDescriptorSetIndex,
+                BindingRegisterOffset const& offset)
+            {
+                Index subObjectRangeCount = typeLayout->getSubObjectRangeCount();
+                for (Index subObjectRangeIndex = 0; subObjectRangeIndex < subObjectRangeCount; subObjectRangeIndex++)
+                {
+                    auto bindingRangeIndex = typeLayout->getSubObjectRangeBindingRangeIndex(subObjectRangeIndex);
+                    auto bindingType = typeLayout->getBindingRangeType(bindingRangeIndex);
+                    switch (bindingType)
+                    {
+                    case slang::BindingType::ExistentialValue:
+                        {
+                            // Any nested binding ranges in the sub-object will "leak" into the
+                            // binding ranges for the surrounding context.
+                            //
+                            auto subObjectTypeLayout = typeLayout->getBindingRangeLeafTypeLayout(bindingRangeIndex);
+                            auto pendingTypeLayout = subObjectTypeLayout->getPendingDataTypeLayout();
+                            if(pendingTypeLayout)
+                            {
+                                // TODO: We need to compute the offsets that should be applied to
+                                // any resources bound via the sub-object.
+                                BindingRegisterOffset subOffset = offset;
+
+                                addParameterBlocks(pendingTypeLayout, physicalDescriptorSetIndex, subOffset);
+                            }
+                        }
+                        break;
+
+                    case slang::BindingType::ConstantBuffer:
+                    case slang::BindingType::ParameterBlock:
+                        {
+                            auto subObjectTypeLayout = typeLayout->getBindingRangeLeafTypeLayout(bindingRangeIndex);
+                            BindingRegisterOffset subOffset = offset;
+                            addPendingParameterBlocks(subObjectTypeLayout, physicalDescriptorSetIndex, subOffset);
+                        }
+                        break;
+
+                    default:
+                        break;
+                    }
+                }
+            }
+#endif
 
             D3D12_ROOT_SIGNATURE_DESC& build(
                 List<D3D12Device::DescriptorSetInfo>& outRootDescriptorSetInfos)
@@ -1413,7 +1563,7 @@ public:
             // parameters.
             //
             auto rootDescriptorSetIndex = builder.addDescriptorSet();
-            builder.addBindingRangesAndParameterBlocks(layout->getGlobalParamsVarLayout(), rootDescriptorSetIndex);
+            builder.addResourceBindingRangesAndParameterBlocks(layout->getGlobalParamsVarLayout(), rootDescriptorSetIndex);
 
             for (SlangUInt i = 0; i < layout->getEntryPointCount(); i++)
             {
@@ -1430,7 +1580,7 @@ public:
                 // being included in the global root signature as is being done here.
                 //
                 auto entryPoint = layout->getEntryPointByIndex(i);
-                builder.addBindingRangesAndParameterBlocks(entryPoint->getVarLayout(), rootDescriptorSetIndex);
+                builder.addResourceBindingRangesAndParameterBlocks(entryPoint->getVarLayout(), rootDescriptorSetIndex);
             }
 
             auto& rootSignatureDesc = builder.build(outRootDescriptorSetInfos);
