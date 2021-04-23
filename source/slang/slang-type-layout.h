@@ -439,7 +439,7 @@ public:
         {
             Int                 bindingRangeIndex;
             Int                 spaceOffset;
-            RefPtr<VarLayout>   pendingDataVarLayout;
+            RefPtr<VarLayout>   offsetVarLayout;
         };
 
         List<RefPtr<DescriptorSetInfo>> m_descriptorSets;

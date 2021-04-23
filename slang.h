@@ -2015,7 +2015,7 @@ extern "C"
     SLANG_API SlangInt spReflectionTypeLayout_getSubObjectRangeCount(SlangReflectionTypeLayout* typeLayout);
     SLANG_API SlangInt spReflectionTypeLayout_getSubObjectRangeBindingRangeIndex(SlangReflectionTypeLayout* typeLayout, SlangInt subObjectRangeIndex);
     SLANG_API SlangInt spReflectionTypeLayout_getSubObjectRangeSpaceOffset(SlangReflectionTypeLayout* typeLayout, SlangInt subObjectRangeIndex);
-    SLANG_API SlangReflectionVariableLayout* spReflectionTypeLayout_getSubObjectRangePendingDataOffset(SlangReflectionTypeLayout* typeLayout, SlangInt subObjectRangeIndex);
+    SLANG_API SlangReflectionVariableLayout* spReflectionTypeLayout_getSubObjectRangeOffset(SlangReflectionTypeLayout* typeLayout, SlangInt subObjectRangeIndex);
 
 #if 0
     SLANG_API SlangInt spReflectionTypeLayout_getSubObjectRangeCount(SlangReflectionTypeLayout* typeLayout);
@@ -2699,9 +2699,9 @@ namespace slang
                 subObjectRangeIndex);
         }
 
-        VariableLayoutReflection* getSubObjectRangePendingDataOffset(SlangInt subObjectRangeIndex)
+        VariableLayoutReflection* getSubObjectRangeOffset(SlangInt subObjectRangeIndex)
         {
-            return (VariableLayoutReflection*) spReflectionTypeLayout_getSubObjectRangePendingDataOffset(
+            return (VariableLayoutReflection*) spReflectionTypeLayout_getSubObjectRangeOffset(
                 (SlangReflectionTypeLayout*) this,
                 subObjectRangeIndex);
         }

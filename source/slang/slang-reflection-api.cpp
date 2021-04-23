@@ -1327,21 +1327,38 @@ namespace Slang
             return index;
         }
 
-        RefPtr<VarLayout> createPendingDataVarLayout(TypeLayout* typeLayout, BindingRangePath const& path)
+        RefPtr<VarLayout> _createSimpleOffsetVarLayout(TypeLayout* typeLayout, SimpleBindingRangePathLink* path)
         {
-            auto pendingTypeLayout = typeLayout->pendingDataTypeLayout;
-            if(!pendingTypeLayout) return nullptr;
-
-            RefPtr<VarLayout> pendingVarLayout = new VarLayout();
-            pendingVarLayout->typeLayout = pendingTypeLayout;
-
-            for(auto typeResInfo : pendingTypeLayout->resourceInfos)
+            if(!typeLayout)
             {
-                auto kind = typeResInfo.kind;
-                pendingVarLayout->findOrAddResourceInfo(kind)->index = _calcIndexOffset(path.pending, kind);
+                return nullptr;
             }
 
-            return pendingVarLayout;
+            RefPtr<VarLayout> varLayout = new VarLayout();
+            varLayout->typeLayout = typeLayout;
+
+            for(auto typeResInfo : typeLayout->resourceInfos)
+            {
+                auto kind = typeResInfo.kind;
+                varLayout->findOrAddResourceInfo(kind)->index = _calcIndexOffset(path, kind);
+            }
+
+            return varLayout;
+        }
+
+        RefPtr<VarLayout> createOffsetVarLayout(TypeLayout* typeLayout, BindingRangePath const& path)
+        {
+            if(!typeLayout)
+            {
+                return nullptr;
+            }
+
+            auto primaryVarLayout = _createSimpleOffsetVarLayout(typeLayout, path.primary);
+            SLANG_ASSERT(primaryVarLayout);
+
+            primaryVarLayout->pendingVarLayout = _createSimpleOffsetVarLayout(typeLayout->pendingDataTypeLayout, path.pending);
+
+            return primaryVarLayout;
         }
 
         void addRangesRec(TypeLayout* typeLayout, BindingRangePath const& path, LayoutSize multiplier)
@@ -1472,7 +1489,7 @@ namespace Slang
                 //
                 TypeLayout::ExtendedInfo::SubObjectRangeInfo subObjectRange;
                 subObjectRange.bindingRangeIndex = bindingRangeIndex;
-                subObjectRange.pendingDataVarLayout = createPendingDataVarLayout(typeLayout, path);
+                subObjectRange.offsetVarLayout = createOffsetVarLayout(typeLayout, path);
                 subObjectRange.spaceOffset = 0;
                 if (kind == LayoutResourceKind::RegisterSpace && path)
                 {
@@ -1715,7 +1732,7 @@ namespace Slang
 
                 TypeLayout::ExtendedInfo::SubObjectRangeInfo subObjectRange;
                 subObjectRange.bindingRangeIndex = m_extendedInfo->m_bindingRanges.getCount();
-                subObjectRange.pendingDataVarLayout = createPendingDataVarLayout(typeLayout, path);
+                subObjectRange.offsetVarLayout = createOffsetVarLayout(typeLayout, path);
 
                 m_extendedInfo->m_bindingRanges.add(bindingRange);
                 m_extendedInfo->m_subObjectRanges.add(subObjectRange);
@@ -2156,7 +2173,7 @@ SLANG_API SlangInt spReflectionTypeLayout_getSubObjectRangeSpaceOffset(
     return extTypeLayout->m_subObjectRanges[subObjectRangeIndex].spaceOffset;
 }
 
-SLANG_API SlangReflectionVariableLayout* spReflectionTypeLayout_getSubObjectRangePendingDataOffset(
+SLANG_API SlangReflectionVariableLayout* spReflectionTypeLayout_getSubObjectRangeOffset(
     SlangReflectionTypeLayout* inTypeLayout,
     SlangInt subObjectRangeIndex)
 {
@@ -2171,7 +2188,7 @@ SLANG_API SlangReflectionVariableLayout* spReflectionTypeLayout_getSubObjectRang
     if (subObjectRangeIndex >= extTypeLayout->m_subObjectRanges.getCount())
         return 0;
 
-    return convert(extTypeLayout->m_subObjectRanges[subObjectRangeIndex].pendingDataVarLayout);
+    return convert(extTypeLayout->m_subObjectRanges[subObjectRangeIndex].offsetVarLayout);
 }
 
 
