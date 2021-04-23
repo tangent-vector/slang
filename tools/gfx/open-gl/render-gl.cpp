@@ -620,12 +620,6 @@ public:
             slang::BindingType bindingType;
             Index count;
             Index baseIndex;
-
-            // Returns true if this binding range consumes a specialization argument slot.
-            bool isSpecializationArg() const
-            {
-                return bindingType == slang::BindingType::ExistentialValue;
-            }
         };
 
         struct SubObjectRangeInfo

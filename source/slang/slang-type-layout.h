@@ -437,8 +437,8 @@ public:
 
         struct SubObjectRangeInfo
         {
-            Int                 bindingRangeIndex;
-            Int                 spaceOffset;
+            Int                 bindingRangeIndex = 0;
+            Int                 spaceOffset = 0;
             RefPtr<VarLayout>   offsetVarLayout;
         };
 

@@ -398,12 +398,6 @@ protected:
             Index baseIndex;
             // baseIndex2 is used to specify samplers in a CombinedTextureSampler binding.
             Index baseIndex2;
-
-            // Returns true if this binding range consumes a specialization argument slot.
-            bool isSpecializationArg() const
-            {
-                return bindingType == slang::BindingType::ExistentialValue;
-            }
         };
 
         struct SubObjectRangeInfo

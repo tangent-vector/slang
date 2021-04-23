@@ -1293,6 +1293,22 @@ namespace Slang
         return _calcBindingType(kind);
     }
 
+    SlangBindingType _calcDescriptorType(
+        Slang::TypeLayout*  typeLayout,
+        LayoutResourceKind  kind)
+    {
+        switch(kind)
+        {
+        default:
+            break;
+
+        case LayoutResourceKind::PushConstantBuffer:
+            return SLANG_BINDING_TYPE_PUSH_CONSTANT;
+        }
+
+        return _calcBindingType(typeLayout, kind);
+    }
+
     static DeclRefType* asInterfaceType(Type* type)
     {
         if(auto declRefType = as<DeclRefType>(type))
@@ -1329,10 +1345,7 @@ namespace Slang
 
         RefPtr<VarLayout> _createSimpleOffsetVarLayout(TypeLayout* typeLayout, SimpleBindingRangePathLink* path)
         {
-            if(!typeLayout)
-            {
-                return nullptr;
-            }
+            SLANG_ASSERT(typeLayout);
 
             RefPtr<VarLayout> varLayout = new VarLayout();
             varLayout->typeLayout = typeLayout;
@@ -1340,7 +1353,9 @@ namespace Slang
             for(auto typeResInfo : typeLayout->resourceInfos)
             {
                 auto kind = typeResInfo.kind;
-                varLayout->findOrAddResourceInfo(kind)->index = _calcIndexOffset(path, kind);
+                auto varResInfo = varLayout->findOrAddResourceInfo(kind);
+                varResInfo->index = _calcIndexOffset(path, kind);
+                varResInfo->space = _calcSpaceOffset(path, kind);
             }
 
             return varLayout;
@@ -1348,15 +1363,13 @@ namespace Slang
 
         RefPtr<VarLayout> createOffsetVarLayout(TypeLayout* typeLayout, BindingRangePath const& path)
         {
-            if(!typeLayout)
-            {
-                return nullptr;
-            }
-
             auto primaryVarLayout = _createSimpleOffsetVarLayout(typeLayout, path.primary);
             SLANG_ASSERT(primaryVarLayout);
 
-            primaryVarLayout->pendingVarLayout = _createSimpleOffsetVarLayout(typeLayout->pendingDataTypeLayout, path.pending);
+            if(auto pendingDataTypeLayout = typeLayout->pendingDataTypeLayout)
+            {
+                primaryVarLayout->pendingVarLayout = _createSimpleOffsetVarLayout(pendingDataTypeLayout, path.pending);
+            }
 
             return primaryVarLayout;
         }
@@ -1475,6 +1488,7 @@ namespace Slang
                 bindingRange.firstDescriptorRangeIndex = 0;
                 bindingRange.descriptorRangeCount = 0;
 
+#if 0
                 if( kind == LayoutResourceKind::PushConstantBuffer )
                 {
                     if(auto resInfo = parameterGroupTypeLayout->elementVarLayout->typeLayout->FindResourceInfo(LayoutResourceKind::Uniform))
@@ -1482,6 +1496,7 @@ namespace Slang
                         bindingRange.count *= resInfo->count;
                     }
                 }
+#endif
 
                 // Every parameter group will introduce a sub-object range,
                 // which will include bindings based on the type of data
@@ -1491,7 +1506,7 @@ namespace Slang
                 subObjectRange.bindingRangeIndex = bindingRangeIndex;
                 subObjectRange.offsetVarLayout = createOffsetVarLayout(typeLayout, path);
                 subObjectRange.spaceOffset = 0;
-                if (kind == LayoutResourceKind::RegisterSpace && path)
+                if (kind == LayoutResourceKind::RegisterSpace && path.primary)
                 {
                     auto resInfo = path.primary->var->FindResourceInfo(LayoutResourceKind::RegisterSpace);
                     subObjectRange.spaceOffset = resInfo->index;
@@ -1580,7 +1595,7 @@ namespace Slang
 
                                 TypeLayout::ExtendedInfo::DescriptorRangeInfo descriptorRange;
                                 descriptorRange.kind = resInfo.kind;
-                                descriptorRange.bindingType = _calcBindingType(typeLayout, resInfo.kind);
+                                descriptorRange.bindingType = _calcDescriptorType(typeLayout, resInfo.kind);
                                 descriptorRange.count = multiplier;
                                 descriptorRange.indexOffset = _calcIndexOffset(path.primary, resInfo.kind);
 
