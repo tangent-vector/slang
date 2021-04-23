@@ -2649,9 +2649,29 @@ public:
             ShaderObjectLayoutImpl*         layout)
         {
             SLANG_RETURN_ON_FAIL(_ensureOrdinaryDataBufferCreatedIfNeeded(encoder));
+            SLANG_RETURN_ON_FAIL(_bindImpl(encoder, bindingState, rootBindingIndex, layout, 0));
+            return SLANG_OK;
+        }
 
+        Result bindAsValue(
+            PipelineCommandEncoder*         encoder,
+            RootBindingState&               bindingState,
+            RootBindingIndex const&         rootBindingIndex,
+            ShaderObjectLayoutImpl*         layout)
+        {
+            SLANG_RETURN_ON_FAIL(_bindImpl(encoder, bindingState, rootBindingIndex, layout, layout->getOrdinaryDataBufferCount()));
+            return SLANG_OK;
+        }
+
+        Result _bindImpl(
+            PipelineCommandEncoder*         encoder,
+            RootBindingState&               bindingState,
+            RootBindingIndex const&         rootBindingIndex,
+            ShaderObjectLayoutImpl*         layout,
+            uint32_t                        skipResourceCount)
+        {
             auto& descSet = m_descriptorSet;
-            if(auto resourceCount = layout->getResourceSlotCount())
+            if(auto resourceCount = (layout->getResourceSlotCount() - skipResourceCount))
             {
                 auto dstIndex = rootBindingIndex.resource;
                 auto gpuHeap = bindingState.descriptorTables[dstIndex.descriptorTableIndex].heap;
@@ -2661,7 +2681,7 @@ public:
                 bindingState.device->m_device->CopyDescriptorsSimple(
                     UINT(resourceCount),
                     gpuHeap.getCpuHandle(dstIndex.descriptorIndex),
-                    cpuHeap.getCpuHandle(cpuDescriptorTable),
+                    cpuHeap.getCpuHandle(cpuDescriptorTable + skipResourceCount),
                     D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
             }
             if (auto samplerCount = layout->getSamplerSlotCount())
@@ -2684,6 +2704,7 @@ public:
             {
                 auto subObjectRange = layout->getSubObjectRange(i);
                 auto bindingRange = layout->getBindingRange(subObjectRange.bindingRangeIndex);
+                auto subObjectLayout = subObjectRange.layout.Ptr();
                 switch(bindingRange.bindingType)
                 {
                 case slang::BindingType::ConstantBuffer:
@@ -2702,7 +2723,7 @@ public:
                                 encoder,
                                 bindingState,
                                 subIndex,
-                                subObjectRange.layout);
+                                subObjectLayout);
                         }
                     }
                     break;
@@ -2720,7 +2741,29 @@ public:
                                 encoder,
                                 bindingState,
                                 subRootParamIndex,
-                                subObjectRange.layout);
+                                subObjectLayout);
+                        }
+                    }
+                    break;
+
+                case slang::BindingType::ExistentialValue:
+                    if(subObjectLayout)
+                    {
+                        auto baseIndex = bindingRange.flatIndex;
+                        for (uint32_t j = 0; j < bindingRange.count; j++)
+                        {
+                            auto& object = m_objects[baseIndex + j];
+
+                            RootBindingIndex subIndex = rootBindingIndex;
+                            subIndex.rootParamIndex += subObjectRange.offset.rootParam;
+                            subIndex.resource.descriptorIndex += subObjectRange.offset.resource;
+                            subIndex.sampler.descriptorTableIndex += subObjectRange.offset.sampler;
+
+                            object->bindAsValue(
+                                encoder,
+                                bindingState,
+                                subIndex,
+                                subObjectLayout);
                         }
                     }
                     break;
