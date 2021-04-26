@@ -2878,10 +2878,10 @@ public:
             return SLANG_OK;
         }
 
-        Result bindAsConstantBuffer(
+        Result bindOrdinaryDataBufferIfNeeded(
             PipelineCommandEncoder*     encoder,
             RootBindingContext&         context,
-            RootBindingOffset const&    inOffset,
+            RootBindingOffset&          ioOffset,
             ShaderObjectLayoutImpl*     layout)
         {
             // We start by ensuring that the buffer is created, if it is needed.
@@ -2892,22 +2892,31 @@ public:
             // the given `descriptorSet` and update the base range index for
             // subsequent binding operations to account for it.
             //
-            RootBindingOffset offset = inOffset;
             if (m_constantBuffer)
             {
                 auto bufferImpl = static_cast<BufferResourceImpl*>(m_constantBuffer);
                 writeBufferDescriptor(
                     context,
-                    offset,
+                    ioOffset,
                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
                     bufferImpl,
                     m_constantBufferOffset,
                     m_constantBufferSize);
-                offset.binding++;
+                ioOffset.binding++;
             }
 
-            SLANG_RETURN_ON_FAIL(bindAsValue(encoder, context, offset, layout));
+            return SLANG_OK;
+        }
 
+        Result bindAsConstantBuffer(
+            PipelineCommandEncoder*     encoder,
+            RootBindingContext&         context,
+            RootBindingOffset const&    inOffset,
+            ShaderObjectLayoutImpl*     layout)
+        {
+            RootBindingOffset offset = inOffset;
+            SLANG_RETURN_ON_FAIL(bindOrdinaryDataBufferIfNeeded(encoder, context, /*inout*/ offset, layout));
+            SLANG_RETURN_ON_FAIL(bindAsValue(encoder, context, offset, layout));
             return SLANG_OK;
         }
 
@@ -3091,7 +3100,10 @@ public:
 
             SLANG_RETURN_ON_FAIL(allocateDescriptorSets(encoder, context, offset, layout));
 
-            SLANG_RETURN_ON_FAIL(bindAsConstantBuffer(encoder, context, offset, layout));
+            RootBindingOffset ordinaryDataBufferOffset = offset;
+            SLANG_RETURN_ON_FAIL(bindOrdinaryDataBufferIfNeeded(encoder, context, /*inout*/ ordinaryDataBufferOffset, layout));
+
+            SLANG_RETURN_ON_FAIL(bindAsValue(encoder, context, offset, layout));
 
             auto entryPointCount = layout->getEntryPoints().getCount();
             for( Index i = 0; i < entryPointCount; ++i )
