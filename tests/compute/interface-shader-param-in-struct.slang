@@ -75,11 +75,8 @@ void computeMain(
     let tid = dispatchThreadID.x;
 
     let inputVal : int = tid;
-    let outputVal =
-        test(inputVal, gStrategy, stuff.modifier)
-        +
-        stuff.extra*stuff.extra
-        ;
+    let outputVal = test(inputVal, gStrategy, stuff.modifier)
+        + stuff.extra*stuff.extra;
 
     gOutputBuffer[tid] = outputVal;
 }

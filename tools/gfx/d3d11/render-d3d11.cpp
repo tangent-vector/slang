@@ -1231,16 +1231,35 @@ protected:
             return SLANG_OK;
         }
     public:
-        Result bindOrdinaryDataBufferAndResources(D3D11Device* device, RootBindingState* bindingState)
+            /// Bind this object as if it was declared as a `ConstantBuffer<T>` in Slang
+        Result bindAsConstantBuffer(D3D11Device* device, RootBindingState* bindingState)
         {
+            // A `ConstantBuffer<T>` will always start with a "default" constant
+            // buffer binding for the ordinary data in `T` (if there was any).
+            //
             SLANG_RETURN_ON_FAIL(_bindOrdinaryDataBufferIfNeeded(device, bindingState));
-            SLANG_RETURN_ON_FAIL(bindResources(device, bindingState));
+
+            // The ordinary data buffer (if any) is then followed by the bindings
+            // for any reosurce binding ranges nested in `T`.
+            //
+            SLANG_RETURN_ON_FAIL(bindAsValue(device, bindingState));
+
             return SLANG_OK;
         }
 
-        Result bindResources(D3D11Device* device, RootBindingState* bindingState)
+            /// Bind this object as if it is were declared as a simple value like
+            /// and `IThing` that happens to have a `ConcreteThing` bound to it.
+            ///
+        Result bindAsValue(D3D11Device* device, RootBindingState* bindingState)
         {
             auto layout = getLayout();
+
+            // The easy part is that we can bind each of the resources and samplers
+            // this object directly contains to the pipeline.
+            //
+            // TODO: These loops could in principle be replaced with invididual calls
+            // to the relevant D3D11 API functions taht bind resources/samplers,
+            // since those calls can handle arrays of resources/samplers.
 
             for (auto sampler : m_samplers)
                 bindingState->samplerBindings.add(sampler ? sampler->m_sampler.get() : nullptr);
@@ -1251,25 +1270,51 @@ protected:
             for (auto uav : m_uavs)
                 bindingState->uavBindings.add(uav ? uav->m_uav : nullptr);
 
+            // Next, we need to recurse on any sub-objects to bind them as well.
+
+            // TODO: The logic here is flat-out wrong in that we are binding
+            // all the sub-objects *after* the directly-contained resource/sampler fields,
+            // but the nature of the Slang layout rules right now is that the two may actually
+            // be interleaved.
+            //
+            // To fix this issue, we need to do one of the following:
+            //
+            // * Change this routine to use an outer loop over binding ranges, and then
+            //   bind one resource, smapler, or sub-object at a time inside that loop.
+            //
+            // * Change this logic to explicitly pass down the base register(s) to use when
+            //   binding resources/samplers/etc.
+            //
+            // * Change the layout rules that Slang uses to lay thing sout in a way that
+            //   better matches these rules.
+            //
+
             for(auto const& subObjectRange : layout->getSubObjectRanges())
             {
                 auto const& bindingRange = layout->getBindingRange(subObjectRange.bindingRangeIndex);
                 switch(bindingRange.bindingType)
                 {
-                default:
-                    break;
-
+                // For D3D11-compatible targets, the Slang compiler treats the
+                // `ConstantBuffer<T>` and `ParameterBlock<T>` types the same.
+                //
                 case slang::BindingType::ConstantBuffer:
                 case slang::BindingType::ParameterBlock:
                     {
+                        // Each constant-buffer sub-object needs to be bound into
+                        // the pipeline state as a constant buffer (meaning that
+                        // a buffer will be bound for its ordinary data, if any).
+                        //
                         Index count = bindingRange.count;
                         Index baseIndex = bindingRange.baseIndex;
                         for(Index i = 0; i < count; ++i)
                         {
                             auto subObject = m_objects[ baseIndex + i ];
-                            subObject->bindOrdinaryDataBufferAndResources(device, bindingState);
+                            subObject->bindAsConstantBuffer(device, bindingState);
                         }
                     }
+                    break;
+
+                default:
                     break;
                 }
             }
@@ -1306,7 +1351,7 @@ protected:
                         for(Index i = 0; i < count; ++i)
                         {
                             auto subObject = m_objects[ baseIndex + i ];
-                            subObject->bindResources(device, bindingState);
+                            subObject->bindAsValue(device, bindingState);
                         }
                     }
                     break;
@@ -1408,13 +1453,13 @@ protected:
 
         Result bindRootObject(D3D11Device* device, RootBindingState* bindingState)
         {
-            SLANG_RETURN_ON_FAIL(Super::bindOrdinaryDataBufferAndResources(device, bindingState));
+            SLANG_RETURN_ON_FAIL(Super::bindAsConstantBuffer(device, bindingState));
 
             auto entryPointCount = m_entryPoints.getCount();
             for (Index i = 0; i < entryPointCount; ++i)
             {
                 auto entryPoint = m_entryPoints[i];
-                SLANG_RETURN_ON_FAIL(entryPoint->bindOrdinaryDataBufferAndResources(device, bindingState));
+                SLANG_RETURN_ON_FAIL(entryPoint->bindAsConstantBuffer(device, bindingState));
             }
 
             SLANG_RETURN_ON_FAIL(Super::bindPendingResources(device, bindingState));

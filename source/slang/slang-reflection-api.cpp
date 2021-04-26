@@ -1084,41 +1084,60 @@ SLANG_API SlangReflectionType* spReflectionType_getSpecializedTypeArgType(SlangR
 
 namespace Slang
 {
-        /// A chain of `VarLayout`s that can be summed to provide offset information for a nested field.
-    struct SimpleBindingRangePathLink
+        /// A link in a chain of `VarLayout`s that can be used to compute offset information for a nested field
+    struct BindingRangePathLink
     {
-        SimpleBindingRangePathLink()
+        BindingRangePathLink()
         {}
 
-        SimpleBindingRangePathLink(
-            SimpleBindingRangePathLink*   parent,
+        BindingRangePathLink(
+            BindingRangePathLink*   parent,
             VarLayout*              var)
-            : parent(parent)
-            , var(var)
+            : var(var)
+            , parent(parent)
         {}
 
-        SimpleBindingRangePathLink* parent = nullptr;
-        VarLayout*                  var = nullptr;
+            /// The inner-most variable that contributes to the offset along this path
+        VarLayout*              var = nullptr;
+
+            /// The next outer link along the path
+        BindingRangePathLink*   parent = nullptr;
     };
 
+        /// A path leading to some nested field, with both parimary and "pending" data offsets
     struct BindingRangePath
     {
-        SimpleBindingRangePathLink* primary = nullptr;
-        SimpleBindingRangePathLink* pending = nullptr;
+
+            /// The chain of variables that defines the "primary" offset of a nested field
+        BindingRangePathLink* primary = nullptr;
+
+            /// The chain of variables that defines the offset for "pending" data of a nested field
+        BindingRangePathLink* pending = nullptr;
     };
 
+        /// A helper type to construct a `BindingRangePath` that extends an existing path
     struct ExtendedBindingRangePath : BindingRangePath
     {
+            /// Construct a path that extends `parent` with offset information from `varLayout`
         ExtendedBindingRangePath(
             BindingRangePath const& parent,
             VarLayout*              varLayout)
         {
-            primaryLink = SimpleBindingRangePathLink(parent.primary, varLayout);
+            SLANG_ASSERT(varLayout);
+
+            // We always add another link to the primary chain.
+            //
+            primaryLink = BindingRangePathLink(parent.primary, varLayout);
             primary = &primaryLink;
 
+            // If the `varLayout` provided has any offset information
+            // for pending data, then we also add a link to the pending
+            // chain, but otherwise we re-use the pending chain from
+            // the parent path.
+            //
             if(auto pendingLayout = varLayout->pendingVarLayout)
             {
-                pendingLink = SimpleBindingRangePathLink(parent.pending, pendingLayout);
+                pendingLink = BindingRangePathLink(parent.pending, pendingLayout);
                 pending = &pendingLink;
             }
             else
@@ -1127,12 +1146,15 @@ namespace Slang
             }
         }
 
-        SimpleBindingRangePathLink primaryLink;
-        SimpleBindingRangePathLink pendingLink;
+            /// Storage for a link in the primary chain, if needed
+        BindingRangePathLink primaryLink;
+
+            /// Storage for a link in the pending chain, if needed
+        BindingRangePathLink pendingLink;
     };
 
-
-    Int _calcIndexOffset(SimpleBindingRangePathLink* path, LayoutResourceKind kind)
+        /// Calculate the offset for resources of the given `kind` in the `path`.
+    Int _calcIndexOffset(BindingRangePathLink* path, LayoutResourceKind kind)
     {
         Int result = 0;
         for( auto link = path; link; link = link->parent )
@@ -1145,7 +1167,8 @@ namespace Slang
         return result;
     }
 
-    Int _calcSpaceOffset(SimpleBindingRangePathLink* path, LayoutResourceKind kind)
+        /// Calculate the regsiter space / set for resources of the given `kind` in the `path`.
+    Int _calcSpaceOffset(BindingRangePathLink* path, LayoutResourceKind kind)
     {
         Int result = 0;
         for( auto link = path; link; link = link->parent )
@@ -1293,6 +1316,8 @@ namespace Slang
         return _calcBindingType(kind);
     }
 
+        /// Calculate the type to use for a descriptor range representin
+        /// resources of the given `kind` in the given `typeLayout`.
     SlangBindingType _calcDescriptorType(
         Slang::TypeLayout*  typeLayout,
         LayoutResourceKind  kind)
@@ -1343,7 +1368,10 @@ namespace Slang
             return index;
         }
 
-        RefPtr<VarLayout> _createSimpleOffsetVarLayout(TypeLayout* typeLayout, SimpleBindingRangePathLink* path)
+            /// Create a single `VarLayout` for `typeLayout` that summarizes all of the offset information in `path`.
+            ///
+            /// Note: This function does not handle "pending" layout information.
+        RefPtr<VarLayout> _createSimpleOffsetVarLayout(TypeLayout* typeLayout, BindingRangePathLink* path)
         {
             SLANG_ASSERT(typeLayout);
 
@@ -1361,6 +1389,7 @@ namespace Slang
             return varLayout;
         }
 
+            /// Create a single `VarLayout` for `typeLayout` that summarizes all of the offset information in `path`.
         RefPtr<VarLayout> createOffsetVarLayout(TypeLayout* typeLayout, BindingRangePath const& path)
         {
             auto primaryVarLayout = _createSimpleOffsetVarLayout(typeLayout, path.primary);
@@ -1487,16 +1516,6 @@ namespace Slang
                 bindingRange.descriptorSetIndex = -1;
                 bindingRange.firstDescriptorRangeIndex = 0;
                 bindingRange.descriptorRangeCount = 0;
-
-#if 0
-                if( kind == LayoutResourceKind::PushConstantBuffer )
-                {
-                    if(auto resInfo = parameterGroupTypeLayout->elementVarLayout->typeLayout->FindResourceInfo(LayoutResourceKind::Uniform))
-                    {
-                        bindingRange.count *= resInfo->count;
-                    }
-                }
-#endif
 
                 // Every parameter group will introduce a sub-object range,
                 // which will include bindings based on the type of data
@@ -1692,58 +1711,6 @@ namespace Slang
                 bindingRange.descriptorSetIndex = 0;
                 bindingRange.descriptorRangeCount = 0;
                 bindingRange.firstDescriptorRangeIndex = 0;
-
-                _calcSpaceOffset(path.primary, LayoutResourceKind::Uniform);
-
-                // If the interface-type field was statically specialized in the layout,
-                // then we should have "pending" layout information for it, and any
-                // of the fields of that pending data type should also contribute
-                // to the layout we are computing here (insofar as they should be added
-                // as descriptor ranges).
-                //
-                // TODO: One complication is that we probably want the layout of a specialized
-                // type to share a common prefix with the unspecialized case, so that we'd like
-                // these descriptor ranges to come *after* all the other ones.
-                //
-#if 0
-                if(auto pendingLayout = typeLayout->pendingDataTypeLayout)
-                {
-                    // If we have 
-
-                    Index descriptorSetIndex = -1;
-                    for(auto resInfo : pendingLayout->resourceInfos)
-                    {
-                        Index space = _calcSpaceOffset(path.pending, resInfo.kind);
-                        descriptorSetIndex = _findOrAddDescriptorSet(space);
-                    }
-
-                    if(descriptorSetIndex != -1)
-                    {
-                        auto descriptorSet = m_extendedInfo->m_descriptorSets[descriptorSetIndex];
-                        bindingRange.descriptorSetIndex = descriptorSetIndex;
-                        bindingRange.firstDescriptorRangeIndex = descriptorSet->descriptorRanges.getCount();
-                    }
-
-                    // We want to erase out the binding ranges for the contained
-                    // data and only keep the desriptor ranges, because those
-                    // are what we need/want to allocate into the parent object.
-                    auto bindingRangeCountBefore = m_extendedInfo->m_bindingRanges.getCount();
-
-
-                    BindingRangePath pendingPath;
-                    pendingPath.primary = path.pending;
-                    addRangesRec(pendingLayout, pendingPath, multiplier);
-
-                    m_extendedInfo->m_bindingRanges.setCount(bindingRangeCountBefore);
-
-                    if(descriptorSetIndex != -1)
-                    {
-                        auto descriptorSet = m_extendedInfo->m_descriptorSets[descriptorSetIndex];
-                        bindingRange.descriptorRangeCount = descriptorSet->descriptorRanges.getCount() - bindingRange.firstDescriptorRangeIndex;
-                    }
-
-                }
-#endif
 
                 TypeLayout::ExtendedInfo::SubObjectRangeInfo subObjectRange;
                 subObjectRange.bindingRangeIndex = m_extendedInfo->m_bindingRanges.getCount();
