@@ -667,6 +667,69 @@ public:
         VkPipeline m_pipeline = VK_NULL_HANDLE;
     };
 
+    struct BindingOffset
+    {
+        uint32_t binding = 0;
+        uint32_t bindingSet = 0;
+
+        uint32_t childSet = 0;
+
+        uint32_t pushConstant = 0;
+
+        BindingOffset()
+        {}
+
+        BindingOffset(slang::VariableLayoutReflection* varLayout)
+        {
+            if(varLayout)
+            {
+                bindingSet = (uint32_t) varLayout->getBindingSpace(SLANG_PARAMETER_CATEGORY_DESCRIPTOR_TABLE_SLOT);
+                binding = (uint32_t) varLayout->getOffset(SLANG_PARAMETER_CATEGORY_DESCRIPTOR_TABLE_SLOT);
+
+                childSet = (uint32_t) varLayout->getOffset(SLANG_PARAMETER_CATEGORY_REGISTER_SPACE);
+
+                pushConstant = (uint32_t) varLayout->getOffset(SLANG_PARAMETER_CATEGORY_PUSH_CONSTANT_BUFFER);
+            }
+        }
+
+        void operator+=(BindingOffset const& offset)
+        {
+            binding += offset.binding;
+            bindingSet += offset.bindingSet;
+            childSet += offset.childSet;
+            pushConstant += offset.pushConstant;
+        }
+    };
+
+    struct BindingOffsetPair : BindingOffset
+    {
+        BindingOffset pending;
+
+        BindingOffsetPair()
+        {}
+
+        explicit BindingOffsetPair(BindingOffset const& offset)
+            : BindingOffset(offset)
+        {}
+
+        BindingOffsetPair(slang::VariableLayoutReflection* varLayout)
+            : BindingOffset(varLayout)
+            , pending(varLayout->getPendingDataLayout())
+        {}
+
+        void operator+=(BindingOffset const& offset)
+        {
+            BindingOffset::operator+=(offset);
+        }
+
+        void operator+=(BindingOffsetPair const& offset)
+        {
+            BindingOffset::operator+=(offset);
+
+            pending += offset.pending;
+        }
+    };
+
     class ShaderObjectLayoutImpl : public ShaderObjectLayoutBase
     {
     public:
@@ -675,20 +738,16 @@ public:
             slang::BindingType bindingType;
             Index count;
             Index baseIndex;
-            Index descriptorSetIndex;
-            Index rangeIndexInDescriptorSet;
 
-            // Returns true if this binding range consumes a specialization argument slot.
-            bool isSpecializationArg() const
-            {
-                return bindingType == slang::BindingType::ExistentialValue;
-            }
+            BindingOffset offset;
         };
 
         struct SubObjectRangeInfo
         {
             RefPtr<ShaderObjectLayoutImpl> layout;
             Index bindingRangeIndex;
+
+            BindingOffset pendingOffset;
         };
 
         struct DescriptorSetInfo
@@ -718,6 +777,8 @@ public:
             Index m_varyingInputCount = 0;
             Index m_varyingOutputCount = 0;
             uint32_t m_pushConstantSize = 0;
+            uint32_t m_childDescriptorSetCount = 0;
+            uint32_t m_totalBindingCount = 0;
             List<DescriptorSetInfo> m_descriptorSetBuildInfos;
             Dictionary<Index, Index> m_mapSpaceToDescriptorSetIndex;
 
@@ -772,6 +833,7 @@ public:
                 }
             }
 
+#if 0
             struct BindingOffset
             {
                 SlangInt space = 0;
@@ -813,6 +875,7 @@ public:
                     pending += other.pending;
                 }
             };
+#endif
 
             void _addDescriptorRangesAsValue(
                 slang::VariableLayoutReflection* varLayout)
@@ -833,7 +896,7 @@ public:
                     SlangInt descriptorRangeCount = typeLayout->getDescriptorSetDescriptorRangeCount(s);
                     if (descriptorRangeCount == 0)
                         continue;
-                    auto descriptorSetIndex = findOrAddDescriptorSet(offset.space + typeLayout->getDescriptorSetSpaceOffset(s));
+                    auto descriptorSetIndex = findOrAddDescriptorSet(offset.bindingSet + typeLayout->getDescriptorSetSpaceOffset(s));
                     auto& descriptorSetInfo = m_descriptorSetBuildInfos[descriptorSetIndex];
                     for(SlangInt r = 0; r < descriptorRangeCount; ++r)
                     {
@@ -932,7 +995,7 @@ public:
                 // object is bound as a stand alone parameter block.
                 if (typeLayout->getSize(SLANG_PARAMETER_CATEGORY_UNIFORM) != 0)
                 {
-                    auto descriptorSetIndex = findOrAddDescriptorSet(offset.space);
+                    auto descriptorSetIndex = findOrAddDescriptorSet(offset.bindingSet);
                     auto& descriptorSetInfo = m_descriptorSetBuildInfos[descriptorSetIndex];
                     VkDescriptorSetLayoutBinding vkBindingRangeDesc = {};
                     vkBindingRangeDesc.binding = offset.binding;
@@ -958,10 +1021,6 @@ public:
                     slang::TypeLayoutReflection* slangLeafTypeLayout =
                         typeLayout->getBindingRangeLeafTypeLayout(r);
 
-                    SlangInt descriptorSetIndex = typeLayout->getBindingRangeDescriptorSetIndex(r);
-                    SlangInt rangeIndexInDescriptorSet =
-                        typeLayout->getBindingRangeFirstDescriptorRangeIndex(r);
-
                     Index baseIndex = 0;
                     switch (slangBindingType)
                     {
@@ -975,11 +1034,13 @@ public:
                     case slang::BindingType::Sampler:
                         baseIndex = m_samplerCount;
                         m_samplerCount += count;
+                        m_totalBindingCount += 1;
                         break;
 
                     case slang::BindingType::CombinedTextureSampler:
                         baseIndex = m_combinedTextureSamplerCount;
                         m_combinedTextureSamplerCount += count;
+                        m_totalBindingCount += 1;
                         break;
 
                     case slang::BindingType::VaryingInput:
@@ -994,6 +1055,7 @@ public:
                     default:
                         baseIndex = m_resourceViewCount;
                         m_resourceViewCount += count;
+                        m_totalBindingCount += 1;
                         break;
                     }
 
@@ -1001,8 +1063,30 @@ public:
                     bindingRangeInfo.bindingType = slangBindingType;
                     bindingRangeInfo.count = count;
                     bindingRangeInfo.baseIndex = baseIndex;
+
+                    if(typeLayout->getBindingRangeDescriptorRangeCount(r) != 0)
+                    {
+                        SlangInt descriptorSetIndex = typeLayout->getBindingRangeDescriptorSetIndex(r);
+                        SlangInt descriptorRangeIndex = typeLayout->getBindingRangeFirstDescriptorRangeIndex(r);
+
+                        auto set = typeLayout->getDescriptorSetSpaceOffset(descriptorSetIndex);
+                        auto bindingOffset = typeLayout->getDescriptorSetDescriptorRangeIndexOffset(descriptorSetIndex, descriptorRangeIndex);
+
+                        bindingRangeInfo.offset.bindingSet = uint32_t(set);
+                        if(slangBindingType == slang::BindingType::PushConstant)
+                        {
+                            bindingRangeInfo.offset.pushConstant = uint32_t(bindingOffset);
+                        }
+                        else
+                        {
+                            bindingRangeInfo.offset.binding = uint32_t(bindingOffset);
+                        }
+                    }
+
+#if 0
                     bindingRangeInfo.descriptorSetIndex = descriptorSetIndex;
                     bindingRangeInfo.rangeIndexInDescriptorSet = rangeIndexInDescriptorSet;
+#endif
 
                     m_bindingRanges.add(bindingRangeInfo);
                 }
@@ -1011,6 +1095,7 @@ public:
                 for (SlangInt r = 0; r < subObjectRangeCount; ++r)
                 {
                     SlangInt bindingRangeIndex = typeLayout->getSubObjectRangeBindingRangeIndex(r);
+                    auto& bindingRange = m_bindingRanges[bindingRangeIndex];
                     auto slangBindingType = typeLayout->getBindingRangeType(bindingRangeIndex);
                     slang::TypeLayoutReflection* slangLeafTypeLayout =
                         typeLayout->getBindingRangeLeafTypeLayout(bindingRangeIndex);
@@ -1023,17 +1108,60 @@ public:
                     // know the appropraite type/layout of sub-object to allocate.
                     //
                     RefPtr<ShaderObjectLayoutImpl> subObjectLayout;
-                    if (slangBindingType != slang::BindingType::ExistentialValue)
+                    switch(slangBindingType)
                     {
-                        ShaderObjectLayoutImpl::createForElementType(
-                            m_renderer,
-                            slangLeafTypeLayout->getElementTypeLayout(),
-                            subObjectLayout.writeRef());
+                    default:
+                        {
+                            auto elementTypeLayout = slangLeafTypeLayout->getElementTypeLayout();
+                            ShaderObjectLayoutImpl::createForElementType(
+                                m_renderer,
+                                elementTypeLayout,
+                                subObjectLayout.writeRef());
+                        }
+                        break;
+
+                    case slang::BindingType::ExistentialValue:
+                        if(auto pendingTypeLayout = slangLeafTypeLayout->getPendingDataTypeLayout())
+                        {
+                            ShaderObjectLayoutImpl::createForElementType(
+                                m_renderer,
+                                pendingTypeLayout,
+                                subObjectLayout.writeRef());
+                        }
+                        break;
                     }
 
                     SubObjectRangeInfo subObjectRange;
                     subObjectRange.bindingRangeIndex = bindingRangeIndex;
                     subObjectRange.layout = subObjectLayout;
+
+                    auto offset = BindingOffsetPair(typeLayout->getSubObjectRangeOffset(r));
+                    bindingRange.offset = offset;
+                    subObjectRange.pendingOffset = offset.pending;
+
+                    switch(slangBindingType)
+                    {
+                    case slang::BindingType::ParameterBlock:
+                        m_childDescriptorSetCount += subObjectLayout->getTotalDescriptorSetCount();
+                        break;
+
+                    case slang::BindingType::ConstantBuffer:
+                        m_childDescriptorSetCount += subObjectLayout->getChildDescriptorSetCount();
+                        m_totalBindingCount += subObjectLayout->getTotalBindingCount();
+                        break;
+
+                    case slang::BindingType::ExistentialValue:
+                        if(subObjectLayout)
+                        {
+                            m_childDescriptorSetCount += subObjectLayout->getChildDescriptorSetCount();
+                            m_totalBindingCount += subObjectLayout->getTotalBindingCount();
+                        }
+                        break;
+
+                    default:
+                        break;
+                    }
+
                     m_subObjectRanges.add(subObjectRange);
                 }
             }
@@ -1085,7 +1213,7 @@ public:
             Builder builder(renderer);
             builder.setElementTypeLayout(elementType);
 
-            Builder::BindingOffsetPair offset;
+            BindingOffsetPair offset;
             offset.pending.binding = elementType->getSize(SLANG_PARAMETER_CATEGORY_DESCRIPTOR_TABLE_SLOT)
                 + elementType->getSize(SLANG_PARAMETER_CATEGORY_UNIFORM) ? 1 : 0;
             builder._addDescriptorRangesAsConstantBuffer(elementType, offset);
@@ -1101,7 +1229,13 @@ public:
             }
         }
 
-        List<DescriptorSetInfo> const& getDescriptorSets() { return m_descriptorSetInfos; }
+        uint32_t getOwnDescriptorSetCount() { return uint32_t(m_descriptorSetInfos.getCount()); }
+        List<DescriptorSetInfo> const& getOwnDescriptorSets() { return m_descriptorSetInfos; }
+
+        uint32_t getTotalBindingCount() { return m_totalBindingCount; }
+
+        uint32_t getChildDescriptorSetCount() { return m_childDescriptorSetCount; }
+        uint32_t getTotalDescriptorSetCount() { return getOwnDescriptorSetCount() + getChildDescriptorSetCount(); }
 
         uint32_t getPushConstantSize() { return m_pushConstantSize; }
 
@@ -1142,6 +1276,8 @@ public:
             m_resourceViewCount = builder->m_resourceViewCount;
             m_samplerCount = builder->m_samplerCount;
             m_combinedTextureSamplerCount = builder->m_combinedTextureSamplerCount;
+            m_childDescriptorSetCount = builder->m_childDescriptorSetCount;
+            m_totalBindingCount = builder->m_totalBindingCount;
             m_subObjectCount = builder->m_subObjectCount;
             m_subObjectRanges = builder->m_subObjectRanges;
 
@@ -1167,6 +1303,10 @@ public:
         Index m_combinedTextureSamplerCount = 0;
         Index m_subObjectCount = 0;
         uint32_t m_pushConstantSize = 0;
+
+        uint32_t m_childDescriptorSetCount = 0;
+        uint32_t m_totalBindingCount = 0;
+
         List<SubObjectRangeInfo> m_subObjectRanges;
     };
 
@@ -1196,12 +1336,12 @@ public:
                 setElementTypeLayout(entryPointLayout->getTypeLayout());
                 m_pushConstantSize = (uint32_t)_unwrapParameterGroups(entryPointLayout->getTypeLayout())
                                          ->getSize(SLANG_PARAMETER_CATEGORY_UNIFORM);
-                m_stage = VulkanUtil::getShaderStage(entryPointLayout->getStage());
+                m_shaderStageFlag = VulkanUtil::getShaderStage(entryPointLayout->getStage());
             }
 
             slang::EntryPointLayout* m_slangEntryPointLayout = nullptr;
 
-            VkShaderStageFlags m_stage;
+            VkShaderStageFlags m_shaderStageFlag;
         };
 
         Result _init(Builder const* builder)
@@ -1211,16 +1351,16 @@ public:
             SLANG_RETURN_ON_FAIL(Super::_init(builder));
 
             m_slangEntryPointLayout = builder->m_slangEntryPointLayout;
-            m_stage = builder->m_stage;
+            m_shaderStageFlag = builder->m_shaderStageFlag;
             return SLANG_OK;
         }
 
-        VkShaderStageFlags getStage() const { return m_stage; }
+        VkShaderStageFlags getShaderStageFlag() const { return m_shaderStageFlag; }
 
         slang::EntryPointLayout* getSlangLayout() const { return m_slangEntryPointLayout; };
 
         slang::EntryPointLayout* m_slangEntryPointLayout;
-        VkShaderStageFlags m_stage;
+        VkShaderStageFlags m_shaderStageFlag;
     };
 
     class RootShaderObjectLayout : public ShaderObjectLayoutImpl
@@ -1240,7 +1380,9 @@ public:
         struct EntryPointInfo
         {
             RefPtr<EntryPointLayout> layout;
-            Index rangeOffset;
+
+//            Index rangeOffset;
+            BindingOffsetPair offset;
         };
 
         struct Builder : Super::Builder
@@ -1266,31 +1408,29 @@ public:
             {
                 setElementTypeLayout(globalsLayout->getTypeLayout());
                 _addDescriptorRangesAsValue(globalsLayout);
+
+                m_pendingDataOffset = BindingOffset(globalsLayout->getPendingDataLayout());
             }
 
             void addEntryPoint(EntryPointLayout* entryPointLayout)
             {
+                auto slangEntryPointLayout = entryPointLayout->getSlangLayout();
+                auto entryPointVarLayout = slangEntryPointLayout->getVarLayout();
+
+
                 EntryPointInfo info;
                 info.layout = entryPointLayout;
+                info.offset = BindingOffsetPair(entryPointVarLayout);
 
-                if (m_descriptorSetBuildInfos.getCount())
-                {
-                    info.rangeOffset = m_descriptorSetBuildInfos[0].vkBindings.getCount();
-                }
-                else
-                {
-                    info.rangeOffset = 0;
-                }
-
-                auto slangEntryPointLayout = entryPointLayout->getSlangLayout();
-
-                _addDescriptorRangesAsValue(slangEntryPointLayout->getVarLayout());
+                _addDescriptorRangesAsValue(entryPointVarLayout);
                 m_entryPoints.add(info);
             }
 
             slang::IComponentType* m_program;
             slang::ProgramLayout* m_programLayout;
             List<EntryPointInfo> m_entryPoints;
+
+            BindingOffset m_pendingDataOffset;
         };
 
         Index findEntryPointIndex(VkShaderStageFlags stage)
@@ -1299,7 +1439,7 @@ public:
             for (Index i = 0; i < entryPointCount; ++i)
             {
                 auto entryPoint = m_entryPoints[i];
-                if (entryPoint.layout->getStage() == stage)
+                if (entryPoint.layout->getShaderStageFlag() == stage)
                     return i;
             }
             return -1;
@@ -1337,6 +1477,8 @@ public:
             return SLANG_OK;
         }
 
+        BindingOffset const& getPendingDataOffset() const { return m_pendingDataOffset; }
+
         slang::IComponentType* getSlangProgram() const { return m_program; }
         slang::ProgramLayout* getSlangProgramLayout() const { return m_programLayout; }
 
@@ -1350,6 +1492,7 @@ public:
             m_program = builder->m_program;
             m_programLayout = builder->m_programLayout;
             m_entryPoints = _Move(builder->m_entryPoints);
+            m_pendingDataOffset = builder->m_pendingDataOffset;
             m_renderer = renderer;
 
             if (m_program->getSpecializationParamCount() != 0)
@@ -1372,7 +1515,7 @@ public:
                     VkPushConstantRange pushConstantRange = {};
                     pushConstantRange.offset = pushConstantOffset;
                     pushConstantRange.size = size;
-                    pushConstantRange.stageFlags = entryPoint.layout->getStage();
+                    pushConstantRange.stageFlags = entryPoint.layout->getShaderStageFlag();
                     m_pushConstantRanges.add(pushConstantRange);
                     pushConstantOffset += size;
                 }
@@ -1399,7 +1542,7 @@ public:
         // shader objects and add them to `m_vkDescriptorSetLayouts`.
         Result addDescriptorSetLayoutRec(ShaderObjectLayoutImpl* layout)
         {
-            for (auto& descSetInfo : layout->getDescriptorSets())
+            for (auto& descSetInfo : layout->getOwnDescriptorSets())
             {
                 m_vkDescriptorSetLayouts.add(descSetInfo.descriptorSetLayout);
             }
@@ -1432,6 +1575,7 @@ public:
         VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
         Array<VkDescriptorSetLayout, kMaxDescriptorSets> m_vkDescriptorSetLayouts;
         Array<VkPushConstantRange, 8> m_pushConstantRanges;
+        BindingOffset m_pendingDataOffset;
         VKDevice* m_renderer = nullptr;
     };
     
@@ -1603,7 +1747,10 @@ public:
         VkPipelineLayout pipelineLayout;
         DescriptorSetAllocator* descriptorSetAllocator;
         VKDevice* device;
+        VkDescriptorSet* descriptorSets;
     };
+
+#if 0
     struct RootBindingOffset
     {
 //        uint32_t uniformOffset;
@@ -1611,8 +1758,16 @@ public:
 //        uint32_t descriptorSetIndexOffset;
 //        uint32_t descriptorRangeOffset;
 
+        uint32_t bindingSet = 0;
         uint32_t binding = 0;
+
+        uint32_t childSet = 0;
+
+        uint32_t pushConstant = 0;
     };
+#else
+    typedef BindingOffsetPair RootBindingOffset;
+#endif
 
     class ShaderObjectImpl : public ShaderObjectBase
     {
@@ -2142,6 +2297,7 @@ public:
             operator bool() { return textureView && sampler; }
         };
 
+#if 0
         // A shared template function for composing a VkWriteDescriptorSet structure.
         // The signature for `WriteDescriptorInfoFunc` is
         // `void(VkWriteDescriptorSet&, int startElement, int elementCount)`, which sets up
@@ -2194,6 +2350,20 @@ public:
             writeDescriptorInfo(write, 0, write.descriptorCount);
             bindingState->descriptorSetWrites.add(write);
         }
+#endif
+
+        static inline void writeDescriptor(
+            RootBindingContext&         context,
+            VkWriteDescriptorSet const& write)
+        {
+            auto device = context.device;
+            device->m_api.vkUpdateDescriptorSets(
+                device->m_device,
+                1,
+                &write,
+                0,
+                nullptr);
+        }
 
         static void writeBufferDescriptor(
             RootBindingContext& context,
@@ -2201,25 +2371,26 @@ public:
             VkDescriptorType descriptorType,
             BufferResourceImpl* buffer,
             size_t bufferOffset,
-            size_t bufferSize);
-#if 0
+            size_t bufferSize)
         {
-            auto descriptorSet = bindingState->descriptorSets[offset.descriptorSetIndexOffset];
+            auto descriptorSet = context.descriptorSets[offset.bindingSet];
+
+            VkDescriptorBufferInfo bufferInfo = {};
+            bufferInfo.buffer = buffer->m_buffer.m_buffer;
+            bufferInfo.offset = bufferOffset;
+            bufferInfo.range = bufferSize;
+
             VkWriteDescriptorSet write = {};
             write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             write.descriptorCount = 1;
             write.descriptorType = descriptorType;
             write.dstArrayElement = 0;
-            write.dstBinding = offset.descriptorRangeOffset;
+            write.dstBinding = offset.binding;
             write.dstSet = descriptorSet;
-            auto& bufferInfo = bindingState->descriptorInfos.reserveRange(1)->bufferInfo;
             write.pBufferInfo = &bufferInfo;
-            bufferInfo.buffer = buffer->m_buffer.m_buffer;
-            bufferInfo.offset = bufferOffset;
-            bufferInfo.range = bufferSize;
-            bindingState->descriptorSetWrites.add(write);
+
+            writeDescriptor(context, write);
         }
-#endif
 
         static void writeBufferDescriptor(
             RootBindingContext& context,
@@ -2231,141 +2402,166 @@ public:
                 context, offset, descriptorType, buffer, 0, buffer->getDesc()->sizeInBytes);
         }
 
+
         static void writePlainBufferDescriptor(
             RootBindingContext& context,
             RootBindingOffset const& offset,
             VkDescriptorType descriptorType,
-            ArrayView<RefPtr<ResourceViewImpl>> resourceViews);
-#if 0
+            ArrayView<RefPtr<ResourceViewImpl>> resourceViews)
         {
-            auto writeDescriptorInfo = [=](VkWriteDescriptorSet& write,
-                                           uint32_t startElement,
-                                           uint32_t count)
+            auto descriptorSet = context.descriptorSets[offset.bindingSet];
+
+            Index count = resourceViews.getCount();
+            for(Index i = 0; i < count; ++i)
             {
-                auto infos = bindingState->descriptorInfos.reserveRange(count);
-                write.pBufferInfo = (VkDescriptorBufferInfo*)infos;
-                for (uint32_t i = startElement; i < count; i++)
+                auto bufferView = static_cast<PlainBufferResourceViewImpl*>(resourceViews[i].Ptr());
+
+                VkDescriptorBufferInfo bufferInfo = {};
+
+                if(bufferView)
                 {
-                    auto bufferView =
-                        static_cast<PlainBufferResourceViewImpl*>(resourceViews[i].Ptr());
-                    if (bufferView)
-                    {
-                        infos[i].bufferInfo.buffer = bufferView->m_buffer->m_buffer.m_buffer;
-                        infos[i].bufferInfo.offset = 0;
-                        infos[i].bufferInfo.range = bufferView->m_buffer->getDesc()->sizeInBytes;
-                    }
+                    bufferInfo.buffer = bufferView->m_buffer->m_buffer.m_buffer;
+                    bufferInfo.offset = 0;
+                    bufferInfo.range = bufferView->m_buffer->getDesc()->sizeInBytes;
                 }
-            };
-            _writeDescriptorRange(
-                bindingState, offset, descriptorType, resourceViews, writeDescriptorInfo);
+
+                VkWriteDescriptorSet write = {};
+                write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                write.descriptorCount = 1;
+                write.descriptorType = descriptorType;
+                write.dstArrayElement = uint32_t(i);
+                write.dstBinding = offset.binding;
+                write.dstSet = descriptorSet;
+                write.pBufferInfo = &bufferInfo;
+
+                writeDescriptor(context, write);
+            }
         }
-#endif
 
         static void writeTexelBufferDescriptor(
             RootBindingContext& context,
             RootBindingOffset const& offset,
             VkDescriptorType descriptorType,
-            ArrayView<RefPtr<ResourceViewImpl>> resourceViews);
-#if 0
+            ArrayView<RefPtr<ResourceViewImpl>> resourceViews)
         {
-            auto writeDescriptorInfo = [=](VkWriteDescriptorSet& write,
-                                           uint32_t startElement,
-                                           uint32_t count)
+            auto descriptorSet = context.descriptorSets[offset.bindingSet];
+
+            Index count = resourceViews.getCount();
+            for(Index i = 0; i < count; ++i)
             {
-                auto views = bindingState->bufferViews.reserveRange(write.descriptorCount);
-                write.pTexelBufferView = views;
-                for (uint32_t i = startElement; i < count; i++)
-                {
-                    views[i] =
-                        static_cast<TexelBufferResourceViewImpl*>(resourceViews[i].Ptr())->m_view;
-                }
-            };
-            _writeDescriptorRange(
-                bindingState, offset, descriptorType, resourceViews, writeDescriptorInfo);
+                auto resourceView = static_cast<TexelBufferResourceViewImpl*>(resourceViews[i].Ptr());
+
+                VkBufferView bufferView = resourceView->m_view;
+
+                VkWriteDescriptorSet write = {};
+                write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                write.descriptorCount = 1;
+                write.descriptorType = descriptorType;
+                write.dstArrayElement = uint32_t(i);
+                write.dstBinding = offset.binding;
+                write.dstSet = descriptorSet;
+                write.pTexelBufferView = &bufferView;
+
+                writeDescriptor(context, write);
+            }
         }
-#endif
 
         static void writeTextureSamplerDescriptor(
             RootBindingContext& context,
             RootBindingOffset const& offset,
             VkDescriptorType descriptorType,
-            ArrayView<CombinedTextureSamplerSlot> slots);
-#if 0
+            ArrayView<CombinedTextureSamplerSlot> slots)
         {
-            auto writeDescriptorInfo = [=](VkWriteDescriptorSet& write,
-                                           uint32_t startElement,
-                                           uint32_t count)
+            auto descriptorSet = context.descriptorSets[offset.bindingSet];
+
+            Index count = slots.getCount();
+            for(Index i = 0; i < count; ++i)
             {
-                auto infos = bindingState->descriptorInfos.reserveRange(write.descriptorCount);
-                write.pImageInfo = (VkDescriptorImageInfo*)infos;
-                for (uint32_t i = startElement; i < count; i++)
-                {
-                    auto texture = slots[i].textureView;
-                    auto sampler = slots[i].sampler;
-                    auto& imageInfo = ((VkDescriptorImageInfo*)infos)[i];
-                    imageInfo.imageView = texture->m_view;
-                    imageInfo.imageLayout = texture->m_layout;
-                    imageInfo.sampler = sampler->m_sampler;
-                }
-            };
-            _writeDescriptorRange(bindingState, offset, descriptorType, slots, writeDescriptorInfo);
+                auto texture = slots[i].textureView;
+                auto sampler = slots[i].sampler;
+
+                VkDescriptorImageInfo imageInfo = {};
+                imageInfo.imageView = texture->m_view;
+                imageInfo.imageLayout = texture->m_layout;
+                imageInfo.sampler = sampler->m_sampler;
+
+                VkWriteDescriptorSet write = {};
+                write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                write.descriptorCount = 1;
+                write.descriptorType = descriptorType;
+                write.dstArrayElement = uint32_t(i);
+                write.dstBinding = offset.binding;
+                write.dstSet = descriptorSet;
+                write.pImageInfo = &imageInfo;
+
+                writeDescriptor(context, write);
+            }
         }
-#endif
 
         static void writeTextureDescriptor(
             RootBindingContext& context,
             RootBindingOffset const& offset,
             VkDescriptorType descriptorType,
-            ArrayView<RefPtr<ResourceViewImpl>> resourceViews);
-#if 0
+            ArrayView<RefPtr<ResourceViewImpl>> resourceViews)
         {
-            auto writeDescriptorInfo =
-                [=](VkWriteDescriptorSet& write, uint32_t startElement, uint32_t count)
+            auto descriptorSet = context.descriptorSets[offset.bindingSet];
+
+            Index count = resourceViews.getCount();
+            for(Index i = 0; i < count; ++i)
             {
-                auto infos = bindingState->descriptorInfos.reserveRange(write.descriptorCount);
-                write.pImageInfo = (VkDescriptorImageInfo*)infos;
-                for (uint32_t i = startElement; i < count; i++)
-                {
-                    auto texture = static_cast<TextureResourceViewImpl*>(resourceViews[i].Ptr());
-                    auto& imageInfo = ((VkDescriptorImageInfo*)infos)[i];
-                    imageInfo.imageView = texture->m_view;
-                    imageInfo.imageLayout = texture->m_layout;
-                    imageInfo.sampler = 0;
-                }
-            };
-            _writeDescriptorRange(
-                bindingState, offset, descriptorType, resourceViews, writeDescriptorInfo);
+                auto texture = static_cast<TextureResourceViewImpl*>(resourceViews[i].Ptr());
+
+                VkDescriptorImageInfo imageInfo = {};
+                imageInfo.imageView = texture->m_view;
+                imageInfo.imageLayout = texture->m_layout;
+                imageInfo.sampler = 0;
+
+                VkWriteDescriptorSet write = {};
+                write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                write.descriptorCount = 1;
+                write.descriptorType = descriptorType;
+                write.dstArrayElement = uint32_t(i);
+                write.dstBinding = offset.binding;
+                write.dstSet = descriptorSet;
+                write.pImageInfo = &imageInfo;
+
+                writeDescriptor(context, write);
+            }
         }
-#endif
 
         static void writeSamplerDescriptor(
             RootBindingContext& context,
             RootBindingOffset const& offset,
             VkDescriptorType descriptorType,
-            ArrayView<RefPtr<SamplerStateImpl>> samplers);
-#if 0
+            ArrayView<RefPtr<SamplerStateImpl>> samplers)
         {
-            auto writeDescriptorInfo =
-                [=](VkWriteDescriptorSet& write, uint32_t startElement, uint32_t count)
+            auto descriptorSet = context.descriptorSets[offset.bindingSet];
+
+            Index count = samplers.getCount();
+            for(Index i = 0; i < count; ++i)
             {
-                auto infos = bindingState->descriptorInfos.reserveRange(write.descriptorCount);
-                write.pImageInfo = (VkDescriptorImageInfo*)infos;
-                for (uint32_t i = startElement; i < count; i++)
-                {
-                    auto texture = samplers[i]->m_sampler;
-                    auto& imageInfo = ((VkDescriptorImageInfo*)infos)[i];
-                    imageInfo.imageView = 0;
-                    imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-                    imageInfo.sampler = samplers[i]->m_sampler;
-                }
-            };
-            _writeDescriptorRange(
-                bindingState, offset, descriptorType, samplers, writeDescriptorInfo);
+                auto sampler = samplers[i];
+
+                VkDescriptorImageInfo imageInfo = {};
+                imageInfo.imageView = 0;
+                imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+                imageInfo.sampler = sampler->m_sampler;
+
+                VkWriteDescriptorSet write = {};
+                write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                write.descriptorCount = 1;
+                write.descriptorType = descriptorType;
+                write.dstArrayElement = uint32_t(i);
+                write.dstBinding = offset.binding;
+                write.dstSet = descriptorSet;
+                write.pImageInfo = &imageInfo;
+
+                writeDescriptor(context, write);
+            }
         }
-#endif
 
         /// Ensure that the `m_ordinaryDataBuffer` has been created, if it is needed
-        Result _ensureOrdinaryDataBufferCreatedIfNeeded(PipelineCommandEncoder* encoder)
+        Result _ensureOrdinaryDataBufferCreatedIfNeeded(PipelineCommandEncoder* encoder, ShaderObjectLayoutImpl* layout)
         {
             // If we have already created a buffer to hold ordinary data, then we should
             // simply re-use that buffer rather than re-create it.
@@ -2393,10 +2589,10 @@ public:
             // For now we just make the simple assumption described above despite
             // knowing that it is false.
             //
-            RefPtr<ShaderObjectLayoutImpl> specializedLayout;
-            SLANG_RETURN_ON_FAIL(_getSpecializedLayout(specializedLayout.writeRef()));
+//            RefPtr<ShaderObjectLayoutImpl> specializedLayout;
+//            SLANG_RETURN_ON_FAIL(_getSpecializedLayout(specializedLayout.writeRef()));
 
-            m_constantBufferSize = specializedLayout->getElementTypeLayout()->getSize();
+            m_constantBufferSize = layout->getElementTypeLayout()->getSize();
             if (m_constantBufferSize == 0)
             {
                 m_upToDateConstantBufferHeapVersion =
@@ -2421,7 +2617,7 @@ public:
                 m_constantBuffer,
                 m_constantBufferOffset,
                 m_constantBufferSize,
-                specializedLayout));
+                layout));
 
             // Update version tracker so that we don't redundantly alloc and fill in
             // constant buffers for the same transient heap.
@@ -2472,109 +2668,87 @@ public:
         Result bindAsValue(
             PipelineCommandEncoder*     encoder,
             RootBindingContext&         context,
-            RootBindingOffset const&    offset)
+            RootBindingOffset const&    offset,
+            ShaderObjectLayoutImpl*     layout)
         {
-            auto layout = getLayout();
-
             // Fill in the descriptor sets based on binding ranges
             //
             for (auto bindingRangeInfo : layout->getBindingRanges())
             {
-                auto rangeIndex =
-                    bindingRangeInfo.rangeIndexInDescriptorSet + offset.descriptorRangeOffset;
+                RootBindingOffset rangeOffset = offset;
+                rangeOffset += bindingRangeInfo.offset;
+#if 0
+                rangeOffset.bindingSet += bindingRangeInfo.setOffset;
+                rangeOffset.binding += bindingRangeInfo.bindingOffset;
+                rangeOffset.childSet += bindingRangeInfo.setOffset;
+                rangeOffset.pushConstant += bindingRangeInfo.pushConstantOffset;
+#endif
+
                 auto baseIndex = bindingRangeInfo.baseIndex;
                 auto count = (uint32_t)bindingRangeInfo.count;
                 switch (bindingRangeInfo.bindingType)
                 {
                 case slang::BindingType::ConstantBuffer:
-                    for (uint32_t i = 0; i < count; ++i)
-                    {
-                        ShaderObjectImpl* subObject = m_objects[baseIndex + i];
-                        subObject->bindAsConstantBuffer(encoder, bindingState, offset);
-                    }
-                    break;
                 case slang::BindingType::ParameterBlock:
-                    for (uint32_t i = 0; i < count; ++i)
-                    {
-                        ShaderObjectImpl* subObject = m_objects[baseIndex + i];
-                        auto newOffset = offset;
-                        subObject->bindObjectIntoParameterBlock(encoder, bindingState, newOffset);
-                        offset.pushConstantRangeOffset = newOffset.pushConstantRangeOffset;
-                    }
+                case slang::BindingType::ExistentialValue:
                     break;
+
                 case slang::BindingType::Texture:
                     writeTextureDescriptor(
-                        bindingState,
-                        offset,
+                        context,
+                        rangeOffset,
                         VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
                         m_resourceViews.getArrayView(baseIndex, count));
-                    offset.descriptorRangeOffset++;
                     break;
                 case slang::BindingType::MutableTexture:
                     writeTextureDescriptor(
-                        bindingState,
-                        offset,
+                        context,
+                        rangeOffset,
                         VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
                         m_resourceViews.getArrayView(baseIndex, count));
-                    offset.descriptorRangeOffset++;
                     break;
                 case slang::BindingType::CombinedTextureSampler:
                     writeTextureSamplerDescriptor(
-                        bindingState,
-                        offset,
+                        context,
+                        rangeOffset,
                         VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                         m_combinedTextureSamplers.getArrayView(baseIndex, count));
-                    offset.descriptorRangeOffset++;
                     break;
 
                 case slang::BindingType::Sampler:
                     writeSamplerDescriptor(
-                        bindingState,
-                        offset,
+                        context,
+                        rangeOffset,
                         VK_DESCRIPTOR_TYPE_SAMPLER,
                         m_samplers.getArrayView(baseIndex, count));
-                    offset.descriptorRangeOffset++;
                     break;
 
                 case slang::BindingType::RawBuffer:
                 case slang::BindingType::MutableRawBuffer:
                     writePlainBufferDescriptor(
-                        bindingState,
-                        offset,
+                        context,
+                        rangeOffset,
                         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                         m_resourceViews.getArrayView(baseIndex, count));
-                    offset.descriptorRangeOffset++;
                     break;
 
                 case slang::BindingType::TypedBuffer:
                     writeTexelBufferDescriptor(
-                        bindingState,
-                        offset,
+                        context,
+                        rangeOffset,
                         VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER,
                         m_resourceViews.getArrayView(baseIndex, count));
-                    offset.descriptorRangeOffset++;
                     break;
                 case slang::BindingType::MutableTypedBuffer:
                     writeTexelBufferDescriptor(
-                        bindingState,
-                        offset,
+                        context,
+                        rangeOffset,
                         VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER,
                         m_resourceViews.getArrayView(baseIndex, count));
-                    offset.descriptorRangeOffset++;
                     break;
 
                 case slang::BindingType::VaryingInput:
                 case slang::BindingType::VaryingOutput:
-                    break;
-
-                case slang::BindingType::ExistentialValue:
-                    //
-                    // TODO: If the existential value is one that "fits" into the storage available,
-                    // then we should write its data directly into that area. Otherwise, we need
-                    // to bind its content as "pending" data which will come after any other data
-                    // beloning to the same set (that is, it's starting descriptorRangeIndex will
-                    // need to be one after the number of ranges accounted for in the original type)
-                    //
                     break;
 
                 default:
@@ -2583,17 +2757,136 @@ public:
                     break;
                 }
             }
+
+            for( auto const& subObjectRange : layout->getSubObjectRanges() )
+            {
+                auto const& bindingRangeInfo = layout->getBindingRange(subObjectRange.bindingRangeIndex);
+                auto count = bindingRangeInfo.count;
+                auto baseIndex = bindingRangeInfo.baseIndex;
+
+                auto subObjectLayout = subObjectRange.layout;
+
+                RootBindingOffset rangeOffset = offset;
+                rangeOffset += bindingRangeInfo.offset;
+                rangeOffset.pending += subObjectRange.pendingOffset;
+#if 0
+                rangeOffset.bindingSet += bindingRangeInfo.setOffset;
+                rangeOffset.binding += bindingRangeInfo.bindingOffset;
+                rangeOffset.childSet += bindingRangeInfo.setOffset;
+                rangeOffset.pushConstant += bindingRangeInfo.pushConstantOffset;
+#endif
+
+                switch( bindingRangeInfo.bindingType )
+                {
+                case slang::BindingType::ConstantBuffer:
+                    {
+                        RootBindingOffset objOffset = rangeOffset;
+                        for (uint32_t i = 0; i < count; ++i)
+                        {
+                            ShaderObjectImpl* subObject = m_objects[baseIndex + i];
+                            subObject->bindAsConstantBuffer(encoder, context, objOffset, subObjectLayout);
+
+                            objOffset.binding += subObjectLayout->getTotalBindingCount();
+                            objOffset.childSet += subObjectLayout->getChildDescriptorSetCount();
+                            objOffset.pushConstant += subObjectLayout->getPushConstantSize();
+                        }
+                    }
+                    break;
+                case slang::BindingType::ParameterBlock:
+                    {
+                        RootBindingOffset objOffset = rangeOffset;
+                        for (uint32_t i = 0; i < count; ++i)
+                        {
+                            ShaderObjectImpl* subObject = m_objects[baseIndex + i];
+
+                            subObject->bindAsParameterBlock(encoder, context, objOffset, subObjectLayout);
+
+#if 0
+                            auto newOffset = offset;
+                        subObject->bindObjectIntoParameterBlock(encoder, bindingState, newOffset);
+                        offset.pushConstantRangeOffset = newOffset.pushConstantRangeOffset;
+#endif
+
+                            objOffset.childSet += subObjectLayout->getChildDescriptorSetCount();
+                            objOffset.pushConstant += subObjectLayout->getPushConstantSize();
+                        }
+                    }
+                    break;
+
+                case slang::BindingType::ExistentialValue:
+                    if( subObjectLayout )
+                    {
+                        RootBindingOffset objOffset = RootBindingOffset(rangeOffset.pending);
+                        for (uint32_t i = 0; i < count; ++i)
+                        {
+                            ShaderObjectImpl* subObject = m_objects[baseIndex + i];
+
+                            subObject->bindAsValue(encoder, context, objOffset, subObjectLayout);
+
+                            objOffset.binding += subObjectLayout->getTotalBindingCount();
+                            objOffset.childSet += subObjectLayout->getChildDescriptorSetCount();
+                            objOffset.pushConstant += subObjectLayout->getPushConstantSize();
+                        }
+                    }
+                    break;
+
+
+                default:
+                    SLANG_ASSERT(!"unsupported sub-object type");
+                    return SLANG_FAIL;
+                    break;
+                }
+            }
+
             return SLANG_OK;
         }
 
-        virtual Result bindAsConstantBuffer(
-            PipelineCommandEncoder* encoder,
-            RootBindingContext& context,
-            RootBindingOffset const& inOffset)
+        Result allocateDescriptorSets(
+            PipelineCommandEncoder*     encoder,
+            RootBindingContext&         context,
+            RootBindingOffset const&    offset,
+            ShaderObjectLayoutImpl*     layout)
+        {
+            auto baseDescriptorSetIndex = offset.childSet;
+
+            for (auto descriptorSetInfo : layout->getOwnDescriptorSets())
+            {
+                auto descriptorSetHandle = context.descriptorSetAllocator->allocate(
+                        descriptorSetInfo.descriptorSetLayout).handle;
+
+                auto descriptorSetIndex = baseDescriptorSetIndex + descriptorSetInfo.space;
+
+                context.descriptorSets[descriptorSetIndex] = descriptorSetHandle;
+            }
+
+            return SLANG_OK;
+        }
+
+        Result bindAsParameterBlock(
+            PipelineCommandEncoder*     encoder,
+            RootBindingContext&         context,
+            RootBindingOffset const&    inOffset,
+            ShaderObjectLayoutImpl*     layout)
+        {
+            RootBindingOffset offset = inOffset;
+            offset.bindingSet = offset.childSet;
+            offset.binding = 0;
+
+            SLANG_RETURN_ON_FAIL(allocateDescriptorSets(encoder, context, offset, layout));
+            SLANG_RETURN_ON_FAIL(bindAsConstantBuffer(encoder, context, offset, layout));
+
+            return SLANG_OK;
+        }
+
+        Result bindAsConstantBuffer(
+            PipelineCommandEncoder*     encoder,
+            RootBindingContext&         context,
+            RootBindingOffset const&    inOffset,
+            ShaderObjectLayoutImpl*     layout)
         {
             // We start by ensuring that the buffer is created, if it is needed.
             //
-            SLANG_RETURN_ON_FAIL(_ensureOrdinaryDataBufferCreatedIfNeeded(encoder));
+            SLANG_RETURN_ON_FAIL(_ensureOrdinaryDataBufferCreatedIfNeeded(encoder, layout));
 
             // If we did indeed need/create a buffer, then we must bind it into
             // the given `descriptorSet` and update the base range index for
@@ -2613,25 +2906,12 @@ public:
                 offset.binding++;
             }
 
-            SLANG_RETURN_ON_FAIL(bindAsValue(encoder, bindingState, offset));
+            SLANG_RETURN_ON_FAIL(bindAsValue(encoder, context, offset, layout));
 
             return SLANG_OK;
         }
 
-        Result allocateDescriptorSets(
-            PipelineCommandEncoder* encoder,
-            ShaderObjectLayoutImpl* layout,
-            List<VkDescriptorSet>&  outDescriptorSets)
-        {
-            auto& descriptorSetInfos = layout->getDescriptorSets();
-            for (auto info : descriptorSetInfos)
-            {
-                outDescriptorSets.add(
-                    bindingState->descriptorSetAllocator->allocate(info.descriptorSetLayout)
-                        .handle);
-            }
-        }
-
+#if 0
         Result bindObjectIntoParameterBlock(
             PipelineCommandEncoder*     encoder,
             RootBindingContext&         context,
@@ -2650,6 +2930,7 @@ public:
             SLANG_RETURN_ON_FAIL(bindAsConstantBuffer(encoder, bindingState, offset));
             return SLANG_OK;
         }
+#endif
 
         /// Any "ordinary" / uniform data for this object
         List<char> m_ordinaryData;
@@ -2727,28 +3008,34 @@ public:
 
         EntryPointLayout* getLayout() { return static_cast<EntryPointLayout*>(m_layout.Ptr()); }
 
-        Result bindEntryPoint(
-            PipelineCommandEncoder* encoder,
-            RootBindingContext& context,
-            RootBindingOffset const& offset)
+        Result bindAsEntryPoint(
+            PipelineCommandEncoder*     encoder,
+            RootBindingContext&         context,
+            RootBindingOffset const&    inOffset,
+            EntryPointLayout*           layout)
         {
+            RootBindingOffset offset = inOffset;
+
             // Set data in `m_ordinaryData` into the push constant range.
             if (m_ordinaryData.getCount())
             {
-                auto pushConstantRange =
-                    bindingState->pushConstantRanges[offset.pushConstantRangeOffset];
+                auto pushConstantShaderStageFlags = getLayout()->getShaderStageFlag();
+                auto pushConstantDataSize = (uint32_t) m_ordinaryData.getCount();
+                auto pushConstantData = m_ordinaryData.getBuffer();
+
                 encoder->m_api->vkCmdPushConstants(
                     encoder->m_commandBuffer->m_commandBuffer,
-                    bindingState->pipelineLayout,
-                    pushConstantRange.stageFlags,
-                    pushConstantRange.offset,
-                    pushConstantRange.size,
-                    m_ordinaryData.getBuffer());
-                offset.pushConstantRangeOffset++;
+                    context.pipelineLayout,
+                    pushConstantShaderStageFlags,
+                    offset.pushConstant,
+                    pushConstantDataSize,
+                    pushConstantData);
+
+                offset.pushConstant += pushConstantDataSize;
             }
 
             // Process the rest of binding ranges.
-            SLANG_RETURN_ON_FAIL(bindAsValue(encoder, bindingState, offset));
+            SLANG_RETURN_ON_FAIL(bindAsValue(encoder, context, offset, layout));
             return SLANG_OK;
         }
 
@@ -2794,18 +3081,32 @@ public:
             return SLANG_OK;
         }
 
-        Result bindRootObject(
-            PipelineCommandEncoder* encoder,
-            RootBindingContext& context,
-            RootBindingOffset const& offset)
+        Result bindAsRoot(
+            PipelineCommandEncoder*     encoder,
+            RootBindingContext&         context,
+            RootShaderObjectLayout*     layout)
         {
-            SLANG_RETURN_ON_FAIL(bindObjectIntoParameterBlock(encoder, bindingState, offset));
+            RootBindingOffset offset = {};
+            offset.pending = layout->getPendingDataOffset();
 
-            // Bind all entry points.
-            for (auto& entryPoint : m_entryPoints)
+            SLANG_RETURN_ON_FAIL(allocateDescriptorSets(encoder, context, offset, layout));
+
+            SLANG_RETURN_ON_FAIL(bindAsConstantBuffer(encoder, context, offset, layout));
+
+            auto entryPointCount = layout->getEntryPoints().getCount();
+            for( Index i = 0; i < entryPointCount; ++i )
             {
-                entryPoint->bindEntryPoint(encoder, bindingState, offset);
+                auto entryPoint = m_entryPoints[i];
+                auto const& entryPointInfo = layout->getEntryPoint(i);
+
+                // TODO: Need to add in a local offset here...
+
+                RootBindingOffset entryPointOffset = offset;
+                entryPointOffset += entryPointInfo.offset;
+
+                entryPoint->bindAsEntryPoint(encoder, context, entryPointOffset, entryPointInfo.layout);
             }
+
             return SLANG_OK;
         }
 
@@ -4057,10 +4358,18 @@ Result VKDevice::PipelineCommandEncoder::bindRootShaderObjectImpl(
     context.device = m_device;
     context.descriptorSetAllocator = &m_commandBuffer->m_transientHeap->m_descSetAllocator;
 
+    List<VkDescriptorSet> descriptorSetsStorage;
+
+    auto descriptorSetCount = specializedLayout->getTotalDescriptorSetCount();
+
+    descriptorSetsStorage.setCount(descriptorSetCount);
+    auto descriptorSets = descriptorSetsStorage.getBuffer();
+
+    context.descriptorSets = descriptorSets;
+
     // Write bindings into descriptor sets. This step allocate descriptor sets and collects
     // all `VkWriteDescriptorSet` operations in `bindState.descriptorSetWrites`.
-    RootBindingOffset offset = {};
-    rootObjectImpl->bindRootObject(this, context, offset);
+    rootObjectImpl->bindAsRoot(this, context, specializedLayout);
 
 #if 0
     // Execute descriptor writes collected in `bindState.descriptorSetWrites`.
@@ -4070,6 +4379,7 @@ Result VKDevice::PipelineCommandEncoder::bindRootShaderObjectImpl(
         bindState.descriptorSetWrites.getArrayView().arrayView.getBuffer(),
         0,
         nullptr);
+#endif
 
     // Bind descriptor sets.
     m_device->m_api.vkCmdBindDescriptorSets(
@@ -4077,11 +4387,10 @@ Result VKDevice::PipelineCommandEncoder::bindRootShaderObjectImpl(
         bindPoint,
         specializedLayout->m_pipelineLayout,
         0,
-        (uint32_t)bindState.descriptorSets.getCount(),
-        bindState.descriptorSets.getBuffer(),
+        (uint32_t) descriptorSetCount,
+        descriptorSets,
         0,
         nullptr);
-#endif
 
     return SLANG_OK;
 }
