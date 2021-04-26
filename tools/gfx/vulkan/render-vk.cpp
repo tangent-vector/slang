@@ -1584,28 +1584,34 @@ public:
         }
     };
 
+#if 0
     union VulkanDescriptorInfo
     {
         VkDescriptorBufferInfo bufferInfo;
         VkDescriptorImageInfo imageInfo;
     };
-    struct RootBindingState
+#endif
+    struct RootBindingContext
     {
+#if 0
         ShortList<VkWriteDescriptorSet, 32> descriptorSetWrites;
         ChunkedList<VulkanDescriptorInfo, 32> descriptorInfos;
         ChunkedList<VkBufferView, 8> bufferViews;
         Array<VkDescriptorSet, kMaxDescriptorSets> descriptorSets;
         ArrayView<VkPushConstantRange> pushConstantRanges;
+#endif
         VkPipelineLayout pipelineLayout;
         DescriptorSetAllocator* descriptorSetAllocator;
         VKDevice* device;
     };
-    struct BindingOffset
+    struct RootBindingOffset
     {
-        uint32_t uniformOffset;
-        uint32_t pushConstantRangeOffset;
-        uint32_t descriptorSetIndexOffset;
-        uint32_t descriptorRangeOffset;
+//        uint32_t uniformOffset;
+//        uint32_t pushConstantRangeOffset;
+//        uint32_t descriptorSetIndexOffset;
+//        uint32_t descriptorRangeOffset;
+
+        uint32_t binding = 0;
     };
 
     class ShaderObjectImpl : public ShaderObjectBase
@@ -2142,8 +2148,8 @@ public:
         // `VkWriteDescriptorSet::pBufferInfo`, `pImageInfo` or `pTexelBufferView` fields.
         template<typename WriteDescriptorInfoFunc, typename TResourceArrayView>
         static void _writeDescriptorRange(
-            RootBindingState* bindingState,
-            BindingOffset offset,
+            RootBindingContext& context,
+            RootBindingOffset const& offset,
             VkDescriptorType descriptorType,
             TResourceArrayView resourceViews,
             const WriteDescriptorInfoFunc& writeDescriptorInfo)
@@ -2190,12 +2196,13 @@ public:
         }
 
         static void writeBufferDescriptor(
-            RootBindingState* bindingState,
-            BindingOffset offset,
+            RootBindingContext& context,
+            RootBindingOffset const& offset,
             VkDescriptorType descriptorType,
             BufferResourceImpl* buffer,
             size_t bufferOffset,
-            size_t bufferSize)
+            size_t bufferSize);
+#if 0
         {
             auto descriptorSet = bindingState->descriptorSets[offset.descriptorSetIndexOffset];
             VkWriteDescriptorSet write = {};
@@ -2212,22 +2219,24 @@ public:
             bufferInfo.range = bufferSize;
             bindingState->descriptorSetWrites.add(write);
         }
+#endif
 
         static void writeBufferDescriptor(
-            RootBindingState* bindingState,
-            BindingOffset offset,
+            RootBindingContext& context,
+            RootBindingOffset const& offset,
             VkDescriptorType descriptorType,
             BufferResourceImpl* buffer)
         {
             writeBufferDescriptor(
-                bindingState, offset, descriptorType, buffer, 0, buffer->getDesc()->sizeInBytes);
+                context, offset, descriptorType, buffer, 0, buffer->getDesc()->sizeInBytes);
         }
 
         static void writePlainBufferDescriptor(
-            RootBindingState* bindingState,
-            BindingOffset offset,
+            RootBindingContext& context,
+            RootBindingOffset const& offset,
             VkDescriptorType descriptorType,
-            ArrayView<RefPtr<ResourceViewImpl>> resourceViews)
+            ArrayView<RefPtr<ResourceViewImpl>> resourceViews);
+#if 0
         {
             auto writeDescriptorInfo = [=](VkWriteDescriptorSet& write,
                                            uint32_t startElement,
@@ -2250,12 +2259,14 @@ public:
             _writeDescriptorRange(
                 bindingState, offset, descriptorType, resourceViews, writeDescriptorInfo);
         }
+#endif
 
         static void writeTexelBufferDescriptor(
-            RootBindingState* bindingState,
-            BindingOffset offset,
+            RootBindingContext& context,
+            RootBindingOffset const& offset,
             VkDescriptorType descriptorType,
-            ArrayView<RefPtr<ResourceViewImpl>> resourceViews)
+            ArrayView<RefPtr<ResourceViewImpl>> resourceViews);
+#if 0
         {
             auto writeDescriptorInfo = [=](VkWriteDescriptorSet& write,
                                            uint32_t startElement,
@@ -2272,12 +2283,14 @@ public:
             _writeDescriptorRange(
                 bindingState, offset, descriptorType, resourceViews, writeDescriptorInfo);
         }
+#endif
 
         static void writeTextureSamplerDescriptor(
-            RootBindingState* bindingState,
-            BindingOffset offset,
+            RootBindingContext& context,
+            RootBindingOffset const& offset,
             VkDescriptorType descriptorType,
-            ArrayView<CombinedTextureSamplerSlot> slots)
+            ArrayView<CombinedTextureSamplerSlot> slots);
+#if 0
         {
             auto writeDescriptorInfo = [=](VkWriteDescriptorSet& write,
                                            uint32_t startElement,
@@ -2297,12 +2310,14 @@ public:
             };
             _writeDescriptorRange(bindingState, offset, descriptorType, slots, writeDescriptorInfo);
         }
+#endif
 
         static void writeTextureDescriptor(
-            RootBindingState* bindingState,
-            BindingOffset offset,
+            RootBindingContext& context,
+            RootBindingOffset const& offset,
             VkDescriptorType descriptorType,
-            ArrayView<RefPtr<ResourceViewImpl>> resourceViews)
+            ArrayView<RefPtr<ResourceViewImpl>> resourceViews);
+#if 0
         {
             auto writeDescriptorInfo =
                 [=](VkWriteDescriptorSet& write, uint32_t startElement, uint32_t count)
@@ -2321,12 +2336,14 @@ public:
             _writeDescriptorRange(
                 bindingState, offset, descriptorType, resourceViews, writeDescriptorInfo);
         }
+#endif
 
         static void writeSamplerDescriptor(
-            RootBindingState* bindingState,
-            BindingOffset offset,
+            RootBindingContext& context,
+            RootBindingOffset const& offset,
             VkDescriptorType descriptorType,
-            ArrayView<RefPtr<SamplerStateImpl>> samplers)
+            ArrayView<RefPtr<SamplerStateImpl>> samplers);
+#if 0
         {
             auto writeDescriptorInfo =
                 [=](VkWriteDescriptorSet& write, uint32_t startElement, uint32_t count)
@@ -2345,6 +2362,7 @@ public:
             _writeDescriptorRange(
                 bindingState, offset, descriptorType, samplers, writeDescriptorInfo);
         }
+#endif
 
         /// Ensure that the `m_ordinaryDataBuffer` has been created, if it is needed
         Result _ensureOrdinaryDataBufferCreatedIfNeeded(PipelineCommandEncoder* encoder)
@@ -2412,11 +2430,12 @@ public:
             return SLANG_OK;
         }
 
+#if 0
         /// Bind the buffer for ordinary/uniform data, if needed
         Result _bindOrdinaryDataBufferIfNeeded(
             PipelineCommandEncoder* encoder,
-            RootBindingState* bindingState,
-            BindingOffset& offset)
+            RootBindingContext& context,
+            RootBindingOffset const& offset)
         {
             // We are going to need to tweak the base binding range index
             // used for descriptor-set writes if and only if we actually
@@ -2447,12 +2466,13 @@ public:
 
             return SLANG_OK;
         }
+#endif
 
     public:
-        Result bindDescriptorRanges(
-            PipelineCommandEncoder* encoder,
-            RootBindingState* bindingState,
-            BindingOffset& offset)
+        Result bindAsValue(
+            PipelineCommandEncoder*     encoder,
+            RootBindingContext&         context,
+            RootBindingOffset const&    offset)
         {
             auto layout = getLayout();
 
@@ -2470,7 +2490,7 @@ public:
                     for (uint32_t i = 0; i < count; ++i)
                     {
                         ShaderObjectImpl* subObject = m_objects[baseIndex + i];
-                        subObject->bindObjectIntoConstantBuffer(encoder, bindingState, offset);
+                        subObject->bindAsConstantBuffer(encoder, bindingState, offset);
                     }
                     break;
                 case slang::BindingType::ParameterBlock:
@@ -2566,21 +2586,56 @@ public:
             return SLANG_OK;
         }
 
-        virtual Result bindObjectIntoConstantBuffer(
+        virtual Result bindAsConstantBuffer(
             PipelineCommandEncoder* encoder,
-            RootBindingState* bindingState,
-            BindingOffset& offset)
+            RootBindingContext& context,
+            RootBindingOffset const& inOffset)
         {
-            SLANG_RETURN_ON_FAIL(_bindOrdinaryDataBufferIfNeeded(encoder, bindingState, offset));
+            // We start by ensuring that the buffer is created, if it is needed.
+            //
+            SLANG_RETURN_ON_FAIL(_ensureOrdinaryDataBufferCreatedIfNeeded(encoder));
 
-            SLANG_RETURN_ON_FAIL(bindDescriptorRanges(encoder, bindingState, offset));
+            // If we did indeed need/create a buffer, then we must bind it into
+            // the given `descriptorSet` and update the base range index for
+            // subsequent binding operations to account for it.
+            //
+            RootBindingOffset offset = inOffset;
+            if (m_constantBuffer)
+            {
+                auto bufferImpl = static_cast<BufferResourceImpl*>(m_constantBuffer);
+                writeBufferDescriptor(
+                    context,
+                    offset,
+                    VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                    bufferImpl,
+                    m_constantBufferOffset,
+                    m_constantBufferSize);
+                offset.binding++;
+            }
+
+            SLANG_RETURN_ON_FAIL(bindAsValue(encoder, bindingState, offset));
+
             return SLANG_OK;
         }
 
-        virtual Result bindObjectIntoParameterBlock(
+        Result allocateDescriptorSets(
             PipelineCommandEncoder* encoder,
-            RootBindingState* bindingState,
-            BindingOffset& offset)
+            ShaderObjectLayoutImpl* layout,
+            List<VkDescriptorSet>&  outDescriptorSets)
+        {
+            auto& descriptorSetInfos = layout->getDescriptorSets();
+            for (auto info : descriptorSetInfos)
+            {
+                outDescriptorSets.add(
+                    bindingState->descriptorSetAllocator->allocate(info.descriptorSetLayout)
+                        .handle);
+            }
+        }
+
+        Result bindObjectIntoParameterBlock(
+            PipelineCommandEncoder*     encoder,
+            RootBindingContext&         context,
+            RootBindingOffset const&    offset)
         {
             auto& descriptorSetInfos = getLayout()->getDescriptorSets();
             offset.descriptorSetIndexOffset = (uint32_t)bindingState->descriptorSets.getCount();
@@ -2592,7 +2647,7 @@ public:
                     bindingState->descriptorSetAllocator->allocate(info.descriptorSetLayout)
                         .handle);
             }
-            SLANG_RETURN_ON_FAIL(bindObjectIntoConstantBuffer(encoder, bindingState, offset));
+            SLANG_RETURN_ON_FAIL(bindAsConstantBuffer(encoder, bindingState, offset));
             return SLANG_OK;
         }
 
@@ -2672,10 +2727,10 @@ public:
 
         EntryPointLayout* getLayout() { return static_cast<EntryPointLayout*>(m_layout.Ptr()); }
 
-        virtual Result bindObjectIntoConstantBuffer(
+        Result bindEntryPoint(
             PipelineCommandEncoder* encoder,
-            RootBindingState* bindingState,
-            BindingOffset& offset) override
+            RootBindingContext& context,
+            RootBindingOffset const& offset)
         {
             // Set data in `m_ordinaryData` into the push constant range.
             if (m_ordinaryData.getCount())
@@ -2693,7 +2748,7 @@ public:
             }
 
             // Process the rest of binding ranges.
-            SLANG_RETURN_ON_FAIL(bindDescriptorRanges(encoder, bindingState, offset));
+            SLANG_RETURN_ON_FAIL(bindAsValue(encoder, bindingState, offset));
             return SLANG_OK;
         }
 
@@ -2739,17 +2794,17 @@ public:
             return SLANG_OK;
         }
 
-        virtual Result bindObjectIntoParameterBlock(
+        Result bindRootObject(
             PipelineCommandEncoder* encoder,
-            RootBindingState* bindingState,
-            BindingOffset& offset) override
+            RootBindingContext& context,
+            RootBindingOffset const& offset)
         {
-            SLANG_RETURN_ON_FAIL(Super::bindObjectIntoParameterBlock(encoder, bindingState, offset));
+            SLANG_RETURN_ON_FAIL(bindObjectIntoParameterBlock(encoder, bindingState, offset));
 
             // Bind all entry points.
             for (auto& entryPoint : m_entryPoints)
             {
-                entryPoint->bindObjectIntoConstantBuffer(encoder, bindingState, offset);
+                entryPoint->bindEntryPoint(encoder, bindingState, offset);
             }
             return SLANG_OK;
         }
@@ -3995,17 +4050,19 @@ Result VKDevice::PipelineCommandEncoder::bindRootShaderObjectImpl(
     if (!specializedLayout)
         return SLANG_FAIL;
 
-    RootBindingState bindState = {};
-    bindState.pushConstantRanges = specializedLayout->m_pushConstantRanges.getView();
-    bindState.pipelineLayout = specializedLayout->m_pipelineLayout;
-    bindState.device = m_device;
-    bindState.descriptorSetAllocator = &m_commandBuffer->m_transientHeap->m_descSetAllocator;
+    RootBindingContext context;
+//    RootBindingState bindState = {};
+//    bindState.pushConstantRanges = specializedLayout->m_pushConstantRanges.getView();
+    context.pipelineLayout = specializedLayout->m_pipelineLayout;
+    context.device = m_device;
+    context.descriptorSetAllocator = &m_commandBuffer->m_transientHeap->m_descSetAllocator;
 
     // Write bindings into descriptor sets. This step allocate descriptor sets and collects
     // all `VkWriteDescriptorSet` operations in `bindState.descriptorSetWrites`.
-    BindingOffset offset = {};
-    rootObjectImpl->bindObjectIntoParameterBlock(this, &bindState, offset);
+    RootBindingOffset offset = {};
+    rootObjectImpl->bindRootObject(this, context, offset);
 
+#if 0
     // Execute descriptor writes collected in `bindState.descriptorSetWrites`.
     m_device->m_api.vkUpdateDescriptorSets(
         m_device->m_device,
@@ -4024,6 +4081,7 @@ Result VKDevice::PipelineCommandEncoder::bindRootShaderObjectImpl(
         bindState.descriptorSets.getBuffer(),
         0,
         nullptr);
+#endif
 
     return SLANG_OK;
 }
