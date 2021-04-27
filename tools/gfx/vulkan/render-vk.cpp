@@ -667,18 +667,62 @@ public:
         VkPipeline m_pipeline = VK_NULL_HANDLE;
     };
 
+    // In order to bind shader parameters to the correct locations, we need to
+    // be able to describe those locations. Most shader parameters in Vulkan
+    // simply consume a single `binding`, but we also need to deal with
+    // parameters that represent push-constant ranges.
+    //
+    // In more complex cases we might be binding an entire "sub-object" like
+    // a parameter block, an entry point, etc. For the general case, we need
+    // to be able to represent a composite offset that includes offsets for
+    // each of the cases that Vulkan supports.
+
+        /// A "simple" binding offset that records `binding`, `set`, etc. offsets
     struct SimpleBindingOffset
     {
+            /// An offset in GLSL/SPIR-V `binding`s
         uint32_t binding = 0;
+
+            /// The descriptor `set` that the `binding` field should be understood as an index into
         uint32_t bindingSet = 0;
 
+            /// The starting index for any "child" descriptor sets to start at
         uint32_t childSet = 0;
 
+        // The distinction between `bindingSet` and `childSet` above is subtle, but
+        // potentially very important when objects contain nested parameter blocks.
+        // Consider:
+        //
+        //      struct Stuff { ... }
+        //      struct Things
+        //      {
+        //          Texture2D t;
+        //          ParameterBlock<Stuff> stuff;
+        //      }
+        //
+        //      ParameterBlock<Stuff> gStuff;
+        //      Texture2D gTex;
+        //      ConstantBuffer<Things> gThings;
+        //
+        // In this example, the global-scope parameters like `gTex` and `gThings`
+        // are expected to be laid out in `set=0`, and we also expect `gStuff`
+        // to be laid out as `set=1`. As a result we expect that `gThings.t`
+        // will be laid out as `binding=1,set=0` (right after `gTex`), but
+        // `gThings.stuff` should be laid out as `set=2`.
+        //
+        // In this case, when binding `gThings` we would want a binding offset
+        // that has a `binding` or 1, a `bindingSet` of 0, and a `childSet` of 2.
+        //
+        // TODO: Validate that any of this works as intended.
+
+            /// The offset into the push constant space
         uint32_t pushConstant = 0;
 
+            /// Create a default (zero) offset
         SimpleBindingOffset()
         {}
 
+            /// Create an offset based on offset information in the given Slang `varLayout`
         SimpleBindingOffset(slang::VariableLayoutReflection* varLayout)
         {
             if(varLayout)
@@ -692,6 +736,7 @@ public:
             }
         }
 
+            /// Add any values in the given `offset`
         void operator+=(SimpleBindingOffset const& offset)
         {
             binding += offset.binding;
@@ -701,31 +746,50 @@ public:
         }
     };
 
+    // While a "simple" binding offset representation will work in many cases,
+    // once we need to deal with layout for programs with interface-type parameters
+    // that have been statically specialized, we also need to track the offset
+    // for where to bind any "pending" data that arises from the process of static
+    // specialization.
+    //
+    // In order to conveniently track both the "primary" and "pending" offset information,
+    // we will define a more complete `BindingOffset` type that combines simple
+    // binding offsets for the primary and pending parts.
+
+        /// A representation of the offset at which to bind a shader parameter or sub-object
     struct BindingOffset : SimpleBindingOffset
     {
+        // Offsets for "primary" data are stored directly in the `BindingOffset`
+        // via the inheritance from `SimpleBindingOffset`.
+
+            /// Offset for any "pending" data
         SimpleBindingOffset pending;
 
+            /// Create a default (zero) offset
         BindingOffset()
         {}
 
+            /// Create an offset from a simple offset
         explicit BindingOffset(SimpleBindingOffset const& offset)
             : SimpleBindingOffset(offset)
         {}
 
+            /// Create an offset based on offset information in the given Slang `varLayout`
         BindingOffset(slang::VariableLayoutReflection* varLayout)
             : SimpleBindingOffset(varLayout)
             , pending(varLayout->getPendingDataLayout())
         {}
 
+            /// Add any values in the given `offset`
         void operator+=(SimpleBindingOffset const& offset)
         {
             SimpleBindingOffset::operator+=(offset);
         }
 
+            /// Add any values in the given `offset`
         void operator+=(BindingOffset const& offset)
         {
             SimpleBindingOffset::operator+=(offset);
-
             pending += offset.pending;
         }
     };
@@ -739,7 +803,11 @@ public:
             Index count;
             Index baseIndex;
 
-            SimpleBindingOffset offset;
+                /// The `binding` offset to apply for this range
+            uint32_t bindingOffset;
+
+                /// The `set` offset to apply for this range
+            uint32_t setOffset;
         };
 
         struct SubObjectRangeInfo
@@ -747,7 +815,7 @@ public:
             RefPtr<ShaderObjectLayoutImpl> layout;
             Index bindingRangeIndex;
 
-            SimpleBindingOffset pendingOffset;
+            BindingOffset offset;
         };
 
         struct DescriptorSetInfo
@@ -833,62 +901,11 @@ public:
                 }
             }
 
-#if 0
-            struct BindingOffset
-            {
-                SlangInt space = 0;
-                uint32_t binding = 0;
-
-                BindingOffset() {}
-                BindingOffset(slang::VariableLayoutReflection* varLayout)
-                {
-                    if(varLayout)
-                    {
-                        space = (uint32_t) varLayout->getBindingSpace(SLANG_PARAMETER_CATEGORY_DESCRIPTOR_TABLE_SLOT);
-                        binding = (uint32_t) varLayout->getOffset(SLANG_PARAMETER_CATEGORY_DESCRIPTOR_TABLE_SLOT);
-                    }
-                }
-
-                void operator+=(BindingOffset const& other)
-                {
-                    space += other.space;
-                    binding += other.binding;
-                }
-            };
-
-            struct BindingOffsetPair : BindingOffset
-            {
-                BindingOffset pending;
-
-                BindingOffsetPair() {}
-                explicit BindingOffsetPair(BindingOffset const& other)
-                    : BindingOffset(other)
-                {}
-                BindingOffsetPair(slang::VariableLayoutReflection* varLayout)
-                    : BindingOffset(varLayout)
-                    , pending(varLayout->getPendingDataLayout())
-                {}
-
-                void operator+=(BindingOffsetPair const& other)
-                {
-                    BindingOffset::operator+=(other);
-                    pending += other.pending;
-                }
-            };
-#endif
-
+                /// Add any descriptor ranges implied by this object containing a leaf
+                /// sub-object described by `typeLayout`, at the given `offset`.
             void _addDescriptorRangesAsValue(
-                slang::VariableLayoutReflection* varLayout)
-            {
-                auto typeLayout = varLayout->getTypeLayout();
-
-                BindingOffset offset(varLayout);
-                _addDescriptorRangesAsValue(typeLayout, offset);
-            }
-
-            void _addDescriptorRangesAsValue(
-                slang::TypeLayoutReflection* typeLayout,
-                BindingOffset const&        offset)
+                slang::TypeLayoutReflection*    typeLayout,
+                BindingOffset const&            offset)
             {
                 SlangInt descriptorSetCount = typeLayout->getDescriptorSetCount();
                 for (SlangInt s = 0; s < descriptorSetCount; ++s)
@@ -917,14 +934,7 @@ public:
                         vkBindingRangeDesc.descriptorCount = (uint32_t)typeLayout->getDescriptorSetDescriptorRangeDescriptorCount(s, r);
                         vkBindingRangeDesc.descriptorType = vkDescriptorType;
                         vkBindingRangeDesc.stageFlags = VK_SHADER_STAGE_ALL;
-#if 0
-                        if (varLayout)
-                        {
-                            auto category =
-                                typeLayout->getDescriptorSetDescriptorRangeCategory(s, r);
-                            vkBindingRangeDesc.binding += (uint32_t)varLayout->getOffset(category);
-                        }
-#endif
+
                         descriptorSetInfo.vkBindings.add(vkBindingRangeDesc);
                     }
                 }
@@ -1064,6 +1074,20 @@ public:
                     bindingRangeInfo.count = count;
                     bindingRangeInfo.baseIndex = baseIndex;
 
+                    // We'd like to extract the information on the GLSL/SPIR-V
+                    // `binding` that this range should bind into (or whatever
+                    // other specific kind of offset/index is appropriate to it).
+                    //
+                    // A binding range represents a logical member of the shader
+                    // object type, and it may encompass zero or more *descriptor
+                    // ranges* that describe how it is physically bound to pipeline
+                    // state.
+                    //
+                    // If the current bindign range is backed by at least one descriptor
+                    // range then we can query the binding offset of that descriptor
+                    // range. We expect that in the common case there will be exactly
+                    // one descriptor range, and we can extract the information easily.
+                    //
                     if(typeLayout->getBindingRangeDescriptorRangeCount(r) != 0)
                     {
                         SlangInt descriptorSetIndex = typeLayout->getBindingRangeDescriptorSetIndex(r);
@@ -1072,21 +1096,9 @@ public:
                         auto set = typeLayout->getDescriptorSetSpaceOffset(descriptorSetIndex);
                         auto bindingOffset = typeLayout->getDescriptorSetDescriptorRangeIndexOffset(descriptorSetIndex, descriptorRangeIndex);
 
-                        bindingRangeInfo.offset.bindingSet = uint32_t(set);
-                        if(slangBindingType == slang::BindingType::PushConstant)
-                        {
-                            bindingRangeInfo.offset.pushConstant = uint32_t(bindingOffset);
-                        }
-                        else
-                        {
-                            bindingRangeInfo.offset.binding = uint32_t(bindingOffset);
-                        }
+                        bindingRangeInfo.setOffset = uint32_t(set);
+                        bindingRangeInfo.bindingOffset = uint32_t(bindingOffset);
                     }
-
-#if 0
-                    bindingRangeInfo.descriptorSetIndex = descriptorSetIndex;
-                    bindingRangeInfo.rangeIndexInDescriptorSet = rangeIndexInDescriptorSet;
-#endif
 
                     m_bindingRanges.add(bindingRangeInfo);
                 }
@@ -1135,9 +1147,12 @@ public:
                     subObjectRange.bindingRangeIndex = bindingRangeIndex;
                     subObjectRange.layout = subObjectLayout;
 
-                    auto offset = BindingOffset(typeLayout->getSubObjectRangeOffset(r));
-                    bindingRange.offset = offset;
-                    subObjectRange.pendingOffset = offset.pending;
+                    // We will use Slang reflection infromation to extract the offset information
+                    // for each sub-object range.
+                    //
+                    // TODO: We should also be extracting the uniform offset here.
+                    //
+                    subObjectRange.offset = BindingOffset(typeLayout->getSubObjectRangeOffset(r));
 
                     switch(slangBindingType)
                     {
@@ -1405,9 +1420,11 @@ public:
             void addGlobalParams(slang::VariableLayoutReflection* globalsLayout)
             {
                 setElementTypeLayout(globalsLayout->getTypeLayout());
-                _addDescriptorRangesAsValue(globalsLayout);
 
-                m_pendingDataOffset = SimpleBindingOffset(globalsLayout->getPendingDataLayout());
+                BindingOffset offset(globalsLayout);
+                _addDescriptorRangesAsValue(globalsLayout->getTypeLayout(), offset);
+
+                m_pendingDataOffset = offset.pending;
             }
 
             void addEntryPoint(EntryPointLayout* entryPointLayout)
@@ -1415,12 +1432,13 @@ public:
                 auto slangEntryPointLayout = entryPointLayout->getSlangLayout();
                 auto entryPointVarLayout = slangEntryPointLayout->getVarLayout();
 
+                BindingOffset entryPointOffset(entryPointVarLayout);
 
                 EntryPointInfo info;
                 info.layout = entryPointLayout;
-                info.offset = BindingOffset(entryPointVarLayout);
+                info.offset = entryPointOffset;
 
-                _addDescriptorRangesAsValue(entryPointVarLayout);
+                _addDescriptorRangesAsValue(entryPointVarLayout->getTypeLayout(), entryPointOffset);
                 m_entryPoints.add(info);
             }
 
@@ -2655,13 +2673,6 @@ public:
             for (auto bindingRangeInfo : layout->getBindingRanges())
             {
                 BindingOffset rangeOffset = offset;
-                rangeOffset += bindingRangeInfo.offset;
-#if 0
-                rangeOffset.bindingSet += bindingRangeInfo.setOffset;
-                rangeOffset.binding += bindingRangeInfo.bindingOffset;
-                rangeOffset.childSet += bindingRangeInfo.setOffset;
-                rangeOffset.pushConstant += bindingRangeInfo.pushConstantOffset;
-#endif
 
                 auto baseIndex = bindingRangeInfo.baseIndex;
                 auto count = (uint32_t)bindingRangeInfo.count;
@@ -2673,6 +2684,8 @@ public:
                     break;
 
                 case slang::BindingType::Texture:
+                    rangeOffset.bindingSet += bindingRangeInfo.setOffset;
+                    rangeOffset.binding += bindingRangeInfo.bindingOffset;
                     writeTextureDescriptor(
                         context,
                         rangeOffset,
@@ -2680,6 +2693,8 @@ public:
                         m_resourceViews.getArrayView(baseIndex, count));
                     break;
                 case slang::BindingType::MutableTexture:
+                    rangeOffset.bindingSet += bindingRangeInfo.setOffset;
+                    rangeOffset.binding += bindingRangeInfo.bindingOffset;
                     writeTextureDescriptor(
                         context,
                         rangeOffset,
@@ -2687,6 +2702,8 @@ public:
                         m_resourceViews.getArrayView(baseIndex, count));
                     break;
                 case slang::BindingType::CombinedTextureSampler:
+                    rangeOffset.bindingSet += bindingRangeInfo.setOffset;
+                    rangeOffset.binding += bindingRangeInfo.bindingOffset;
                     writeTextureSamplerDescriptor(
                         context,
                         rangeOffset,
@@ -2695,6 +2712,8 @@ public:
                     break;
 
                 case slang::BindingType::Sampler:
+                    rangeOffset.bindingSet += bindingRangeInfo.setOffset;
+                    rangeOffset.binding += bindingRangeInfo.bindingOffset;
                     writeSamplerDescriptor(
                         context,
                         rangeOffset,
@@ -2704,6 +2723,8 @@ public:
 
                 case slang::BindingType::RawBuffer:
                 case slang::BindingType::MutableRawBuffer:
+                    rangeOffset.bindingSet += bindingRangeInfo.setOffset;
+                    rangeOffset.binding += bindingRangeInfo.bindingOffset;
                     writePlainBufferDescriptor(
                         context,
                         rangeOffset,
@@ -2712,6 +2733,8 @@ public:
                     break;
 
                 case slang::BindingType::TypedBuffer:
+                    rangeOffset.bindingSet += bindingRangeInfo.setOffset;
+                    rangeOffset.binding += bindingRangeInfo.bindingOffset;
                     writeTexelBufferDescriptor(
                         context,
                         rangeOffset,
@@ -2719,6 +2742,8 @@ public:
                         m_resourceViews.getArrayView(baseIndex, count));
                     break;
                 case slang::BindingType::MutableTypedBuffer:
+                    rangeOffset.bindingSet += bindingRangeInfo.setOffset;
+                    rangeOffset.binding += bindingRangeInfo.bindingOffset;
                     writeTexelBufferDescriptor(
                         context,
                         rangeOffset,
@@ -2746,14 +2771,7 @@ public:
                 auto subObjectLayout = subObjectRange.layout;
 
                 BindingOffset rangeOffset = offset;
-                rangeOffset += bindingRangeInfo.offset;
-                rangeOffset.pending += subObjectRange.pendingOffset;
-#if 0
-                rangeOffset.bindingSet += bindingRangeInfo.setOffset;
-                rangeOffset.binding += bindingRangeInfo.bindingOffset;
-                rangeOffset.childSet += bindingRangeInfo.setOffset;
-                rangeOffset.pushConstant += bindingRangeInfo.pushConstantOffset;
-#endif
+                rangeOffset += subObjectRange.offset;
 
                 switch( bindingRangeInfo.bindingType )
                 {
@@ -2779,12 +2797,6 @@ public:
                             ShaderObjectImpl* subObject = m_objects[baseIndex + i];
 
                             subObject->bindAsParameterBlock(encoder, context, objOffset, subObjectLayout);
-
-#if 0
-                            auto newOffset = offset;
-                        subObject->bindObjectIntoParameterBlock(encoder, bindingState, newOffset);
-                        offset.pushConstantRangeOffset = newOffset.pushConstantRangeOffset;
-#endif
 
                             objOffset.childSet += subObjectLayout->getChildDescriptorSetCount();
                             objOffset.pushConstant += subObjectLayout->getPushConstantSize();
