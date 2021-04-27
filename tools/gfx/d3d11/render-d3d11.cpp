@@ -512,18 +512,31 @@ protected:
         }
     };
 
+    // In order to bind shader parameters to the correct locations, we need to
+    // be able to describe those locations. Most shader parameters will
+    // only consume a single type of D3D11-visible regsiter (e.g., a `t`
+    // register for a txture, or an `s` register for a sampler), and scalar
+    // integers suffice for these cases.
+    //
+    // In more complex cases we might be binding an entire "sub-object" like
+    // a parameter block, an entry point, etc. For the general case, we need
+    // to be able to represent a composite offset that includes offsets for
+    // each of the register classes known to D3D11.
 
-    struct BindingOffset
+        /// A "simple" binding offset that records an offset in CBV/SRV/UAV/Sampler slots
+    struct SimpleBindingOffset
     {
         uint32_t cbv    = 0;
         uint32_t srv    = 0;
         uint32_t uav    = 0;
         uint32_t sampler = 0;
 
-        BindingOffset()
+            /// Create a default (zero) offset
+        SimpleBindingOffset()
         {}
 
-        BindingOffset(slang::VariableLayoutReflection* varLayout)
+            /// Create an offset based on offset information in the given Slang `varLayout`
+        SimpleBindingOffset(slang::VariableLayoutReflection* varLayout)
         {
             if(varLayout)
             {
@@ -534,7 +547,8 @@ protected:
             }
         }
 
-        void operator+=(BindingOffset const& offset)
+            /// Add any values in the given `offset`
+        void operator+=(SimpleBindingOffset const& offset)
         {
             cbv += offset.cbv;
             srv += offset.srv;
@@ -543,30 +557,41 @@ protected:
         }
     };
 
-    struct BindingOffsetPair : BindingOffset
+    // While a "simple" binding offset representation will work in many cases,
+    // once we need to deal with layout for programs with interface-type parameters
+    // that have been statically specialized, we also need to track the offset
+    // for where to bind any "pending" data that arises from the process of static
+    // specialization.
+    //
+    // In order to conveniently track both the "primary" and "pending" offset information,
+    // we will define a more complete `BindingOffset` type that combines simple
+    // binding offsets for the primary and pending parts.
+
+        /// A representation of the offset at which to bind a shader parameter or sub-object
+    struct BindingOffset : SimpleBindingOffset
     {
-        BindingOffset pending;
+        SimpleBindingOffset pending;
 
-        BindingOffsetPair()
+        BindingOffset()
         {}
 
-        explicit BindingOffsetPair(BindingOffset const& offset)
-            : BindingOffset(offset)
+        explicit BindingOffset(SimpleBindingOffset const& offset)
+            : SimpleBindingOffset(offset)
         {}
 
-        BindingOffsetPair(slang::VariableLayoutReflection* varLayout)
-            : BindingOffset(varLayout)
+        BindingOffset(slang::VariableLayoutReflection* varLayout)
+            : SimpleBindingOffset(varLayout)
             , pending(varLayout->getPendingDataLayout())
         {}
 
-        void operator+=(BindingOffset const& offset)
+        void operator+=(SimpleBindingOffset const& offset)
         {
-            BindingOffset::operator+=(offset);
+            SimpleBindingOffset::operator+=(offset);
         }
 
-        void operator+=(BindingOffsetPair const& offset)
+        void operator+=(BindingOffset const& offset)
         {
-            BindingOffset::operator+=(offset);
+            SimpleBindingOffset::operator+=(offset);
             pending += offset.pending;
         }
     };
@@ -588,7 +613,7 @@ protected:
             RefPtr<ShaderObjectLayoutImpl> layout;
             Index bindingRangeIndex;
 
-            BindingOffsetPair offset;
+            BindingOffset offset;
         };
 
         struct Builder
@@ -728,7 +753,7 @@ protected:
                     SubObjectRangeInfo subObjectRange;
                     subObjectRange.bindingRangeIndex = bindingRangeIndex;
                     subObjectRange.layout = subObjectLayout;
-                    subObjectRange.offset = BindingOffsetPair(typeLayout->getSubObjectRangeOffset(r));
+                    subObjectRange.offset = BindingOffset(typeLayout->getSubObjectRangeOffset(r));
 
                     m_subObjectRanges.add(subObjectRange);
                 }
@@ -825,7 +850,7 @@ protected:
         struct EntryPointInfo
         {
             RefPtr<ShaderObjectLayoutImpl>  layout;
-            BindingOffsetPair               offset;
+            BindingOffset                   offset;
         };
 
         struct Builder : Super::Builder
@@ -851,21 +876,21 @@ protected:
             void addGlobalParams(slang::VariableLayoutReflection* globalsLayout)
             {
                 setElementTypeLayout(globalsLayout->getTypeLayout());
-                m_pendingDataOffset = BindingOffsetPair(globalsLayout).pending;
+                m_pendingDataOffset = BindingOffset(globalsLayout).pending;
             }
 
             void addEntryPoint(SlangStage stage, ShaderObjectLayoutImpl* entryPointLayout, slang::EntryPointLayout* slangEntryPoint)
             {
                 EntryPointInfo info;
                 info.layout = entryPointLayout;
-                info.offset = BindingOffsetPair(slangEntryPoint->getVarLayout());
+                info.offset = BindingOffset(slangEntryPoint->getVarLayout());
                 m_entryPoints.add(info);
             }
 
-            slang::IComponentType* m_program;
-            slang::ProgramLayout* m_programLayout;
-            List<EntryPointInfo> m_entryPoints;
-            BindingOffset m_pendingDataOffset;
+            slang::IComponentType*  m_program;
+            slang::ProgramLayout*   m_programLayout;
+            List<EntryPointInfo>    m_entryPoints;
+            SimpleBindingOffset     m_pendingDataOffset;
         };
 
         EntryPointInfo& getEntryPoint(Index index) { return m_entryPoints[index]; }
@@ -899,7 +924,7 @@ protected:
         slang::IComponentType* getSlangProgram() const { return m_program; }
         slang::ProgramLayout* getSlangProgramLayout() const { return m_programLayout; }
 
-        BindingOffset const& getPendingDataOffset() const { return m_pendingDataOffset; }
+        SimpleBindingOffset const& getPendingDataOffset() const { return m_pendingDataOffset; }
 
     protected:
         Result _init(Builder const* builder)
@@ -919,7 +944,7 @@ protected:
         slang::ProgramLayout* m_programLayout = nullptr;
 
         List<EntryPointInfo> m_entryPoints;
-        BindingOffset m_pendingDataOffset;
+        SimpleBindingOffset m_pendingDataOffset;
     };
 
     class ShaderObjectImpl : public ShaderObjectBase
@@ -1432,7 +1457,7 @@ protected:
         /// Bind the buffer for ordinary/uniform data, if needed
         Result _bindOrdinaryDataBufferIfNeeded(
             BindingContext*         context,
-            BindingOffsetPair&      ioOffset,
+            BindingOffset&          ioOffset,
             ShaderObjectLayoutImpl* layout)
         {
             // We start by ensuring that the buffer is created, if it is needed.
@@ -1453,11 +1478,11 @@ protected:
     public:
             /// Bind this object as if it was declared as a `ConstantBuffer<T>` in Slang
         Result bindAsConstantBuffer(
-            BindingContext*             context,
-            BindingOffsetPair const&    inOffset,
-            ShaderObjectLayoutImpl*     layout)
+            BindingContext*         context,
+            BindingOffset const&    inOffset,
+            ShaderObjectLayoutImpl* layout)
         {
-            BindingOffsetPair offset = inOffset;
+            BindingOffset offset = inOffset;
 
             // A `ConstantBuffer<T>` will always start with a "default" constant
             // buffer binding for the ordinary data in `T` (if there was any).
@@ -1477,7 +1502,7 @@ protected:
             ///
         Result bindAsValue(
             BindingContext*         context,
-            BindingOffsetPair const& offset,
+            BindingOffset const&    offset,
             ShaderObjectLayoutImpl* layout)
         {
             // We start by 
@@ -1547,7 +1572,7 @@ protected:
                 Index count = bindingRange.count;
                 Index baseIndex = bindingRange.baseIndex;
 
-                BindingOffsetPair objOffset = offset;
+                BindingOffset objOffset = offset;
                 objOffset += subObjectRange.offset;
 
                 switch(bindingRange.bindingType)
@@ -1573,7 +1598,7 @@ protected:
                 case slang::BindingType::ExistentialValue:
                     if(subObjectLayout)
                     {
-                        objOffset = BindingOffsetPair(objOffset.pending);
+                        objOffset = BindingOffset(objOffset.pending);
 
                         for(Index i = 0; i < count; ++i)
                         {
@@ -1726,10 +1751,10 @@ protected:
             BindingContext*             context,
             RootShaderObjectLayoutImpl* layout)
         {
-            BindingOffsetPair offset;
+            BindingOffset offset;
             offset.pending = layout->getPendingDataOffset();
 
-            BindingOffsetPair ordinaryDataBufferOffset = offset;
+            BindingOffset ordinaryDataBufferOffset = offset;
 
             SLANG_RETURN_ON_FAIL(_bindOrdinaryDataBufferIfNeeded(context, /*inout*/ ordinaryDataBufferOffset, layout));
 
@@ -1741,7 +1766,7 @@ protected:
                 auto entryPoint = m_entryPoints[i];
                 auto const& entryPointInfo = layout->getEntryPoint(i);
 
-                BindingOffsetPair entryPointOffset = offset;
+                BindingOffset entryPointOffset = offset;
                 entryPointOffset += entryPointInfo.offset;
 
                 SLANG_RETURN_ON_FAIL(entryPoint->bindAsConstantBuffer(context, entryPointOffset, entryPointInfo.layout));

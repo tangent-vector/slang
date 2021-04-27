@@ -667,7 +667,7 @@ public:
         VkPipeline m_pipeline = VK_NULL_HANDLE;
     };
 
-    struct BindingOffset
+    struct SimpleBindingOffset
     {
         uint32_t binding = 0;
         uint32_t bindingSet = 0;
@@ -676,10 +676,10 @@ public:
 
         uint32_t pushConstant = 0;
 
-        BindingOffset()
+        SimpleBindingOffset()
         {}
 
-        BindingOffset(slang::VariableLayoutReflection* varLayout)
+        SimpleBindingOffset(slang::VariableLayoutReflection* varLayout)
         {
             if(varLayout)
             {
@@ -692,7 +692,7 @@ public:
             }
         }
 
-        void operator+=(BindingOffset const& offset)
+        void operator+=(SimpleBindingOffset const& offset)
         {
             binding += offset.binding;
             bindingSet += offset.bindingSet;
@@ -701,30 +701,30 @@ public:
         }
     };
 
-    struct BindingOffsetPair : BindingOffset
+    struct BindingOffset : SimpleBindingOffset
     {
-        BindingOffset pending;
+        SimpleBindingOffset pending;
 
-        BindingOffsetPair()
+        BindingOffset()
         {}
 
-        explicit BindingOffsetPair(BindingOffset const& offset)
-            : BindingOffset(offset)
+        explicit BindingOffset(SimpleBindingOffset const& offset)
+            : SimpleBindingOffset(offset)
         {}
 
-        BindingOffsetPair(slang::VariableLayoutReflection* varLayout)
-            : BindingOffset(varLayout)
+        BindingOffset(slang::VariableLayoutReflection* varLayout)
+            : SimpleBindingOffset(varLayout)
             , pending(varLayout->getPendingDataLayout())
         {}
 
-        void operator+=(BindingOffset const& offset)
+        void operator+=(SimpleBindingOffset const& offset)
         {
-            BindingOffset::operator+=(offset);
+            SimpleBindingOffset::operator+=(offset);
         }
 
-        void operator+=(BindingOffsetPair const& offset)
+        void operator+=(BindingOffset const& offset)
         {
-            BindingOffset::operator+=(offset);
+            SimpleBindingOffset::operator+=(offset);
 
             pending += offset.pending;
         }
@@ -739,7 +739,7 @@ public:
             Index count;
             Index baseIndex;
 
-            BindingOffset offset;
+            SimpleBindingOffset offset;
         };
 
         struct SubObjectRangeInfo
@@ -747,7 +747,7 @@ public:
             RefPtr<ShaderObjectLayoutImpl> layout;
             Index bindingRangeIndex;
 
-            BindingOffset pendingOffset;
+            SimpleBindingOffset pendingOffset;
         };
 
         struct DescriptorSetInfo
@@ -882,13 +882,13 @@ public:
             {
                 auto typeLayout = varLayout->getTypeLayout();
 
-                BindingOffsetPair offset(varLayout);
+                BindingOffset offset(varLayout);
                 _addDescriptorRangesAsValue(typeLayout, offset);
             }
 
             void _addDescriptorRangesAsValue(
                 slang::TypeLayoutReflection* typeLayout,
-                BindingOffsetPair const&     offset)
+                BindingOffset const&        offset)
             {
                 SlangInt descriptorSetCount = typeLayout->getDescriptorSetCount();
                 for (SlangInt s = 0; s < descriptorSetCount; ++s)
@@ -936,8 +936,8 @@ public:
             }
 
             void _addPendingDescriptorRanges(
-                slang::TypeLayoutReflection* typeLayout,
-                BindingOffsetPair const&     offset)
+                slang::TypeLayoutReflection*    typeLayout,
+                BindingOffset const&            offset)
             {
                 auto subObjectRangeCount = typeLayout->getSubObjectRangeCount();
                 for(SlangInt subObjectRangeIndex = 0; subObjectRangeIndex < subObjectRangeCount; ++subObjectRangeIndex)
@@ -956,10 +956,10 @@ public:
 
                             if(auto pendingTypeLayout = subObjectTypeLayout->getPendingDataTypeLayout())
                             {
-                                BindingOffsetPair subOffset = offset;
-                                subOffset += BindingOffsetPair(typeLayout->getSubObjectRangeOffset(subObjectRangeIndex));
+                                BindingOffset subOffset = offset;
+                                subOffset += BindingOffset(typeLayout->getSubObjectRangeOffset(subObjectRangeIndex));
 
-                                BindingOffsetPair pendingOffset = BindingOffsetPair(subOffset.pending);
+                                BindingOffset pendingOffset = BindingOffset(subOffset.pending);
 
                                 _addDescriptorRangesAsValue(pendingTypeLayout, pendingOffset);
                             }
@@ -974,8 +974,8 @@ public:
                             auto elementTypeLayout = subObjectTypeLayout->getElementTypeLayout();
                             SLANG_ASSERT(elementTypeLayout);
 
-                            BindingOffsetPair subOffset = offset;
-                            subOffset += BindingOffsetPair(typeLayout->getSubObjectRangeOffset(subObjectRangeIndex));
+                            BindingOffset subOffset = offset;
+                            subOffset += BindingOffset(typeLayout->getSubObjectRangeOffset(subObjectRangeIndex));
 
                             _addPendingDescriptorRanges(elementTypeLayout, subOffset);
                         }
@@ -986,9 +986,9 @@ public:
 
             void _addDescriptorRangesAsConstantBuffer(
                 slang::TypeLayoutReflection*    typeLayout,
-                BindingOffsetPair const&        inOffset)
+                BindingOffset const&            inOffset)
             {
-                BindingOffsetPair offset = inOffset;
+                BindingOffset offset = inOffset;
 
                 // If the type has ordinary uniform data fields, we need to make sure to create
                 // a descriptor set with a constant buffer binding in the case that the shader
@@ -1135,7 +1135,7 @@ public:
                     subObjectRange.bindingRangeIndex = bindingRangeIndex;
                     subObjectRange.layout = subObjectLayout;
 
-                    auto offset = BindingOffsetPair(typeLayout->getSubObjectRangeOffset(r));
+                    auto offset = BindingOffset(typeLayout->getSubObjectRangeOffset(r));
                     bindingRange.offset = offset;
                     subObjectRange.pendingOffset = offset.pending;
 
@@ -1213,7 +1213,7 @@ public:
             Builder builder(renderer);
             builder.setElementTypeLayout(elementType);
 
-            BindingOffsetPair offset;
+            BindingOffset offset;
             offset.pending.binding = elementType->getSize(SLANG_PARAMETER_CATEGORY_DESCRIPTOR_TABLE_SLOT)
                 + elementType->getSize(SLANG_PARAMETER_CATEGORY_UNIFORM) ? 1 : 0;
             builder._addDescriptorRangesAsConstantBuffer(elementType, offset);
@@ -1380,9 +1380,7 @@ public:
         struct EntryPointInfo
         {
             RefPtr<EntryPointLayout> layout;
-
-//            Index rangeOffset;
-            BindingOffsetPair offset;
+            BindingOffset offset;
         };
 
         struct Builder : Super::Builder
@@ -1409,7 +1407,7 @@ public:
                 setElementTypeLayout(globalsLayout->getTypeLayout());
                 _addDescriptorRangesAsValue(globalsLayout);
 
-                m_pendingDataOffset = BindingOffset(globalsLayout->getPendingDataLayout());
+                m_pendingDataOffset = SimpleBindingOffset(globalsLayout->getPendingDataLayout());
             }
 
             void addEntryPoint(EntryPointLayout* entryPointLayout)
@@ -1420,7 +1418,7 @@ public:
 
                 EntryPointInfo info;
                 info.layout = entryPointLayout;
-                info.offset = BindingOffsetPair(entryPointVarLayout);
+                info.offset = BindingOffset(entryPointVarLayout);
 
                 _addDescriptorRangesAsValue(entryPointVarLayout);
                 m_entryPoints.add(info);
@@ -1430,7 +1428,7 @@ public:
             slang::ProgramLayout* m_programLayout;
             List<EntryPointInfo> m_entryPoints;
 
-            BindingOffset m_pendingDataOffset;
+            SimpleBindingOffset m_pendingDataOffset;
         };
 
         Index findEntryPointIndex(VkShaderStageFlags stage)
@@ -1477,7 +1475,7 @@ public:
             return SLANG_OK;
         }
 
-        BindingOffset const& getPendingDataOffset() const { return m_pendingDataOffset; }
+        SimpleBindingOffset const& getPendingDataOffset() const { return m_pendingDataOffset; }
 
         slang::IComponentType* getSlangProgram() const { return m_program; }
         slang::ProgramLayout* getSlangProgramLayout() const { return m_programLayout; }
@@ -1575,7 +1573,7 @@ public:
         VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
         Array<VkDescriptorSetLayout, kMaxDescriptorSets> m_vkDescriptorSetLayouts;
         Array<VkPushConstantRange, 8> m_pushConstantRanges;
-        BindingOffset m_pendingDataOffset;
+        SimpleBindingOffset m_pendingDataOffset;
         VKDevice* m_renderer = nullptr;
     };
     
@@ -1749,25 +1747,6 @@ public:
         VKDevice* device;
         VkDescriptorSet* descriptorSets;
     };
-
-#if 0
-    struct RootBindingOffset
-    {
-//        uint32_t uniformOffset;
-//        uint32_t pushConstantRangeOffset;
-//        uint32_t descriptorSetIndexOffset;
-//        uint32_t descriptorRangeOffset;
-
-        uint32_t bindingSet = 0;
-        uint32_t binding = 0;
-
-        uint32_t childSet = 0;
-
-        uint32_t pushConstant = 0;
-    };
-#else
-    typedef BindingOffsetPair RootBindingOffset;
-#endif
 
     class ShaderObjectImpl : public ShaderObjectBase
     {
@@ -2367,7 +2346,7 @@ public:
 
         static void writeBufferDescriptor(
             RootBindingContext& context,
-            RootBindingOffset const& offset,
+            BindingOffset const& offset,
             VkDescriptorType descriptorType,
             BufferResourceImpl* buffer,
             size_t bufferOffset,
@@ -2394,7 +2373,7 @@ public:
 
         static void writeBufferDescriptor(
             RootBindingContext& context,
-            RootBindingOffset const& offset,
+            BindingOffset const& offset,
             VkDescriptorType descriptorType,
             BufferResourceImpl* buffer)
         {
@@ -2405,7 +2384,7 @@ public:
 
         static void writePlainBufferDescriptor(
             RootBindingContext& context,
-            RootBindingOffset const& offset,
+            BindingOffset const& offset,
             VkDescriptorType descriptorType,
             ArrayView<RefPtr<ResourceViewImpl>> resourceViews)
         {
@@ -2440,7 +2419,7 @@ public:
 
         static void writeTexelBufferDescriptor(
             RootBindingContext& context,
-            RootBindingOffset const& offset,
+            BindingOffset const& offset,
             VkDescriptorType descriptorType,
             ArrayView<RefPtr<ResourceViewImpl>> resourceViews)
         {
@@ -2468,7 +2447,7 @@ public:
 
         static void writeTextureSamplerDescriptor(
             RootBindingContext& context,
-            RootBindingOffset const& offset,
+            BindingOffset const& offset,
             VkDescriptorType descriptorType,
             ArrayView<CombinedTextureSamplerSlot> slots)
         {
@@ -2500,7 +2479,7 @@ public:
 
         static void writeTextureDescriptor(
             RootBindingContext& context,
-            RootBindingOffset const& offset,
+            BindingOffset const& offset,
             VkDescriptorType descriptorType,
             ArrayView<RefPtr<ResourceViewImpl>> resourceViews)
         {
@@ -2531,7 +2510,7 @@ public:
 
         static void writeSamplerDescriptor(
             RootBindingContext& context,
-            RootBindingOffset const& offset,
+            BindingOffset const& offset,
             VkDescriptorType descriptorType,
             ArrayView<RefPtr<SamplerStateImpl>> samplers)
         {
@@ -2668,14 +2647,14 @@ public:
         Result bindAsValue(
             PipelineCommandEncoder*     encoder,
             RootBindingContext&         context,
-            RootBindingOffset const&    offset,
+            BindingOffset const&    offset,
             ShaderObjectLayoutImpl*     layout)
         {
             // Fill in the descriptor sets based on binding ranges
             //
             for (auto bindingRangeInfo : layout->getBindingRanges())
             {
-                RootBindingOffset rangeOffset = offset;
+                BindingOffset rangeOffset = offset;
                 rangeOffset += bindingRangeInfo.offset;
 #if 0
                 rangeOffset.bindingSet += bindingRangeInfo.setOffset;
@@ -2766,7 +2745,7 @@ public:
 
                 auto subObjectLayout = subObjectRange.layout;
 
-                RootBindingOffset rangeOffset = offset;
+                BindingOffset rangeOffset = offset;
                 rangeOffset += bindingRangeInfo.offset;
                 rangeOffset.pending += subObjectRange.pendingOffset;
 #if 0
@@ -2780,7 +2759,7 @@ public:
                 {
                 case slang::BindingType::ConstantBuffer:
                     {
-                        RootBindingOffset objOffset = rangeOffset;
+                        BindingOffset objOffset = rangeOffset;
                         for (uint32_t i = 0; i < count; ++i)
                         {
                             ShaderObjectImpl* subObject = m_objects[baseIndex + i];
@@ -2794,7 +2773,7 @@ public:
                     break;
                 case slang::BindingType::ParameterBlock:
                     {
-                        RootBindingOffset objOffset = rangeOffset;
+                        BindingOffset objOffset = rangeOffset;
                         for (uint32_t i = 0; i < count; ++i)
                         {
                             ShaderObjectImpl* subObject = m_objects[baseIndex + i];
@@ -2816,7 +2795,7 @@ public:
                 case slang::BindingType::ExistentialValue:
                     if( subObjectLayout )
                     {
-                        RootBindingOffset objOffset = RootBindingOffset(rangeOffset.pending);
+                        BindingOffset objOffset = BindingOffset(rangeOffset.pending);
                         for (uint32_t i = 0; i < count; ++i)
                         {
                             ShaderObjectImpl* subObject = m_objects[baseIndex + i];
@@ -2842,10 +2821,10 @@ public:
         }
 
         Result allocateDescriptorSets(
-            PipelineCommandEncoder*     encoder,
-            RootBindingContext&         context,
-            RootBindingOffset const&    offset,
-            ShaderObjectLayoutImpl*     layout)
+            PipelineCommandEncoder* encoder,
+            RootBindingContext&     context,
+            BindingOffset const&    offset,
+            ShaderObjectLayoutImpl* layout)
         {
             auto baseDescriptorSetIndex = offset.childSet;
 
@@ -2863,12 +2842,12 @@ public:
         }
 
         Result bindAsParameterBlock(
-            PipelineCommandEncoder*     encoder,
-            RootBindingContext&         context,
-            RootBindingOffset const&    inOffset,
-            ShaderObjectLayoutImpl*     layout)
+            PipelineCommandEncoder* encoder,
+            RootBindingContext&     context,
+            BindingOffset const&    inOffset,
+            ShaderObjectLayoutImpl* layout)
         {
-            RootBindingOffset offset = inOffset;
+            BindingOffset offset = inOffset;
             offset.bindingSet = offset.childSet;
             offset.binding = 0;
 
@@ -2879,10 +2858,10 @@ public:
         }
 
         Result bindOrdinaryDataBufferIfNeeded(
-            PipelineCommandEncoder*     encoder,
-            RootBindingContext&         context,
-            RootBindingOffset&          ioOffset,
-            ShaderObjectLayoutImpl*     layout)
+            PipelineCommandEncoder* encoder,
+            RootBindingContext&     context,
+            BindingOffset&          ioOffset,
+            ShaderObjectLayoutImpl* layout)
         {
             // We start by ensuring that the buffer is created, if it is needed.
             //
@@ -2911,10 +2890,10 @@ public:
         Result bindAsConstantBuffer(
             PipelineCommandEncoder*     encoder,
             RootBindingContext&         context,
-            RootBindingOffset const&    inOffset,
+            BindingOffset const&        inOffset,
             ShaderObjectLayoutImpl*     layout)
         {
-            RootBindingOffset offset = inOffset;
+            BindingOffset offset = inOffset;
             SLANG_RETURN_ON_FAIL(bindOrdinaryDataBufferIfNeeded(encoder, context, /*inout*/ offset, layout));
             SLANG_RETURN_ON_FAIL(bindAsValue(encoder, context, offset, layout));
             return SLANG_OK;
@@ -3018,12 +2997,12 @@ public:
         EntryPointLayout* getLayout() { return static_cast<EntryPointLayout*>(m_layout.Ptr()); }
 
         Result bindAsEntryPoint(
-            PipelineCommandEncoder*     encoder,
-            RootBindingContext&         context,
-            RootBindingOffset const&    inOffset,
-            EntryPointLayout*           layout)
+            PipelineCommandEncoder* encoder,
+            RootBindingContext&     context,
+            BindingOffset const&    inOffset,
+            EntryPointLayout*       layout)
         {
-            RootBindingOffset offset = inOffset;
+            BindingOffset offset = inOffset;
 
             // Set data in `m_ordinaryData` into the push constant range.
             if (m_ordinaryData.getCount())
@@ -3095,12 +3074,12 @@ public:
             RootBindingContext&         context,
             RootShaderObjectLayout*     layout)
         {
-            RootBindingOffset offset = {};
+            BindingOffset offset = {};
             offset.pending = layout->getPendingDataOffset();
 
             SLANG_RETURN_ON_FAIL(allocateDescriptorSets(encoder, context, offset, layout));
 
-            RootBindingOffset ordinaryDataBufferOffset = offset;
+            BindingOffset ordinaryDataBufferOffset = offset;
             SLANG_RETURN_ON_FAIL(bindOrdinaryDataBufferIfNeeded(encoder, context, /*inout*/ ordinaryDataBufferOffset, layout));
 
             SLANG_RETURN_ON_FAIL(bindAsValue(encoder, context, offset, layout));
@@ -3113,7 +3092,7 @@ public:
 
                 // TODO: Need to add in a local offset here...
 
-                RootBindingOffset entryPointOffset = offset;
+                BindingOffset entryPointOffset = offset;
                 entryPointOffset += entryPointInfo.offset;
 
                 entryPoint->bindAsEntryPoint(encoder, context, entryPointOffset, entryPointInfo.layout);
