@@ -380,72 +380,138 @@ protected:
         }
     };
 
-    struct RootBindingState
+        /// Contextual data and operations required when binding shader objects to the pipeline state
+    struct BindingContext
     {
-        ID3D11DeviceContext* m_context = nullptr;
-
+        // One key service that the `BindingContext` provides is abstracting over
+        // the difference between the D3D11 compute and graphics/rasteriation pipelines.
+        // D3D11 has distinct operations for, e.g., `CSSetShaderResources`
+        // for compute vs. `VSSetShaderResources` and `PSSetShaderResources`
+        // for rasterization.
+        //
+        // The context type provides simple operations for setting each class
+        // of resource/sampler, which will be overridden in derived types.
+        //
+        // TODO: These operations should really support binding multiple resources/samplers
+        // in one call, so that we can eventually make more efficient use of the API.
+        //
+        // TODO: We could reasonably also just store the bound resources into
+        // lcoal arrays like we are doing for UAVs, and remove the pipeline-specific
+        // virtual functions. However, doing so would seemingly eliminate any
+        // chance of avoiding redundant binding work when binding changes are
+        // made for a root shader object.
+        //
         virtual void setCBV(UINT index, ID3D11Buffer* buffer) = 0;
         virtual void setSRV(UINT index, ID3D11ShaderResourceView* srv) = 0;
         virtual void setSampler(UINT index, ID3D11SamplerState* sampler) = 0;
 
-        ID3D11UnorderedAccessView* uavs[D3D11_PS_CS_UAV_REGISTER_COUNT];
-        UINT uavCount = 0;
-
+        // Unordered Access Views (UAVs) are a somewhat special case in that
+        // the D3D11 API requires them to all be set at once, rather than one
+        // at a time. To support this, we will keep a local array of the UAVs
+        // that have been bound (up to the maximum supported by D3D 11.0)
+        //
         void setUAV(UINT index, ID3D11UnorderedAccessView* uav)
         {
             uavs[index] = uav;
-            if(uavCount <= index) uavCount = index+1;
+
+            // We will also track the total number of UAV slots that will
+            // need to be bound (including any gaps that might occur due
+            // to either explicit bindings or RTV bindings that conflict
+            // with the `u` registers for fragment shaders).
+            //
+            if(uavCount <= index)
+            {
+                uavCount = index+1;
+            }
         }
 
-        RootBindingState()
+            /// The values bound for any UAVs
+        ID3D11UnorderedAccessView* uavs[D3D11_PS_CS_UAV_REGISTER_COUNT];
+
+            /// The number of entries in `uavs` that need to be considered when binding to the pipeline
+        UINT uavCount = 0;
+
+            /// The D3D11 device that we are using for binding
+        D3D11Device* device = nullptr;
+
+            /// The D3D11 device context that we are using for binding
+        ID3D11DeviceContext* context = nullptr;
+
+            /// Initialize a binding context for binding to the given `device` and `context`
+        BindingContext(
+            D3D11Device*            device,
+            ID3D11DeviceContext*    context)
+            : device(device)
+            , context(context)
         {
             memset(uavs, 0, sizeof(uavs));
         }
-
-//        List<ID3D11ShaderResourceView*> srvBindings;
-//        List<ID3D11UnorderedAccessView*> uavBindings;
-//        List<ID3D11SamplerState*> samplerBindings;
-//        List<ID3D11Buffer*> constantBuffers;
     };
 
-    struct GraphicsRootBindingContext : RootBindingState
+        /// A `BindingContext` for binding to the compute pipeline
+    struct ComputeBindingContext : BindingContext
     {
+            /// Initialize a binding context for binding to the given `device` and `context`
+        ComputeBindingContext(
+            D3D11Device*            device,
+            ID3D11DeviceContext*    context)
+            : BindingContext(device, context)
+        {}
+
         void setCBV(UINT index, ID3D11Buffer* buffer) SLANG_OVERRIDE
         {
-            m_context->VSSetConstantBuffers(index, 1, &buffer);
-            m_context->PSSetConstantBuffers(index, 1, &buffer);
+            context->CSSetConstantBuffers(index, 1, &buffer);
         }
 
         void setSRV(UINT index, ID3D11ShaderResourceView* srv) SLANG_OVERRIDE
         {
-            m_context->VSSetShaderResources(index, 1, &srv);
-            m_context->PSSetShaderResources(index, 1, &srv);
+            context->CSSetShaderResources(index, 1, &srv);
         }
 
         void setSampler(UINT index, ID3D11SamplerState* sampler) SLANG_OVERRIDE
         {
-            m_context->VSSetSamplers(index, 1, &sampler);
-            m_context->PSSetSamplers(index, 1, &sampler);
+            context->CSSetSamplers(index, 1, &sampler);
         }
     };
 
-    struct ComputeRootBindingContext : RootBindingState
+        /// A `BindingContext` for binding to the graphics/rasterization pipeline
+    struct GraphicsBindingContext : BindingContext
     {
+            /// Initialize a binding context for binding to the given `device` and `context`
+        GraphicsBindingContext(
+            D3D11Device*            device,
+            ID3D11DeviceContext*    context)
+            : BindingContext(device, context)
+        {}
+
+        // TODO: The operations here are only dealing with vertex and fragment
+        // shaders for now. We should eventually extend them to handle HS/DS/GS
+        // bindings. (We might want to skip those stages depending on whether
+        // the associated program uses them at all).
+        //
+        // TODO: If we support cases where different stages might use distinct
+        // entry-point parameters, we might need to support some modes where
+        // a "stage mask" is passed in that applies to the bindings.
+        //
         void setCBV(UINT index, ID3D11Buffer* buffer) SLANG_OVERRIDE
         {
-            m_context->CSSetConstantBuffers(index, 1, &buffer);
+            context->VSSetConstantBuffers(index, 1, &buffer);
+            context->PSSetConstantBuffers(index, 1, &buffer);
         }
 
         void setSRV(UINT index, ID3D11ShaderResourceView* srv) SLANG_OVERRIDE
         {
-            m_context->CSSetShaderResources(index, 1, &srv);
+            context->VSSetShaderResources(index, 1, &srv);
+            context->PSSetShaderResources(index, 1, &srv);
         }
 
         void setSampler(UINT index, ID3D11SamplerState* sampler) SLANG_OVERRIDE
         {
-            m_context->CSSetSamplers(index, 1, &sampler);
+            context->VSSetSamplers(index, 1, &sampler);
+            context->PSSetSamplers(index, 1, &sampler);
         }
     };
+
 
     struct BindingOffset
     {
@@ -1365,21 +1431,20 @@ protected:
 
         /// Bind the buffer for ordinary/uniform data, if needed
         Result _bindOrdinaryDataBufferIfNeeded(
-            D3D11Device*            device,
-            RootBindingState*       bindingState,
+            BindingContext*         context,
             BindingOffsetPair&      ioOffset,
             ShaderObjectLayoutImpl* layout)
         {
             // We start by ensuring that the buffer is created, if it is needed.
             //
-            SLANG_RETURN_ON_FAIL(_ensureOrdinaryDataBufferCreatedIfNeeded(device, layout));
+            SLANG_RETURN_ON_FAIL(_ensureOrdinaryDataBufferCreatedIfNeeded(context->device, layout));
 
             // If we did indeed need/create a buffer, then we must bind it
             // into root binding state.
             //
             if (m_ordinaryDataBuffer)
             {
-                bindingState->setCBV(ioOffset.cbv, m_ordinaryDataBuffer->m_buffer);
+                context->setCBV(ioOffset.cbv, m_ordinaryDataBuffer->m_buffer);
                 ioOffset.cbv++;
             }
 
@@ -1387,19 +1452,22 @@ protected:
         }
     public:
             /// Bind this object as if it was declared as a `ConstantBuffer<T>` in Slang
-        Result bindAsConstantBuffer(D3D11Device* device, RootBindingState* bindingState, BindingOffsetPair const& inOffset, ShaderObjectLayoutImpl* layout)
+        Result bindAsConstantBuffer(
+            BindingContext*             context,
+            BindingOffsetPair const&    inOffset,
+            ShaderObjectLayoutImpl*     layout)
         {
             BindingOffsetPair offset = inOffset;
 
             // A `ConstantBuffer<T>` will always start with a "default" constant
             // buffer binding for the ordinary data in `T` (if there was any).
             //
-            SLANG_RETURN_ON_FAIL(_bindOrdinaryDataBufferIfNeeded(device, bindingState, /*inout*/ offset, layout));
+            SLANG_RETURN_ON_FAIL(_bindOrdinaryDataBufferIfNeeded(context, /*inout*/ offset, layout));
 
             // The ordinary data buffer (if any) is then followed by the bindings
             // for any reosurce binding ranges nested in `T`.
             //
-            SLANG_RETURN_ON_FAIL(bindAsValue(device, bindingState, offset, layout));
+            SLANG_RETURN_ON_FAIL(bindAsValue(context, offset, layout));
 
             return SLANG_OK;
         }
@@ -1407,7 +1475,10 @@ protected:
             /// Bind this object as if it is were declared as a simple value like
             /// and `IThing` that happens to have a `ConcreteThing` bound to it.
             ///
-        Result bindAsValue(D3D11Device* device, RootBindingState* bindingState, BindingOffsetPair const& offset, ShaderObjectLayoutImpl* layout)
+        Result bindAsValue(
+            BindingContext*         context,
+            BindingOffsetPair const& offset,
+            ShaderObjectLayoutImpl* layout)
         {
             // We start by 
 
@@ -1420,7 +1491,7 @@ protected:
                 for(uint32_t i = 0; i < count; ++i)
                 {
                     auto srv = m_srvs[baseIndex + i];
-                    bindingState->setSRV(registerOffset + i, srv ? srv->m_srv : nullptr);
+                    context->setSRV(registerOffset + i, srv ? srv->m_srv : nullptr);
                 }
             }
 
@@ -1433,7 +1504,7 @@ protected:
                 for(uint32_t i = 0; i < count; ++i)
                 {
                     auto uav = m_uavs[baseIndex + i];
-                    bindingState->setUAV(registerOffset + i, uav ? uav->m_uav : nullptr);
+                    context->setUAV(registerOffset + i, uav ? uav->m_uav : nullptr);
                 }
             }
 
@@ -1446,7 +1517,7 @@ protected:
                 for(uint32_t i = 0; i < count; ++i)
                 {
                     auto sampler = m_samplers[baseIndex + i];
-                    bindingState->setSampler(registerOffset + i, sampler ? sampler->m_sampler.get() : nullptr);
+                    context->setSampler(registerOffset + i, sampler ? sampler->m_sampler.get() : nullptr);
                 }
             }
 
@@ -1494,7 +1565,7 @@ protected:
                         for(Index i = 0; i < count; ++i)
                         {
                             auto subObject = m_objects[ baseIndex + i ];
-                            subObject->bindAsConstantBuffer(device, bindingState, objOffset, subObjectLayout);
+                            subObject->bindAsConstantBuffer(context, objOffset, subObjectLayout);
                         }
                     }
                     break;
@@ -1507,7 +1578,7 @@ protected:
                         for(Index i = 0; i < count; ++i)
                         {
                             auto subObject = m_objects[ baseIndex + i ];
-                            subObject->bindAsValue(device, bindingState, objOffset, subObjectLayout);
+                            subObject->bindAsValue(context, objOffset, subObjectLayout);
                         }
                     }
                     break;
@@ -1651,16 +1722,18 @@ protected:
             return SLANG_OK;
         }
 
-        Result bindRootObject(D3D11Device* device, RootBindingState* bindingState, RootShaderObjectLayoutImpl* layout)
+        Result bindAsRoot(
+            BindingContext*             context,
+            RootShaderObjectLayoutImpl* layout)
         {
             BindingOffsetPair offset;
             offset.pending = layout->getPendingDataOffset();
 
             BindingOffsetPair ordinaryDataBufferOffset = offset;
 
-            SLANG_RETURN_ON_FAIL(_bindOrdinaryDataBufferIfNeeded(device, bindingState, /*inout*/ ordinaryDataBufferOffset, layout));
+            SLANG_RETURN_ON_FAIL(_bindOrdinaryDataBufferIfNeeded(context, /*inout*/ ordinaryDataBufferOffset, layout));
 
-            SLANG_RETURN_ON_FAIL(bindAsValue(device, bindingState, offset, layout));
+            SLANG_RETURN_ON_FAIL(bindAsValue(context, offset, layout));
 
             auto entryPointCount = m_entryPoints.getCount();
             for (Index i = 0; i < entryPointCount; ++i)
@@ -1671,7 +1744,7 @@ protected:
                 BindingOffsetPair entryPointOffset = offset;
                 entryPointOffset += entryPointInfo.offset;
 
-                SLANG_RETURN_ON_FAIL(entryPoint->bindAsConstantBuffer(device, bindingState, entryPointOffset, entryPointInfo.layout));
+                SLANG_RETURN_ON_FAIL(entryPoint->bindAsConstantBuffer(context, entryPointOffset, entryPointInfo.layout));
             }
 
 #if 0
@@ -3294,10 +3367,9 @@ void D3D11Device::bindRootShaderObject(IShaderObject* shaderObject)
     {
     case PipelineType::Compute:
         {
-            ComputeRootBindingContext context;
-            context.m_context = m_immediateContext;
+            ComputeBindingContext context(this, m_immediateContext);
 
-            rootShaderObjectImpl->bindRootObject(this, &context, specializedRootLayoutImpl);
+            rootShaderObjectImpl->bindAsRoot(&context, specializedRootLayoutImpl);
             m_immediateContext->CSSetUnorderedAccessViews(0, context.uavCount, context.uavs, nullptr);
         }
 //        m_immediateContext->CSSetShaderResources(0, (UINT)m_rootBindingState.srvBindings.getCount(), m_rootBindingState.srvBindings.getBuffer());
@@ -3307,10 +3379,9 @@ void D3D11Device::bindRootShaderObject(IShaderObject* shaderObject)
         break;
     default:
         {
-            GraphicsRootBindingContext context;
-            context.m_context = m_immediateContext;
+            GraphicsBindingContext context(this, m_immediateContext);
 
-            rootShaderObjectImpl->bindRootObject(this, &context, specializedRootLayoutImpl);
+            rootShaderObjectImpl->bindAsRoot(&context, specializedRootLayoutImpl);
 
 //            auto pipelineType = int(PipelineType::Graphics);
 
