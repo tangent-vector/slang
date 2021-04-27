@@ -382,10 +382,127 @@ protected:
 
     struct RootBindingState
     {
-        List<ID3D11ShaderResourceView*> srvBindings;
-        List<ID3D11UnorderedAccessView*> uavBindings;
-        List<ID3D11SamplerState*> samplerBindings;
-        List<ID3D11Buffer*> constantBuffers;
+        ID3D11DeviceContext* m_context = nullptr;
+
+        virtual void setCBV(UINT index, ID3D11Buffer* buffer) = 0;
+        virtual void setSRV(UINT index, ID3D11ShaderResourceView* srv) = 0;
+        virtual void setSampler(UINT index, ID3D11SamplerState* sampler) = 0;
+
+        ID3D11UnorderedAccessView* uavs[D3D11_PS_CS_UAV_REGISTER_COUNT];
+        UINT uavCount = 0;
+
+        void setUAV(UINT index, ID3D11UnorderedAccessView* uav)
+        {
+            uavs[index] = uav;
+            if(uavCount <= index) uavCount = index+1;
+        }
+
+        RootBindingState()
+        {
+            memset(uavs, 0, sizeof(uavs));
+        }
+
+//        List<ID3D11ShaderResourceView*> srvBindings;
+//        List<ID3D11UnorderedAccessView*> uavBindings;
+//        List<ID3D11SamplerState*> samplerBindings;
+//        List<ID3D11Buffer*> constantBuffers;
+    };
+
+    struct GraphicsRootBindingContext : RootBindingState
+    {
+        void setCBV(UINT index, ID3D11Buffer* buffer) SLANG_OVERRIDE
+        {
+            m_context->VSSetConstantBuffers(index, 1, &buffer);
+            m_context->PSSetConstantBuffers(index, 1, &buffer);
+        }
+
+        void setSRV(UINT index, ID3D11ShaderResourceView* srv) SLANG_OVERRIDE
+        {
+            m_context->VSSetShaderResources(index, 1, &srv);
+            m_context->PSSetShaderResources(index, 1, &srv);
+        }
+
+        void setSampler(UINT index, ID3D11SamplerState* sampler) SLANG_OVERRIDE
+        {
+            m_context->VSSetSamplers(index, 1, &sampler);
+            m_context->PSSetSamplers(index, 1, &sampler);
+        }
+    };
+
+    struct ComputeRootBindingContext : RootBindingState
+    {
+        void setCBV(UINT index, ID3D11Buffer* buffer) SLANG_OVERRIDE
+        {
+            m_context->CSSetConstantBuffers(index, 1, &buffer);
+        }
+
+        void setSRV(UINT index, ID3D11ShaderResourceView* srv) SLANG_OVERRIDE
+        {
+            m_context->CSSetShaderResources(index, 1, &srv);
+        }
+
+        void setSampler(UINT index, ID3D11SamplerState* sampler) SLANG_OVERRIDE
+        {
+            m_context->CSSetSamplers(index, 1, &sampler);
+        }
+    };
+
+    struct BindingOffset
+    {
+        uint32_t cbv    = 0;
+        uint32_t srv    = 0;
+        uint32_t uav    = 0;
+        uint32_t sampler = 0;
+
+        BindingOffset()
+        {}
+
+        BindingOffset(slang::VariableLayoutReflection* varLayout)
+        {
+            if(varLayout)
+            {
+                cbv     = (uint32_t) varLayout->getOffset(SLANG_PARAMETER_CATEGORY_CONSTANT_BUFFER);
+                srv     = (uint32_t) varLayout->getOffset(SLANG_PARAMETER_CATEGORY_SHADER_RESOURCE);
+                uav     = (uint32_t) varLayout->getOffset(SLANG_PARAMETER_CATEGORY_UNORDERED_ACCESS);
+                sampler = (uint32_t) varLayout->getOffset(SLANG_PARAMETER_CATEGORY_SAMPLER_STATE);
+            }
+        }
+
+        void operator+=(BindingOffset const& offset)
+        {
+            cbv += offset.cbv;
+            srv += offset.srv;
+            uav += offset.uav;
+            sampler += offset.sampler;
+        }
+    };
+
+    struct BindingOffsetPair : BindingOffset
+    {
+        BindingOffset pending;
+
+        BindingOffsetPair()
+        {}
+
+        explicit BindingOffsetPair(BindingOffset const& offset)
+            : BindingOffset(offset)
+        {}
+
+        BindingOffsetPair(slang::VariableLayoutReflection* varLayout)
+            : BindingOffset(varLayout)
+            , pending(varLayout->getPendingDataLayout())
+        {}
+
+        void operator+=(BindingOffset const& offset)
+        {
+            BindingOffset::operator+=(offset);
+        }
+
+        void operator+=(BindingOffsetPair const& offset)
+        {
+            BindingOffset::operator+=(offset);
+            pending += offset.pending;
+        }
     };
 
     class ShaderObjectLayoutImpl : public ShaderObjectLayoutBase
@@ -396,14 +513,16 @@ protected:
             slang::BindingType bindingType;
             Index count;
             Index baseIndex;
-            // baseIndex2 is used to specify samplers in a CombinedTextureSampler binding.
-            Index baseIndex2;
+
+            uint32_t registerOffset;
         };
 
         struct SubObjectRangeInfo
         {
             RefPtr<ShaderObjectLayoutImpl> layout;
             Index bindingRangeIndex;
+
+            BindingOffsetPair offset;
         };
 
         struct Builder
@@ -419,12 +538,14 @@ protected:
             List<BindingRangeInfo> m_bindingRanges;
             List<SubObjectRangeInfo> m_subObjectRanges;
 
+            List<Index> m_srvRanges;
+            List<Index> m_uavRanges;
+            List<Index> m_samplerRanges;
+
             Index m_srvCount = 0;
             Index m_samplerCount = 0;
             Index m_uavCount = 0;
             Index m_subObjectCount = 0;
-            Index m_varyingInputCount = 0;
-            Index m_varyingOutputCount = 0;
 
             Result setElementTypeLayout(slang::TypeLayoutReflection* typeLayout)
             {
@@ -459,13 +580,10 @@ protected:
                     case slang::BindingType::Sampler:
                         bindingRangeInfo.baseIndex = m_samplerCount;
                         m_samplerCount += count;
+                        m_samplerRanges.add(r);
                         break;
 
                     case slang::BindingType::CombinedTextureSampler:
-                        bindingRangeInfo.baseIndex = m_srvCount;
-                        bindingRangeInfo.baseIndex2 = m_samplerCount;
-                        m_srvCount += count;
-                        m_samplerCount += count;
                         break;
 
                     case slang::BindingType::MutableRawBuffer:
@@ -473,24 +591,32 @@ protected:
                     case slang::BindingType::MutableTypedBuffer:
                         bindingRangeInfo.baseIndex = m_uavCount;
                         m_uavCount += count;
+                        m_uavRanges.add(r);
                         break;
 
                     case slang::BindingType::VaryingInput:
-                        bindingRangeInfo.baseIndex = m_varyingInputCount;
-                        m_varyingInputCount += count;
                         break;
 
                     case slang::BindingType::VaryingOutput:
-                        bindingRangeInfo.baseIndex = m_varyingOutputCount;
-                        m_varyingOutputCount += count;
                         break;
 
                     default:
                         bindingRangeInfo.baseIndex = m_srvCount;
                         m_srvCount += count;
+                        m_srvRanges.add(r);
                         break;
                     }
 
+                    if(typeLayout->getBindingRangeDescriptorRangeCount(r) != 0)
+                    {
+                        SlangInt descriptorSetIndex = typeLayout->getBindingRangeDescriptorSetIndex(r);
+                        SLANG_ASSERT(descriptorSetIndex == 0);
+
+                        SlangInt descriptorRangeIndex = typeLayout->getBindingRangeFirstDescriptorRangeIndex(r);
+                        auto registerOffset = typeLayout->getDescriptorSetDescriptorRangeIndexOffset(descriptorSetIndex, descriptorRangeIndex);
+
+                        bindingRangeInfo.registerOffset = (uint32_t) registerOffset;
+                    }
 
                     m_bindingRanges.add(bindingRangeInfo);
                 }
@@ -522,6 +648,7 @@ protected:
                     SubObjectRangeInfo subObjectRange;
                     subObjectRange.bindingRangeIndex = bindingRangeIndex;
                     subObjectRange.layout = subObjectLayout;
+                    subObjectRange.offset = BindingOffsetPair(typeLayout->getSubObjectRangeOffset(r));
 
                     m_subObjectRanges.add(subObjectRange);
                 }
@@ -572,6 +699,11 @@ protected:
         {
             return m_elementTypeLayout->getType();
         }
+
+        List<Index> const& getSRVRanges() const { return m_srvRanges; }
+        List<Index> const& getUAVRanges() const { return m_uavRanges; }
+        List<Index> const& getSamplerRanges() const { return m_samplerRanges; }
+
     protected:
         Result _init(Builder const* builder)
         {
@@ -580,18 +712,22 @@ protected:
             initBase(renderer, builder->m_elementTypeLayout);
 
             m_bindingRanges = builder->m_bindingRanges;
+            m_srvRanges = builder->m_srvRanges;
+            m_uavRanges = builder->m_uavRanges;
+            m_samplerRanges = builder->m_samplerRanges;
 
             m_srvCount = builder->m_srvCount;
             m_samplerCount = builder->m_samplerCount;
             m_uavCount = builder->m_uavCount;
             m_subObjectCount = builder->m_subObjectCount;
             m_subObjectRanges = builder->m_subObjectRanges;
-            m_varyingInputCount = builder->m_varyingInputCount;
-            m_varyingOutputCount = builder->m_varyingOutputCount;
             return SLANG_OK;
         }
 
         List<BindingRangeInfo> m_bindingRanges;
+        List<Index> m_srvRanges;
+        List<Index> m_uavRanges;
+        List<Index> m_samplerRanges;
         Index m_srvCount = 0;
         Index m_samplerCount = 0;
         Index m_uavCount = 0;
@@ -608,7 +744,8 @@ protected:
     public:
         struct EntryPointInfo
         {
-            RefPtr<ShaderObjectLayoutImpl> layout;
+            RefPtr<ShaderObjectLayoutImpl>  layout;
+            BindingOffsetPair               offset;
         };
 
         struct Builder : Super::Builder
@@ -634,18 +771,21 @@ protected:
             void addGlobalParams(slang::VariableLayoutReflection* globalsLayout)
             {
                 setElementTypeLayout(globalsLayout->getTypeLayout());
+                m_pendingDataOffset = BindingOffsetPair(globalsLayout).pending;
             }
 
-            void addEntryPoint(SlangStage stage, ShaderObjectLayoutImpl* entryPointLayout)
+            void addEntryPoint(SlangStage stage, ShaderObjectLayoutImpl* entryPointLayout, slang::EntryPointLayout* slangEntryPoint)
             {
                 EntryPointInfo info;
                 info.layout = entryPointLayout;
+                info.offset = BindingOffsetPair(slangEntryPoint->getVarLayout());
                 m_entryPoints.add(info);
             }
 
             slang::IComponentType* m_program;
             slang::ProgramLayout* m_programLayout;
             List<EntryPointInfo> m_entryPoints;
+            BindingOffset m_pendingDataOffset;
         };
 
         EntryPointInfo& getEntryPoint(Index index) { return m_entryPoints[index]; }
@@ -668,7 +808,7 @@ protected:
                 RefPtr<ShaderObjectLayoutImpl> entryPointLayout;
                 SLANG_RETURN_ON_FAIL(ShaderObjectLayoutImpl::createForElementType(
                     renderer, slangEntryPoint->getTypeLayout(), entryPointLayout.writeRef()));
-                builder.addEntryPoint(slangEntryPoint->getStage(), entryPointLayout);
+                builder.addEntryPoint(slangEntryPoint->getStage(), entryPointLayout, slangEntryPoint);
             }
 
             SLANG_RETURN_ON_FAIL(builder.build(outLayout));
@@ -678,6 +818,8 @@ protected:
 
         slang::IComponentType* getSlangProgram() const { return m_program; }
         slang::ProgramLayout* getSlangProgramLayout() const { return m_programLayout; }
+
+        BindingOffset const& getPendingDataOffset() const { return m_pendingDataOffset; }
 
     protected:
         Result _init(Builder const* builder)
@@ -689,6 +831,7 @@ protected:
             m_program = builder->m_program;
             m_programLayout = builder->m_programLayout;
             m_entryPoints = builder->m_entryPoints;
+            m_pendingDataOffset = builder->m_pendingDataOffset;
             return SLANG_OK;
         }
 
@@ -696,6 +839,7 @@ protected:
         slang::ProgramLayout* m_programLayout = nullptr;
 
         List<EntryPointInfo> m_entryPoints;
+        BindingOffset m_pendingDataOffset;
     };
 
     class ShaderObjectImpl : public ShaderObjectBase
@@ -926,15 +1070,7 @@ protected:
         SLANG_NO_THROW Result SLANG_MCALL setCombinedTextureSampler(
             ShaderOffset const& offset, IResourceView* textureView, ISamplerState* sampler) SLANG_OVERRIDE
         {
-            if (offset.bindingRangeIndex < 0)
-                return SLANG_E_INVALID_ARG;
-            auto layout = getLayout();
-            if (offset.bindingRangeIndex >= layout->getBindingRangeCount())
-                return SLANG_E_INVALID_ARG;
-            auto& bindingRange = layout->getBindingRange(offset.bindingRangeIndex);
-            m_srvs[bindingRange.baseIndex + offset.bindingArrayIndex] = static_cast<ShaderResourceViewImpl*>(textureView);
-            m_samplers[bindingRange.baseIndex2 + offset.bindingArrayIndex] = static_cast<SamplerStateImpl*>(sampler);
-            return SLANG_OK;
+            return SLANG_E_NOT_IMPLEMENTED;
         }
 
     public:
@@ -1156,7 +1292,9 @@ protected:
         size_t _getSubObjectRangePendingDataStride(ShaderObjectLayoutImpl* specializedLayout, Index subObjectRangeIndex) { return 0; }
 
         /// Ensure that the `m_ordinaryDataBuffer` has been created, if it is needed
-        Result _ensureOrdinaryDataBufferCreatedIfNeeded(D3D11Device* device)
+        Result _ensureOrdinaryDataBufferCreatedIfNeeded(
+            D3D11Device*            device,
+            ShaderObjectLayoutImpl* specializedLayout)
         {
             // If we have already created a buffer to hold ordinary data, then we should
             // simply re-use that buffer rather than re-create it.
@@ -1181,8 +1319,8 @@ protected:
             // For now we just make the simple assumption described above despite
             // knowing that it is false.
             //
-            RefPtr<ShaderObjectLayoutImpl> specializedLayout;
-            SLANG_RETURN_ON_FAIL(_getSpecializedLayout(specializedLayout.writeRef()));
+//            RefPtr<ShaderObjectLayoutImpl> specializedLayout;
+//            SLANG_RETURN_ON_FAIL(_getSpecializedLayout(specializedLayout.writeRef()));
 
             auto specializedOrdinaryDataSize = specializedLayout->getElementTypeLayout()->getSize();
             if (specializedOrdinaryDataSize == 0)
@@ -1213,36 +1351,41 @@ protected:
 
         /// Bind the buffer for ordinary/uniform data, if needed
         Result _bindOrdinaryDataBufferIfNeeded(
-            D3D11Device* device,
-            RootBindingState* bindingState)
+            D3D11Device*            device,
+            RootBindingState*       bindingState,
+            BindingOffsetPair&      ioOffset,
+            ShaderObjectLayoutImpl* layout)
         {
             // We start by ensuring that the buffer is created, if it is needed.
             //
-            SLANG_RETURN_ON_FAIL(_ensureOrdinaryDataBufferCreatedIfNeeded(device));
+            SLANG_RETURN_ON_FAIL(_ensureOrdinaryDataBufferCreatedIfNeeded(device, layout));
 
             // If we did indeed need/create a buffer, then we must bind it
             // into root binding state.
             //
             if (m_ordinaryDataBuffer)
             {
-                bindingState->constantBuffers.add(m_ordinaryDataBuffer->m_buffer);
+                bindingState->setCBV(ioOffset.cbv, m_ordinaryDataBuffer->m_buffer);
+                ioOffset.cbv++;
             }
 
             return SLANG_OK;
         }
     public:
             /// Bind this object as if it was declared as a `ConstantBuffer<T>` in Slang
-        Result bindAsConstantBuffer(D3D11Device* device, RootBindingState* bindingState)
+        Result bindAsConstantBuffer(D3D11Device* device, RootBindingState* bindingState, BindingOffsetPair const& inOffset, ShaderObjectLayoutImpl* layout)
         {
+            BindingOffsetPair offset = inOffset;
+
             // A `ConstantBuffer<T>` will always start with a "default" constant
             // buffer binding for the ordinary data in `T` (if there was any).
             //
-            SLANG_RETURN_ON_FAIL(_bindOrdinaryDataBufferIfNeeded(device, bindingState));
+            SLANG_RETURN_ON_FAIL(_bindOrdinaryDataBufferIfNeeded(device, bindingState, /*inout*/ offset, layout));
 
             // The ordinary data buffer (if any) is then followed by the bindings
             // for any reosurce binding ranges nested in `T`.
             //
-            SLANG_RETURN_ON_FAIL(bindAsValue(device, bindingState));
+            SLANG_RETURN_ON_FAIL(bindAsValue(device, bindingState, offset, layout));
 
             return SLANG_OK;
         }
@@ -1250,25 +1393,48 @@ protected:
             /// Bind this object as if it is were declared as a simple value like
             /// and `IThing` that happens to have a `ConcreteThing` bound to it.
             ///
-        Result bindAsValue(D3D11Device* device, RootBindingState* bindingState)
+        Result bindAsValue(D3D11Device* device, RootBindingState* bindingState, BindingOffsetPair const& offset, ShaderObjectLayoutImpl* layout)
         {
-            auto layout = getLayout();
+            // We start by 
 
-            // The easy part is that we can bind each of the resources and samplers
-            // this object directly contains to the pipeline.
-            //
-            // TODO: These loops could in principle be replaced with invididual calls
-            // to the relevant D3D11 API functions taht bind resources/samplers,
-            // since those calls can handle arrays of resources/samplers.
+            for(auto bindingRangeIndex : layout->getSRVRanges())
+            {
+                auto const& bindingRange = layout->getBindingRange(bindingRangeIndex);
+                auto count = (uint32_t) bindingRange.count;
+                auto baseIndex = (uint32_t) bindingRange.baseIndex;
+                auto registerOffset = bindingRange.registerOffset + offset.srv;
+                for(uint32_t i = 0; i < count; ++i)
+                {
+                    auto srv = m_srvs[baseIndex + i];
+                    bindingState->setSRV(registerOffset + i, srv ? srv->m_srv : nullptr);
+                }
+            }
 
-            for (auto sampler : m_samplers)
-                bindingState->samplerBindings.add(sampler ? sampler->m_sampler.get() : nullptr);
-            
-            for (auto srv : m_srvs)
-                bindingState->srvBindings.add(srv ? srv->m_srv : nullptr);
+            for(auto bindingRangeIndex : layout->getUAVRanges())
+            {
+                auto const& bindingRange = layout->getBindingRange(bindingRangeIndex);
+                auto count = (uint32_t) bindingRange.count;
+                auto baseIndex = (uint32_t) bindingRange.baseIndex;
+                auto registerOffset = bindingRange.registerOffset + offset.uav;
+                for(uint32_t i = 0; i < count; ++i)
+                {
+                    auto uav = m_uavs[baseIndex + i];
+                    bindingState->setUAV(registerOffset + i, uav ? uav->m_uav : nullptr);
+                }
+            }
 
-            for (auto uav : m_uavs)
-                bindingState->uavBindings.add(uav ? uav->m_uav : nullptr);
+            for(auto bindingRangeIndex : layout->getSamplerRanges())
+            {
+                auto const& bindingRange = layout->getBindingRange(bindingRangeIndex);
+                auto count = (uint32_t) bindingRange.count;
+                auto baseIndex = (uint32_t) bindingRange.baseIndex;
+                auto registerOffset = bindingRange.registerOffset + offset.sampler;
+                for(uint32_t i = 0; i < count; ++i)
+                {
+                    auto sampler = m_samplers[baseIndex + i];
+                    bindingState->setSampler(registerOffset + i, sampler ? sampler->m_sampler.get() : nullptr);
+                }
+            }
 
             // Next, we need to recurse on any sub-objects to bind them as well.
 
@@ -1291,7 +1457,14 @@ protected:
 
             for(auto const& subObjectRange : layout->getSubObjectRanges())
             {
+                auto subObjectLayout = subObjectRange.layout;
                 auto const& bindingRange = layout->getBindingRange(subObjectRange.bindingRangeIndex);
+                Index count = bindingRange.count;
+                Index baseIndex = bindingRange.baseIndex;
+
+                BindingOffsetPair objOffset = offset;
+                objOffset += subObjectRange.offset;
+
                 switch(bindingRange.bindingType)
                 {
                 // For D3D11-compatible targets, the Slang compiler treats the
@@ -1304,12 +1477,23 @@ protected:
                         // the pipeline state as a constant buffer (meaning that
                         // a buffer will be bound for its ordinary data, if any).
                         //
-                        Index count = bindingRange.count;
-                        Index baseIndex = bindingRange.baseIndex;
                         for(Index i = 0; i < count; ++i)
                         {
                             auto subObject = m_objects[ baseIndex + i ];
-                            subObject->bindAsConstantBuffer(device, bindingState);
+                            subObject->bindAsConstantBuffer(device, bindingState, objOffset, subObjectLayout);
+                        }
+                    }
+                    break;
+
+                case slang::BindingType::ExistentialValue:
+                    if(subObjectLayout)
+                    {
+                        objOffset = BindingOffsetPair(objOffset.pending);
+
+                        for(Index i = 0; i < count; ++i)
+                        {
+                            auto subObject = m_objects[ baseIndex + i ];
+                            subObject->bindAsValue(device, bindingState, objOffset, subObjectLayout);
                         }
                     }
                     break;
@@ -1322,6 +1506,7 @@ protected:
             return SLANG_OK;
         }
 
+#if 0
         Result bindPendingResources(D3D11Device* device, RootBindingState* bindingState)
         {
             auto layout = getLayout();
@@ -1359,6 +1544,7 @@ protected:
             }
             return SLANG_OK;
         }
+#endif
 
         /// Any "ordinary" / uniform data for this object
         List<char> m_ordinaryData;
@@ -1451,17 +1637,30 @@ protected:
             return SLANG_OK;
         }
 
-        Result bindRootObject(D3D11Device* device, RootBindingState* bindingState)
+        Result bindRootObject(D3D11Device* device, RootBindingState* bindingState, RootShaderObjectLayoutImpl* layout)
         {
-            SLANG_RETURN_ON_FAIL(Super::bindAsConstantBuffer(device, bindingState));
+            BindingOffsetPair offset;
+            offset.pending = layout->getPendingDataOffset();
+
+            BindingOffsetPair ordinaryDataBufferOffset = offset;
+
+            SLANG_RETURN_ON_FAIL(_bindOrdinaryDataBufferIfNeeded(device, bindingState, /*inout*/ ordinaryDataBufferOffset, layout));
+
+            SLANG_RETURN_ON_FAIL(bindAsValue(device, bindingState, offset, layout));
 
             auto entryPointCount = m_entryPoints.getCount();
             for (Index i = 0; i < entryPointCount; ++i)
             {
                 auto entryPoint = m_entryPoints[i];
-                SLANG_RETURN_ON_FAIL(entryPoint->bindAsConstantBuffer(device, bindingState));
+                auto const& entryPointInfo = layout->getEntryPoint(i);
+
+                BindingOffsetPair entryPointOffset = offset;
+                entryPointOffset += entryPointInfo.offset;
+
+                SLANG_RETURN_ON_FAIL(entryPoint->bindAsConstantBuffer(device, bindingState, entryPointOffset, entryPointInfo.layout));
             }
 
+#if 0
             SLANG_RETURN_ON_FAIL(Super::bindPendingResources(device, bindingState));
 
             for (Index i = 0; i < entryPointCount; ++i)
@@ -1469,6 +1668,7 @@ protected:
                 auto entryPoint = m_entryPoints[i];
                 SLANG_RETURN_ON_FAIL(entryPoint->bindPendingResources(device, bindingState));
             }
+#endif
 
             return SLANG_OK;
         }
@@ -1589,11 +1789,6 @@ protected:
     RefPtr<FramebufferImpl> m_currentFramebuffer;
 
     RefPtr<PipelineStateImpl> m_currentPipelineState;
-
-    RootBindingState m_rootBindingState;
-
-    bool m_framebufferBindingDirty = true;
-    bool m_shaderBindingDirty = true;
 
     uint32_t m_stencilRef = 0;
     bool m_depthStencilStateDirty = true;
@@ -1920,7 +2115,7 @@ Result D3D11Device::createFramebuffer(
 
 void D3D11Device::setFramebuffer(IFramebuffer* frameBuffer)
 {
-    m_framebufferBindingDirty = true;
+//    m_framebufferBindingDirty = true;
     m_currentFramebuffer = static_cast<FramebufferImpl*>(frameBuffer);
 }
 
@@ -2767,6 +2962,8 @@ void D3D11Device::setPipelineState(IPipelineState* state)
             m_immediateContext->IASetInputLayout(stateImpl->m_inputLayout->m_layout);
 
             // VS
+
+            // TODO(tfoley): Why the conditional here? If somebody is trying to disable the VS or PS, shouldn't we respect that?
             if (programImpl->m_vertexShader)
                 m_immediateContext->VSSetShader(programImpl->m_vertexShader, nullptr, 0);
 
@@ -3063,31 +3260,65 @@ void D3D11Device::bindRootShaderObject(IShaderObject* shaderObject)
     RootShaderObjectImpl* rootShaderObjectImpl = static_cast<RootShaderObjectImpl*>(shaderObject);
     RefPtr<PipelineStateBase> specializedPipeline;
     maybeSpecializePipeline(m_currentPipelineState, rootShaderObjectImpl, specializedPipeline);
+    PipelineStateImpl* specializedPipelineImpl = static_cast<PipelineStateImpl*>(specializedPipeline.Ptr());
     setPipelineState(specializedPipeline.Ptr());
 
-    //    auto specializedProgramLayout = specializedPipeline->getProgram<ShaderProgramImpl>()->slangProgram->getLayout();
+    RefPtr<ShaderObjectLayoutImpl> specializedRootLayout;
+    rootShaderObjectImpl->_getSpecializedLayout(specializedRootLayout.writeRef());
+    RootShaderObjectLayoutImpl* specializedRootLayoutImpl = static_cast<RootShaderObjectLayoutImpl*>(specializedRootLayout.Ptr());
 
-    m_rootBindingState.samplerBindings.clear();
-    m_rootBindingState.srvBindings.clear();
-    m_rootBindingState.uavBindings.clear();
-    m_rootBindingState.constantBuffers.clear();
-    rootShaderObjectImpl->bindRootObject(this, &m_rootBindingState);
+//    m_rootBindingState.samplerBindings.clear();
+//    m_rootBindingState.srvBindings.clear();
+//    m_rootBindingState.uavBindings.clear();
+//    m_rootBindingState.constantBuffers.clear();
+
+//    m_rootBindingState.uavCount = 0;
+//    memset(m_rootBindingState.uavs, 0, sizeof(m_rootBindingState.uavs));
+//    rootShaderObjectImpl->bindRootObject(this, &m_rootBindingState, specializedRootLayoutImpl);
+
     switch (m_currentPipelineState->desc.type)
     {
     case PipelineType::Compute:
-        m_immediateContext->CSSetShaderResources(0, (UINT)m_rootBindingState.srvBindings.getCount(), m_rootBindingState.srvBindings.getBuffer());
-        m_immediateContext->CSSetUnorderedAccessViews(0, (UINT)m_rootBindingState.uavBindings.getCount(), m_rootBindingState.uavBindings.getBuffer(), nullptr);
-        m_immediateContext->CSSetSamplers(0, (UINT)m_rootBindingState.samplerBindings.getCount(), m_rootBindingState.samplerBindings.getBuffer());
-        m_immediateContext->CSSetConstantBuffers(0, (UINT)m_rootBindingState.constantBuffers.getCount(), m_rootBindingState.constantBuffers.getBuffer());
+        {
+            ComputeRootBindingContext context;
+            context.m_context = m_immediateContext;
+
+            rootShaderObjectImpl->bindRootObject(this, &context, specializedRootLayoutImpl);
+            m_immediateContext->CSSetUnorderedAccessViews(0, context.uavCount, context.uavs, nullptr);
+        }
+//        m_immediateContext->CSSetShaderResources(0, (UINT)m_rootBindingState.srvBindings.getCount(), m_rootBindingState.srvBindings.getBuffer());
+//        m_immediateContext->CSSetUnorderedAccessViews(0, (UINT)m_rootBindingState.uavBindings.getCount(), m_rootBindingState.uavBindings.getBuffer(), nullptr);
+//        m_immediateContext->CSSetSamplers(0, (UINT)m_rootBindingState.samplerBindings.getCount(), m_rootBindingState.samplerBindings.getBuffer());
+//        m_immediateContext->CSSetConstantBuffers(0, (UINT)m_rootBindingState.constantBuffers.getCount(), m_rootBindingState.constantBuffers.getBuffer());
         break;
     default:
-        m_immediateContext->VSSetShaderResources(0, (UINT)m_rootBindingState.srvBindings.getCount(), m_rootBindingState.srvBindings.getBuffer());
-        m_immediateContext->PSSetShaderResources(0, (UINT)m_rootBindingState.srvBindings.getCount(), m_rootBindingState.srvBindings.getBuffer());
-        m_immediateContext->VSSetSamplers(0, (UINT)m_rootBindingState.samplerBindings.getCount(), m_rootBindingState.samplerBindings.getBuffer());
-        m_immediateContext->PSSetSamplers(0, (UINT)m_rootBindingState.samplerBindings.getCount(), m_rootBindingState.samplerBindings.getBuffer());
-        m_immediateContext->VSSetConstantBuffers(0, (UINT)m_rootBindingState.constantBuffers.getCount(), m_rootBindingState.constantBuffers.getBuffer());
-        m_immediateContext->PSSetConstantBuffers(0, (UINT)m_rootBindingState.constantBuffers.getCount(), m_rootBindingState.constantBuffers.getBuffer());
-        m_shaderBindingDirty = true;
+        {
+            ComputeRootBindingContext context;
+            context.m_context = m_immediateContext;
+
+            rootShaderObjectImpl->bindRootObject(this, &context, specializedRootLayoutImpl);
+
+//            auto pipelineType = int(PipelineType::Graphics);
+
+//            auto pipelineState = static_cast<GraphicsPipelineStateImpl*>(m_currentPipelineState.Ptr());
+            auto rtvCount = (UINT)m_currentFramebuffer->renderTargetViews.getCount();
+            auto uavCount = context.uavCount - rtvCount;
+            m_immediateContext->OMSetRenderTargetsAndUnorderedAccessViews(
+                rtvCount,
+                m_currentFramebuffer->d3dRenderTargetViews.getArrayView().getBuffer(),
+                m_currentFramebuffer->d3dDepthStencilView,
+                rtvCount,
+                uavCount,
+                context.uavs,
+                nullptr);
+        }
+//        m_immediateContext->VSSetShaderResources(0, (UINT)m_rootBindingState.srvBindings.getCount(), m_rootBindingState.srvBindings.getBuffer());
+//        m_immediateContext->PSSetShaderResources(0, (UINT)m_rootBindingState.srvBindings.getCount(), m_rootBindingState.srvBindings.getBuffer());
+//        m_immediateContext->VSSetSamplers(0, (UINT)m_rootBindingState.samplerBindings.getCount(), m_rootBindingState.samplerBindings.getBuffer());
+//        m_immediateContext->PSSetSamplers(0, (UINT)m_rootBindingState.samplerBindings.getCount(), m_rootBindingState.samplerBindings.getBuffer());
+//        m_immediateContext->VSSetConstantBuffers(0, (UINT)m_rootBindingState.constantBuffers.getCount(), m_rootBindingState.constantBuffers.getBuffer());
+//        m_immediateContext->PSSetConstantBuffers(0, (UINT)m_rootBindingState.constantBuffers.getCount(), m_rootBindingState.constantBuffers.getBuffer());
+//        m_shaderBindingDirty = true;
         break;
     }
 }
@@ -3256,6 +3487,7 @@ void D3D11Device::dispatchCompute(int x, int y, int z)
 void D3D11Device::_flushGraphicsState()
 {
     auto pipelineType = int(PipelineType::Graphics);
+#if 0
     if (m_framebufferBindingDirty || m_shaderBindingDirty)
     {
         m_framebufferBindingDirty = false;
@@ -3263,16 +3495,17 @@ void D3D11Device::_flushGraphicsState()
 
         auto pipelineState = static_cast<GraphicsPipelineStateImpl*>(m_currentPipelineState.Ptr());
         auto rtvCount = (UINT)m_currentFramebuffer->renderTargetViews.getCount();
-        auto uavCount = (UINT)m_rootBindingState.uavBindings.getCount();
+        auto uavCount = m_rootBindingState.uavCount - rtvCount;
         m_immediateContext->OMSetRenderTargetsAndUnorderedAccessViews(
             rtvCount,
             m_currentFramebuffer->d3dRenderTargetViews.getArrayView().getBuffer(),
             m_currentFramebuffer->d3dDepthStencilView,
             rtvCount,
             uavCount,
-            m_rootBindingState.uavBindings.getBuffer(),
+            m_rootBindingState.uavs,
             nullptr);
     }
+#endif
     if (m_depthStencilStateDirty)
     {
         m_depthStencilStateDirty = false;
