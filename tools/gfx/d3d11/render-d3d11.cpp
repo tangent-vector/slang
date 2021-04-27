@@ -570,25 +570,34 @@ protected:
         /// A representation of the offset at which to bind a shader parameter or sub-object
     struct BindingOffset : SimpleBindingOffset
     {
+        // Offsets for "primary" data are stored directly in the `BindingOffset`
+        // via the inheritance from `SimpleBindingOffset`.
+
+            /// Offset for any "pending" data
         SimpleBindingOffset pending;
 
+            /// Create a default (zero) offset
         BindingOffset()
         {}
 
+            /// Create an offset from a simple offset
         explicit BindingOffset(SimpleBindingOffset const& offset)
             : SimpleBindingOffset(offset)
         {}
 
+            /// Create an offset based on offset information in the given Slang `varLayout`
         BindingOffset(slang::VariableLayoutReflection* varLayout)
             : SimpleBindingOffset(varLayout)
             , pending(varLayout->getPendingDataLayout())
         {}
 
+            /// Add any values in the given `offset`
         void operator+=(SimpleBindingOffset const& offset)
         {
             SimpleBindingOffset::operator+=(offset);
         }
 
+            /// Add any values in the given `offset`
         void operator+=(BindingOffset const& offset)
         {
             SimpleBindingOffset::operator+=(offset);
@@ -599,20 +608,58 @@ protected:
     class ShaderObjectLayoutImpl : public ShaderObjectLayoutBase
     {
     public:
+        // A shader object comprises three main kinds of state:
+        //
+        // * Zero or more bytes of ordinary ("uniform") data
+        // * Zero or more *bindings* for textures, buffers, and samplers
+        // * Zero or more *sub-objects* representing nested parameter blocks, etc.
+        //
+        // A shader object *layout* stores information that can be used to
+        // organize these different kinds of state and optimize access to them.
+        //
+        // For example, both texture/buffer/sampler bindings and sub-objects
+        // are organized into logical *binding ranges* by the Slang reflection
+        // API, and a shader object layout will store information about those
+        // ranges in a form that is usable for the D3D11 API:
+
+            /// Information about a logical binding range as reported by Slang reflection
         struct BindingRangeInfo
         {
+                /// The type of bindings in this range
             slang::BindingType bindingType;
+
+                /// The number of bindings in this range
             Index count;
+
+                /// The starting index for this range in the appropriate "flat" array in a shader object.
+                /// E.g., for a shader resourve view range, this would be an index into the `m_srvs` array.
             Index baseIndex;
 
+                /// The offset of this binding range from the start of the sub-object
+                /// in terms of whatever D3D11 register class it consumes. E.g., for
+                /// a `Texture2D` binding range this will represent an offset in
+                /// `t` registers.
+                ///
             uint32_t registerOffset;
         };
 
+        // Sometimes we just want to iterate over the ranges that represnet
+        // sub-objects while skipping over the others, because sub-object
+        // ranges often require extra handling or more state.
+        //
+        // For that reason we also store pre-computed information about each
+        // sub-object range.
+
+            /// Information about a logical binding range as reported by Slang reflection
         struct SubObjectRangeInfo
         {
-            RefPtr<ShaderObjectLayoutImpl> layout;
+                /// The index of the binding range that corresponds to this sub-object range
             Index bindingRangeIndex;
 
+                /// The layout expected for objects bound to this range (if known)
+            RefPtr<ShaderObjectLayoutImpl> layout;
+
+                /// The offset to use when binding the first object in this range
             BindingOffset offset;
         };
 
@@ -629,8 +676,13 @@ protected:
             List<BindingRangeInfo> m_bindingRanges;
             List<SubObjectRangeInfo> m_subObjectRanges;
 
+                /// The indices of the binding ranges that represent SRVs
             List<Index> m_srvRanges;
+
+                /// The indices of the binding ranges that represent UAVs
             List<Index> m_uavRanges;
+
+                /// The indices of the binding ranges that represent samplers
             List<Index> m_samplerRanges;
 
             Index m_srvCount = 0;
@@ -698,8 +750,29 @@ protected:
                         break;
                     }
 
+                    // We'd like to extract the information on the D3D11 shader
+                    // register that this range should bind into.
+                    //
+                    // A binding range represents a logical member of the shader
+                    // object type, and it may encompass zero or more *descriptor
+                    // ranges* that describe how it is physically bound to pipeline
+                    // state.
+                    //
+                    // If the current bindign range is backed by at least one descriptor
+                    // range then we can query the register offset of that descriptor
+                    // range. We expect that in the common case there will be exactly
+                    // one descriptor range, and we can extract the information easily.
+                    //
+                    // TODO: we might eventually need to special-case our handling
+                    // of combined texture-sampler ranges since they will need to
+                    // store two different offsets.
+                    //
                     if(typeLayout->getBindingRangeDescriptorRangeCount(r) != 0)
                     {
+                        // The Slang reflection information organizes the descriptor ranges
+                        // into "descriptor sets" but D3D11 has no notion like that so we
+                        // expect all ranges belong to a single set.
+                        //
                         SlangInt descriptorSetIndex = typeLayout->getBindingRangeDescriptorSetIndex(r);
                         SLANG_ASSERT(descriptorSetIndex == 0);
 
@@ -722,16 +795,16 @@ protected:
 
                     // A sub-object range can either represent a sub-object of a known
                     // type, like a `ConstantBuffer<Foo>` or `ParameterBlock<Foo>`
-                    // (in which case we can pre-compute a layout to use, based on
-                    // the type `Foo`) *or* it can represent a sub-object of some
-                    // existential type (e.g., `IBar`) in which case we cannot
-                    // know the appropraite type/layout of sub-object to allocate.
+                    // *or* it can represent a sub-object of some existential type (e.g., `IBar`).
                     //
                     RefPtr<ShaderObjectLayoutImpl> subObjectLayout;
                     switch(slangBindingType)
                     {
                     default:
                         {
+                            // In the case of `ConstantBuffer<X>` or `ParameterBlock<X>`
+                            // we can construct a layout from the element type directly.
+                            //
                             auto elementTypeLayout = slangLeafTypeLayout->getElementTypeLayout();
                             createForElementType(
                                 m_renderer,
@@ -741,6 +814,14 @@ protected:
                         break;
 
                     case slang::BindingType::ExistentialValue:
+                        // In the case of an interface-type sub-object range, we can only
+                        // construct a layout if we have static specialization information
+                        // that tells us what type we expect to find in that range.
+                        //
+                        // The static specialization information is expected to take the
+                        // form of a "pending" type layotu attached to the interface type
+                        // of the leaf type layout.
+                        //
                         if(auto pendingTypeLayout = slangLeafTypeLayout->getPendingDataTypeLayout())
                         {
                             createForElementType(
@@ -753,6 +834,12 @@ protected:
                     SubObjectRangeInfo subObjectRange;
                     subObjectRange.bindingRangeIndex = bindingRangeIndex;
                     subObjectRange.layout = subObjectLayout;
+
+                    // We will use Slang reflection infromation to extract the offset information
+                    // for each sub-object range.
+                    //
+                    // TODO: We should also be extracting the uniform offset here.
+                    //
                     subObjectRange.offset = BindingOffset(typeLayout->getSubObjectRangeOffset(r));
 
                     m_subObjectRanges.add(subObjectRange);
@@ -805,8 +892,13 @@ protected:
             return m_elementTypeLayout->getType();
         }
 
+            /// Get the indices that represent all the SRV ranges in this type
         List<Index> const& getSRVRanges() const { return m_srvRanges; }
+
+            /// Get the indices that reprsent all the UAV ranges in this type
         List<Index> const& getUAVRanges() const { return m_uavRanges; }
+
+            /// Get the indices that represnet all the sampler ranges in this type
         List<Index> const& getSamplerRanges() const { return m_samplerRanges; }
 
     protected:
@@ -850,6 +942,8 @@ protected:
         struct EntryPointInfo
         {
             RefPtr<ShaderObjectLayoutImpl>  layout;
+
+                /// The offset for this entry point's parameters, relative to the starting offset for the program
             BindingOffset                   offset;
         };
 
@@ -924,6 +1018,7 @@ protected:
         slang::IComponentType* getSlangProgram() const { return m_program; }
         slang::ProgramLayout* getSlangProgramLayout() const { return m_programLayout; }
 
+            /// Get the offset at which "pending" shader parameters for this program start
         SimpleBindingOffset const& getPendingDataOffset() const { return m_pendingDataOffset; }
 
     protected:
@@ -1396,7 +1491,11 @@ protected:
         size_t _getSubObjectRangePendingDataOffset(ShaderObjectLayoutImpl* specializedLayout, Index subObjectRangeIndex) { return 0; }
         size_t _getSubObjectRangePendingDataStride(ShaderObjectLayoutImpl* specializedLayout, Index subObjectRangeIndex) { return 0; }
 
-        /// Ensure that the `m_ordinaryDataBuffer` has been created, if it is needed
+            /// Ensure that the `m_ordinaryDataBuffer` has been created, if it is needed
+            ///
+            /// The `specializedLayout` type must represent a specialized layout for this
+            /// type that includes any "pending" data.
+            ///
         Result _ensureOrdinaryDataBufferCreatedIfNeeded(
             D3D11Device*            device,
             ShaderObjectLayoutImpl* specializedLayout)
@@ -1411,21 +1510,6 @@ protected:
             //
             if (m_ordinaryDataBuffer)
                 return SLANG_OK;
-
-            // Computing the size of the ordinary data buffer is *not* just as simple
-            // as using the size of the `m_ordinayData` array that we store. The reason
-            // for the added complexity is that interface-type fields may lead to the
-            // storage being specialized such that it needs extra appended data to
-            // store the concrete values that logically belong in those interface-type
-            // fields but wouldn't fit in the fixed-size allocation we gave them.
-            //
-            // TODO: We need to actually implement that logic by using reflection
-            // data computed for the specialized type of this shader object.
-            // For now we just make the simple assumption described above despite
-            // knowing that it is false.
-            //
-//            RefPtr<ShaderObjectLayoutImpl> specializedLayout;
-//            SLANG_RETURN_ON_FAIL(_getSpecializedLayout(specializedLayout.writeRef()));
 
             auto specializedOrdinaryDataSize = specializedLayout->getElementTypeLayout()->getSize();
             if (specializedOrdinaryDataSize == 0)
@@ -1454,15 +1538,19 @@ protected:
             return SLANG_OK;
         }
 
-        /// Bind the buffer for ordinary/uniform data, if needed
+            /// Bind the buffer for ordinary/uniform data, if needed
+            ///
+            /// The `ioOffset` parameter will be updated to reflect the constant buffer
+            /// register consumed by the ordinary data buffer, if one was bound.
+            ///
         Result _bindOrdinaryDataBufferIfNeeded(
             BindingContext*         context,
             BindingOffset&          ioOffset,
-            ShaderObjectLayoutImpl* layout)
+            ShaderObjectLayoutImpl* specializedLayout)
         {
             // We start by ensuring that the buffer is created, if it is needed.
             //
-            SLANG_RETURN_ON_FAIL(_ensureOrdinaryDataBufferCreatedIfNeeded(context->device, layout));
+            SLANG_RETURN_ON_FAIL(_ensureOrdinaryDataBufferCreatedIfNeeded(context->device, specializedLayout));
 
             // If we did indeed need/create a buffer, then we must bind it
             // into root binding state.
@@ -1480,36 +1568,66 @@ protected:
         Result bindAsConstantBuffer(
             BindingContext*         context,
             BindingOffset const&    inOffset,
-            ShaderObjectLayoutImpl* layout)
+            ShaderObjectLayoutImpl* specializedLayout)
         {
+            // When binding a `ConstantBuffer<X>` we need to first bind a constant
+            // buffer for any "ordinary" data in `X`, and then bind the remaining
+            // resources and sub-objets.
+            //
+            // The one important detail to keep track of its that *if* we bind
+            // a constant buffer for ordinary data we will need to account for
+            // it in the offset we use for binding the remaining data. That
+            // detail is dealt with here by the way that `_bindOrdinaryDataBufferIfNeeded`
+            // will modify the `offset` parameter if it binds anything.
+            //
             BindingOffset offset = inOffset;
+            SLANG_RETURN_ON_FAIL(_bindOrdinaryDataBufferIfNeeded(context, /*inout*/ offset, specializedLayout));
 
-            // A `ConstantBuffer<T>` will always start with a "default" constant
-            // buffer binding for the ordinary data in `T` (if there was any).
+            // Once the ordinary data buffer is bound, we can move on to binding
+            // the rest of the state, which can use logic shared with the case
+            // for interface-type sub-object ranges.
             //
-            SLANG_RETURN_ON_FAIL(_bindOrdinaryDataBufferIfNeeded(context, /*inout*/ offset, layout));
-
-            // The ordinary data buffer (if any) is then followed by the bindings
-            // for any reosurce binding ranges nested in `T`.
+            // Note that this call will use the `offset` value that might have
+            // been modified during `_bindOrindaryDataBufferIfNeeded`.
             //
-            SLANG_RETURN_ON_FAIL(bindAsValue(context, offset, layout));
+            SLANG_RETURN_ON_FAIL(bindAsValue(context, offset, specializedLayout));
 
             return SLANG_OK;
         }
 
-            /// Bind this object as if it is were declared as a simple value like
-            /// and `IThing` that happens to have a `ConcreteThing` bound to it.
+            /// Bind this object as a value that appears in the body of another object.
+            ///
+            /// This case is directly used when binding an object for an interface-type
+            /// sub-object range when static specialization is used. It is also used
+            /// indirectly when binding sub-objects to constant buffer or parameter
+            /// block ranges.
             ///
         Result bindAsValue(
             BindingContext*         context,
             BindingOffset const&    offset,
-            ShaderObjectLayoutImpl* layout)
+            ShaderObjectLayoutImpl* specializedLayout)
         {
-            // We start by 
+            // We start by iterating over the binding ranges in this type, isolating
+            // just those ranges that represent SRVs, UAVs, and samplers.
+            // In each loop we will bind the values stored for those binding ranges
+            // to the correct D3D11 register (based on the `registerOffset` field
+            // stored in the bindinge range).
+            //
+            // TODO: These loops could be optimized if we stored parallel arrays
+            // for things like `m_srvs` so that we directly store an array of
+            // `ID3D11ShaderResourceView*` where each entry matches the `gfx`-level
+            // object that was bound (or holds null if nothing is bound).
+            // In that case, we could perform a single `setSRVs()` call for each
+            // binding range.
+            //
+            // TODO: More ambitiously, if the Slang layout algorithm could be modified
+            // so that non-sub-object binding ranges are guaranteed to be contiguous
+            // then a *single* `setSRVs()` call could set all of the SRVs for an object
+            // at once.
 
-            for(auto bindingRangeIndex : layout->getSRVRanges())
+            for(auto bindingRangeIndex : specializedLayout->getSRVRanges())
             {
-                auto const& bindingRange = layout->getBindingRange(bindingRangeIndex);
+                auto const& bindingRange = specializedLayout->getBindingRange(bindingRangeIndex);
                 auto count = (uint32_t) bindingRange.count;
                 auto baseIndex = (uint32_t) bindingRange.baseIndex;
                 auto registerOffset = bindingRange.registerOffset + offset.srv;
@@ -1520,9 +1638,9 @@ protected:
                 }
             }
 
-            for(auto bindingRangeIndex : layout->getUAVRanges())
+            for(auto bindingRangeIndex : specializedLayout->getUAVRanges())
             {
-                auto const& bindingRange = layout->getBindingRange(bindingRangeIndex);
+                auto const& bindingRange = specializedLayout->getBindingRange(bindingRangeIndex);
                 auto count = (uint32_t) bindingRange.count;
                 auto baseIndex = (uint32_t) bindingRange.baseIndex;
                 auto registerOffset = bindingRange.registerOffset + offset.uav;
@@ -1533,9 +1651,9 @@ protected:
                 }
             }
 
-            for(auto bindingRangeIndex : layout->getSamplerRanges())
+            for(auto bindingRangeIndex : specializedLayout->getSamplerRanges())
             {
-                auto const& bindingRange = layout->getBindingRange(bindingRangeIndex);
+                auto const& bindingRange = specializedLayout->getBindingRange(bindingRangeIndex);
                 auto count = (uint32_t) bindingRange.count;
                 auto baseIndex = (uint32_t) bindingRange.baseIndex;
                 auto registerOffset = bindingRange.registerOffset + offset.sampler;
@@ -1546,64 +1664,66 @@ protected:
                 }
             }
 
-            // Next, we need to recurse on any sub-objects to bind them as well.
-
-            // TODO: The logic here is flat-out wrong in that we are binding
-            // all the sub-objects *after* the directly-contained resource/sampler fields,
-            // but the nature of the Slang layout rules right now is that the two may actually
-            // be interleaved.
+            // Once all the simple binding ranges are dealt with, we will bind
+            // all of the sub-objects in sub-object ranges.
             //
-            // To fix this issue, we need to do one of the following:
-            //
-            // * Change this routine to use an outer loop over binding ranges, and then
-            //   bind one resource, smapler, or sub-object at a time inside that loop.
-            //
-            // * Change this logic to explicitly pass down the base register(s) to use when
-            //   binding resources/samplers/etc.
-            //
-            // * Change the layout rules that Slang uses to lay thing sout in a way that
-            //   better matches these rules.
-            //
-
-            for(auto const& subObjectRange : layout->getSubObjectRanges())
+            for(auto const& subObjectRange : specializedLayout->getSubObjectRanges())
             {
                 auto subObjectLayout = subObjectRange.layout;
-                auto const& bindingRange = layout->getBindingRange(subObjectRange.bindingRangeIndex);
+                auto const& bindingRange = specializedLayout->getBindingRange(subObjectRange.bindingRangeIndex);
                 Index count = bindingRange.count;
                 Index baseIndex = bindingRange.baseIndex;
 
-                BindingOffset objOffset = offset;
-                objOffset += subObjectRange.offset;
+                // The starting offset for a sub-object range was computed
+                // from Slang reflection information, so we can apply it here.
+                //
+                BindingOffset rangeOffset = offset;
+                rangeOffset += subObjectRange.offset;
 
                 switch(bindingRange.bindingType)
                 {
-                // For D3D11-compatible targets, the Slang compiler treats the
-                // `ConstantBuffer<T>` and `ParameterBlock<T>` types the same.
+                // For D3D11-compatible compilation targets, the Slang compiler
+                // treats the `ConstantBuffer<T>` and `ParameterBlock<T>` types the same.
                 //
                 case slang::BindingType::ConstantBuffer:
                 case slang::BindingType::ParameterBlock:
                     {
-                        // Each constant-buffer sub-object needs to be bound into
-                        // the pipeline state as a constant buffer (meaning that
-                        // a buffer will be bound for its ordinary data, if any).
-                        //
+                        BindingOffset objOffset = rangeOffset;
                         for(Index i = 0; i < count; ++i)
                         {
                             auto subObject = m_objects[ baseIndex + i ];
+
+                            // Unsurprisingly, we bind each object in the range as
+                            // a constant buffer.
+                            //
                             subObject->bindAsConstantBuffer(context, objOffset, subObjectLayout);
+
+                            // TODO: We need to update `objOffset` by the stride for
+                            // this range.
                         }
                     }
                     break;
 
                 case slang::BindingType::ExistentialValue:
+                    // We can only bind information for existential-typed sub-object
+                    // ranges if we have a static type that we are able to specialize to.
+                    //
                     if(subObjectLayout)
                     {
-                        objOffset = BindingOffset(objOffset.pending);
+                        // The data for objects in this range will always be bound into
+                        // the "pending" allocation for the parent block/buffer/object.
+                        // As a result, the offset for the first object in the range
+                        // will come from the `pending` part of the range's offset.
+                        //
+                        BindingOffset objOffset = BindingOffset(rangeOffset.pending);
 
                         for(Index i = 0; i < count; ++i)
                         {
                             auto subObject = m_objects[ baseIndex + i ];
                             subObject->bindAsValue(context, objOffset, subObjectLayout);
+
+                            // TODO: We need to update `objOffset` by the stride for
+                            // this range.
                         }
                     }
                     break;
@@ -1616,68 +1736,37 @@ protected:
             return SLANG_OK;
         }
 
-#if 0
-        Result bindPendingResources(D3D11Device* device, RootBindingState* bindingState)
-        {
-            auto layout = getLayout();
-            for(auto const& subObjectRange : layout->getSubObjectRanges())
-            {
-                auto const& bindingRange = layout->getBindingRange(subObjectRange.bindingRangeIndex);
-                Index count = bindingRange.count;
-                Index baseIndex = bindingRange.baseIndex;
-                switch(bindingRange.bindingType)
-                {
-                default:
-                    break;
+        // Because the binding ranges have already been reflected
+        // and organized as part of each shader object layout,
+        // the object itself can store its data in a small number
+        // of simple arrays.
 
-                case slang::BindingType::ConstantBuffer:
-                case slang::BindingType::ParameterBlock:
-                    {
-                        for(Index i = 0; i < count; ++i)
-                        {
-                            auto subObject = m_objects[ baseIndex + i ];
-                            subObject->bindPendingResources(device, bindingState);
-                        }
-                    }
-                    break;
-
-                case slang::BindingType::ExistentialValue:
-                    {
-                        for(Index i = 0; i < count; ++i)
-                        {
-                            auto subObject = m_objects[ baseIndex + i ];
-                            subObject->bindAsValue(device, bindingState);
-                        }
-                    }
-                    break;
-                }
-            }
-            return SLANG_OK;
-        }
-#endif
-
-        /// Any "ordinary" / uniform data for this object
+            /// Any "ordinary" / uniform data for this object
         List<char> m_ordinaryData;
 
+            /// The shader resource views (SRVs) that are part of the state of this object
         List<RefPtr<ShaderResourceViewImpl>> m_srvs;
 
-        List<RefPtr<SamplerStateImpl>> m_samplers;
-
+            /// The unordered access views (UAVs) that are part of the state of this object
         List<RefPtr<UnorderedAccessViewImpl>> m_uavs;
 
+            /// The samplers that are part of the state of this object
+        List<RefPtr<SamplerStateImpl>> m_samplers;
+
+            /// The sub-objects that are part of the state of this object
         List<RefPtr<ShaderObjectImpl>> m_objects;
 
-        /// A constant buffer used to stored ordinary data for this object
-        /// and existential-type sub-objects.
-        ///
-        /// Created on demand with `_createOrdinaryDataBufferIfNeeded()`
+            /// A constant buffer used to stored ordinary data for this object
+            /// and existential-type sub-objects.
+            ///
+            /// Created on demand with `_createOrdinaryDataBufferIfNeeded()`
         RefPtr<BufferResourceImpl> m_ordinaryDataBuffer;
 
-        /// Get the layout of this shader object with specialization arguments considered
-        ///
-        /// This operation should only be called after the shader object has been
-        /// fully filled in and finalized.
-        ///
+            /// Get the layout of this shader object with specialization arguments considered
+            ///
+            /// This operation should only be called after the shader object has been
+            /// fully filled in and finalized.
+            ///
         Result _getSpecializedLayout(ShaderObjectLayoutImpl** outLayout)
         {
             if (!m_specializedLayout)
@@ -1747,40 +1836,61 @@ protected:
             return SLANG_OK;
         }
 
+            /// Bind this object as a root shader object
         Result bindAsRoot(
             BindingContext*             context,
-            RootShaderObjectLayoutImpl* layout)
+            RootShaderObjectLayoutImpl* specializedLayout)
         {
+            // When binding an entire root shader object, we need to deal with
+            // the way that specialization might have allocated space for "pending"
+            // parameter data after all the primary parameters.
+            //
+            // We start by initializing an offset that will store zeros for the
+            // primary data, an the computed offset from the specialized layout
+            // for pending data.
+            //
             BindingOffset offset;
-            offset.pending = layout->getPendingDataOffset();
+            offset.pending = specializedLayout->getPendingDataOffset();
 
+            // Note: We could *almost* call `bindAsConstantBuffer()` here to bind
+            // the state of the root object itself, but there is an important
+            // detail that means we can't:
+            //
+            // The `_bindOrdinaryDataBufferIfNeeded` operation automatically
+            // increments the offset parameter if it binds a buffer, so that
+            // subsequently bindings will be adjusted. However, the reflection
+            // information computed for root shader parameters is absolute rather
+            // than relative to the default constant buffer (if any).
+            //
+            // TODO: Quite technically, the ordinary data buffer for the global
+            // scope is *not* guaranteed to be at offset zero, so this logic should
+            // really be querying an appropriate absolute offset from `specializedLayout`.
+            //
             BindingOffset ordinaryDataBufferOffset = offset;
+            SLANG_RETURN_ON_FAIL(_bindOrdinaryDataBufferIfNeeded(context, /*inout*/ ordinaryDataBufferOffset, specializedLayout));
+            SLANG_RETURN_ON_FAIL(bindAsValue(context, offset, specializedLayout));
 
-            SLANG_RETURN_ON_FAIL(_bindOrdinaryDataBufferIfNeeded(context, /*inout*/ ordinaryDataBufferOffset, layout));
-
-            SLANG_RETURN_ON_FAIL(bindAsValue(context, offset, layout));
-
+            // Once the state stored in the root shader object itself has been bound,
+            // we turn our attention to the entry points and their parameters.
+            //
             auto entryPointCount = m_entryPoints.getCount();
             for (Index i = 0; i < entryPointCount; ++i)
             {
                 auto entryPoint = m_entryPoints[i];
-                auto const& entryPointInfo = layout->getEntryPoint(i);
+                auto const& entryPointInfo = specializedLayout->getEntryPoint(i);
 
+                // Each entry point will be bound at some offset relative to where
+                // the root shader parameters start.
+                //
                 BindingOffset entryPointOffset = offset;
                 entryPointOffset += entryPointInfo.offset;
 
+                // An entry point can simply be bound as a constant buffer, because
+                // the absolute offsets as are used for the global scope do not apply
+                // (because entry points don't need to deal with explicit bindings).
+                //
                 SLANG_RETURN_ON_FAIL(entryPoint->bindAsConstantBuffer(context, entryPointOffset, entryPointInfo.layout));
             }
-
-#if 0
-            SLANG_RETURN_ON_FAIL(Super::bindPendingResources(device, bindingState));
-
-            for (Index i = 0; i < entryPointCount; ++i)
-            {
-                auto entryPoint = m_entryPoints[i];
-                SLANG_RETURN_ON_FAIL(entryPoint->bindPendingResources(device, bindingState));
-            }
-#endif
 
             return SLANG_OK;
         }
@@ -2227,7 +2337,13 @@ Result D3D11Device::createFramebuffer(
 
 void D3D11Device::setFramebuffer(IFramebuffer* frameBuffer)
 {
-//    m_framebufferBindingDirty = true;
+    // Note: the framebuffer state will be flushed to the pipeline as part
+    // of binding the root shader object.
+    //
+    // TODO: alternatively we could call `OMSetRenderTargets` here and then
+    // call `OMSetRenderTargetsAndUnorderedAccessViews` later with the option
+    // that preserves the existing RTV/DSV bindings.
+    //
     m_currentFramebuffer = static_cast<FramebufferImpl*>(frameBuffer);
 }
 
@@ -3373,63 +3489,86 @@ void D3D11Device::bindRootShaderObject(IShaderObject* shaderObject)
     RefPtr<PipelineStateBase> specializedPipeline;
     maybeSpecializePipeline(m_currentPipelineState, rootShaderObjectImpl, specializedPipeline);
     PipelineStateImpl* specializedPipelineImpl = static_cast<PipelineStateImpl*>(specializedPipeline.Ptr());
-    setPipelineState(specializedPipeline.Ptr());
+    setPipelineState(specializedPipelineImpl);
 
+    // In order to bind the root object we must compute its specialized layout.
+    //
+    // TODO: This is in most ways redundant with `maybeSpecializePipeline` above,
+    // and the two operations should really be one.
+    //
     RefPtr<ShaderObjectLayoutImpl> specializedRootLayout;
     rootShaderObjectImpl->_getSpecializedLayout(specializedRootLayout.writeRef());
     RootShaderObjectLayoutImpl* specializedRootLayoutImpl = static_cast<RootShaderObjectLayoutImpl*>(specializedRootLayout.Ptr());
 
-//    m_rootBindingState.samplerBindings.clear();
-//    m_rootBindingState.srvBindings.clear();
-//    m_rootBindingState.uavBindings.clear();
-//    m_rootBindingState.constantBuffers.clear();
-
-//    m_rootBindingState.uavCount = 0;
-//    memset(m_rootBindingState.uavs, 0, sizeof(m_rootBindingState.uavs));
-//    rootShaderObjectImpl->bindRootObject(this, &m_rootBindingState, specializedRootLayoutImpl);
-
+    // Depending on whether we are binding a compute or a graphics/rasterization
+    // pipeline, we will need to bind any SRVs/UAVs/CBs/samplers using different
+    // D3D11 calls. We deal with that distinction here by instantiating an
+    // appropriate subtype of `BindingContext` based on the pipeline type.
+    //
     switch (m_currentPipelineState->desc.type)
     {
     case PipelineType::Compute:
         {
             ComputeBindingContext context(this, m_immediateContext);
-
             rootShaderObjectImpl->bindAsRoot(&context, specializedRootLayoutImpl);
+
+            // Because D3D11 requires all UAVs to be set at once, we did *not* issue
+            // actual binding calls during the `bindAsRoot` step, and instead we
+            // batch them up and set them here.
+            //
             m_immediateContext->CSSetUnorderedAccessViews(0, context.uavCount, context.uavs, nullptr);
         }
-//        m_immediateContext->CSSetShaderResources(0, (UINT)m_rootBindingState.srvBindings.getCount(), m_rootBindingState.srvBindings.getBuffer());
-//        m_immediateContext->CSSetUnorderedAccessViews(0, (UINT)m_rootBindingState.uavBindings.getCount(), m_rootBindingState.uavBindings.getBuffer(), nullptr);
-//        m_immediateContext->CSSetSamplers(0, (UINT)m_rootBindingState.samplerBindings.getCount(), m_rootBindingState.samplerBindings.getBuffer());
-//        m_immediateContext->CSSetConstantBuffers(0, (UINT)m_rootBindingState.constantBuffers.getCount(), m_rootBindingState.constantBuffers.getBuffer());
         break;
     default:
         {
             GraphicsBindingContext context(this, m_immediateContext);
-
             rootShaderObjectImpl->bindAsRoot(&context, specializedRootLayoutImpl);
 
-//            auto pipelineType = int(PipelineType::Graphics);
-
-//            auto pipelineState = static_cast<GraphicsPipelineStateImpl*>(m_currentPipelineState.Ptr());
+            // Similar to the compute case above, the rasteirzation case needs to
+            // set the UAVs after the call to `bindAsRoot()` completes, but we
+            // also have a few extra wrinkles here that are specific to the D3D 11.0
+            // rasterization pipeline.
+            //
+            // In D3D 11.0, the RTV and UAV binding slots alias, so that a shader
+            // that binds an RTV for `SV_Target0` cannot also bind a UAV for `u0`.
+            // The Slang layout algorithm already accounts for this rule, and assigns
+            // all UAVs to slots taht won't alias the RTVs it knows about.
+            //
+            // In order to account for the aliasing, we need to consider how many
+            // RTVs are bound as part of the active framebuffer, and then adjust
+            // the UAVs that we bind accordingly.
+            //
             auto rtvCount = (UINT)m_currentFramebuffer->renderTargetViews.getCount();
-            auto uavCount = context.uavCount - rtvCount;
-            auto uavs = context.uavs + rtvCount;
+            //
+            // The `context` we are using will have computed the number of UAV registers
+            // that might need to be bound, as a range from 0 to `context.uavCount`.
+            // However we need to skip over the first `rtvCount` of those, so the
+            // actual number of UAVs we wnat to bind is smaller:
+            //
+            SLANG_ASSERT(contxt.uavCount >= rtvCount);
+            auto bindableUAVCount = context.uavCount - rtvCount;
+            //
+            // Similarly, the actual UAVs we intend to bind will come after the first
+            // `rtvCount` in the array.
+            //
+            auto bindableUAVs = context.uavs + rtvCount;
+
+            // Once the offsetting is accounted for, we set all of the RTVs, DSV,
+            // and UAVs with one call.
+            //
+            // TODO: We may want to use the capability for `OMSetRenderTargetsAnd...`
+            // to only set the UAVs and leave the RTVs/UAVs alone, so that we don't
+            // needlessly re-bind RTVs during a pass.
+            //
             m_immediateContext->OMSetRenderTargetsAndUnorderedAccessViews(
                 rtvCount,
                 m_currentFramebuffer->d3dRenderTargetViews.getArrayView().getBuffer(),
                 m_currentFramebuffer->d3dDepthStencilView,
                 rtvCount,
-                uavCount,
-                uavs,
+                bindableUAVCount,
+                bindableUAVs,
                 nullptr);
         }
-//        m_immediateContext->VSSetShaderResources(0, (UINT)m_rootBindingState.srvBindings.getCount(), m_rootBindingState.srvBindings.getBuffer());
-//        m_immediateContext->PSSetShaderResources(0, (UINT)m_rootBindingState.srvBindings.getCount(), m_rootBindingState.srvBindings.getBuffer());
-//        m_immediateContext->VSSetSamplers(0, (UINT)m_rootBindingState.samplerBindings.getCount(), m_rootBindingState.samplerBindings.getBuffer());
-//        m_immediateContext->PSSetSamplers(0, (UINT)m_rootBindingState.samplerBindings.getCount(), m_rootBindingState.samplerBindings.getBuffer());
-//        m_immediateContext->VSSetConstantBuffers(0, (UINT)m_rootBindingState.constantBuffers.getCount(), m_rootBindingState.constantBuffers.getBuffer());
-//        m_immediateContext->PSSetConstantBuffers(0, (UINT)m_rootBindingState.constantBuffers.getCount(), m_rootBindingState.constantBuffers.getBuffer());
-//        m_shaderBindingDirty = true;
         break;
     }
 }
@@ -3597,26 +3736,6 @@ void D3D11Device::dispatchCompute(int x, int y, int z)
 
 void D3D11Device::_flushGraphicsState()
 {
-    auto pipelineType = int(PipelineType::Graphics);
-#if 0
-    if (m_framebufferBindingDirty || m_shaderBindingDirty)
-    {
-        m_framebufferBindingDirty = false;
-        m_shaderBindingDirty = false;
-
-        auto pipelineState = static_cast<GraphicsPipelineStateImpl*>(m_currentPipelineState.Ptr());
-        auto rtvCount = (UINT)m_currentFramebuffer->renderTargetViews.getCount();
-        auto uavCount = m_rootBindingState.uavCount - rtvCount;
-        m_immediateContext->OMSetRenderTargetsAndUnorderedAccessViews(
-            rtvCount,
-            m_currentFramebuffer->d3dRenderTargetViews.getArrayView().getBuffer(),
-            m_currentFramebuffer->d3dDepthStencilView,
-            rtvCount,
-            uavCount,
-            m_rootBindingState.uavs,
-            nullptr);
-    }
-#endif
     if (m_depthStencilStateDirty)
     {
         m_depthStencilStateDirty = false;
