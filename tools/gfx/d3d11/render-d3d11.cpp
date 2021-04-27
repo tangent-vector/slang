@@ -637,12 +637,26 @@ protected:
                     // know the appropraite type/layout of sub-object to allocate.
                     //
                     RefPtr<ShaderObjectLayoutImpl> subObjectLayout;
-                    if (slangBindingType != slang::BindingType::ExistentialValue)
+                    switch(slangBindingType)
                     {
-                        createForElementType(
-                            m_renderer,
-                            slangLeafTypeLayout->getElementTypeLayout(),
-                            subObjectLayout.writeRef());
+                    default:
+                        {
+                            auto elementTypeLayout = slangLeafTypeLayout->getElementTypeLayout();
+                            createForElementType(
+                                m_renderer,
+                                elementTypeLayout,
+                                subObjectLayout.writeRef());
+                        }
+                        break;
+
+                    case slang::BindingType::ExistentialValue:
+                        if(auto pendingTypeLayout = slangLeafTypeLayout->getPendingDataTypeLayout())
+                        {
+                            createForElementType(
+                                m_renderer,
+                                pendingTypeLayout,
+                                subObjectLayout.writeRef());
+                        }
                     }
 
                     SubObjectRangeInfo subObjectRange;
