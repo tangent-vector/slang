@@ -3307,7 +3307,7 @@ void D3D11Device::bindRootShaderObject(IShaderObject* shaderObject)
         break;
     default:
         {
-            ComputeRootBindingContext context;
+            GraphicsRootBindingContext context;
             context.m_context = m_immediateContext;
 
             rootShaderObjectImpl->bindRootObject(this, &context, specializedRootLayoutImpl);
@@ -3317,13 +3317,14 @@ void D3D11Device::bindRootShaderObject(IShaderObject* shaderObject)
 //            auto pipelineState = static_cast<GraphicsPipelineStateImpl*>(m_currentPipelineState.Ptr());
             auto rtvCount = (UINT)m_currentFramebuffer->renderTargetViews.getCount();
             auto uavCount = context.uavCount - rtvCount;
+            auto uavs = context.uavs + rtvCount;
             m_immediateContext->OMSetRenderTargetsAndUnorderedAccessViews(
                 rtvCount,
                 m_currentFramebuffer->d3dRenderTargetViews.getArrayView().getBuffer(),
                 m_currentFramebuffer->d3dDepthStencilView,
                 rtvCount,
                 uavCount,
-                context.uavs,
+                uavs,
                 nullptr);
         }
 //        m_immediateContext->VSSetShaderResources(0, (UINT)m_rootBindingState.srvBindings.getCount(), m_rootBindingState.srvBindings.getBuffer());
