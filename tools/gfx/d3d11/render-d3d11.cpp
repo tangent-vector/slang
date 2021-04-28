@@ -3545,7 +3545,7 @@ void D3D11Device::bindRootShaderObject(IShaderObject* shaderObject)
             // However we need to skip over the first `rtvCount` of those, so the
             // actual number of UAVs we wnat to bind is smaller:
             //
-            SLANG_ASSERT(contxt.uavCount >= rtvCount);
+            SLANG_ASSERT(context.uavCount >= rtvCount);
             auto bindableUAVCount = context.uavCount - rtvCount;
             //
             // Similarly, the actual UAVs we intend to bind will come after the first

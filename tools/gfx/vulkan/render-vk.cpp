@@ -907,18 +907,61 @@ public:
                 slang::TypeLayoutReflection*    typeLayout,
                 BindingOffset const&            offset)
             {
-                SlangInt descriptorSetCount = typeLayout->getDescriptorSetCount();
-                for (SlangInt s = 0; s < descriptorSetCount; ++s)
+                // First we will scan through all the descriptor sets that the Slang reflection
+                // information believes go into making up the given type.
+                //
+                // Note: We are initializing the sets in order so that their order in our
+                // internal data structures should be deterministically based on the order
+                // in which they are listed in Slang's reflection information.
+                //
+                Index descriptorSetCount = typeLayout->getDescriptorSetCount();
+                for (Index i = 0; i < descriptorSetCount; ++i)
                 {
-                    SlangInt descriptorRangeCount = typeLayout->getDescriptorSetDescriptorRangeCount(s);
+                    SlangInt descriptorRangeCount = typeLayout->getDescriptorSetDescriptorRangeCount(i);
                     if (descriptorRangeCount == 0)
                         continue;
-                    auto descriptorSetIndex = findOrAddDescriptorSet(offset.bindingSet + typeLayout->getDescriptorSetSpaceOffset(s));
-                    auto& descriptorSetInfo = m_descriptorSetBuildInfos[descriptorSetIndex];
-                    for(SlangInt r = 0; r < descriptorRangeCount; ++r)
+                    auto descriptorSetIndex = findOrAddDescriptorSet(offset.bindingSet + typeLayout->getDescriptorSetSpaceOffset(i));
+                }
+
+                // For actually populating the descriptor sets, though, we prefer to enumerate
+                // the binding ranges of the type instead of the descriptor sets.
+                //
+                Index bindRangeCount = typeLayout->getBindingRangeCount();
+                for( Index i = 0; i < bindRangeCount; ++i )
+                {
+                    auto bindingRangeIndex = i;
+                    auto bindingRangeType = typeLayout->getBindingRangeType(bindingRangeIndex);
+                    switch(bindingRangeType)
                     {
-                        auto slangBindingType = typeLayout->getDescriptorSetDescriptorRangeType(s, r);
-                        switch (slangBindingType)
+                    default:
+                        break;
+
+                    // We will skip over ranges that represent sub-objects for now, and handle
+                    // them in a separate pass.
+                    //
+                    case slang::BindingType::ParameterBlock:
+                    case slang::BindingType::ConstantBuffer:
+                    case slang::BindingType::ExistentialValue:
+                        continue;
+                    }
+
+                    Index descriptorRangeCount = typeLayout->getBindingRangeDescriptorRangeCount(bindingRangeIndex);
+                    if (descriptorRangeCount == 0)
+                        continue;
+                    auto slangDescriptorSetIndex = typeLayout->getBindingRangeDescriptorSetIndex(bindingRangeIndex);
+                    auto descriptorSetIndex = findOrAddDescriptorSet(offset.bindingSet + typeLayout->getDescriptorSetSpaceOffset(slangDescriptorSetIndex));
+                    auto& descriptorSetInfo = m_descriptorSetBuildInfos[descriptorSetIndex];
+
+                    Index firstDescriptorRangeIndex = typeLayout->getBindingRangeFirstDescriptorRangeIndex(bindingRangeIndex);
+                    for(Index j = 0; j < descriptorRangeCount; ++j)
+                    {
+                        Index descriptorRangeIndex = firstDescriptorRangeIndex + j;
+                        auto slangDescriptorType = typeLayout->getDescriptorSetDescriptorRangeType(slangDescriptorSetIndex, descriptorRangeIndex);
+
+                        // Certain kinds of descriptor ranges reflected by Slang do not
+                        // manifest as descriptors at the Vulkan level, so we will skip those.
+                        //
+                        switch (slangDescriptorType)
                         {
                         case slang::BindingType::ExistentialValue:
                         case slang::BindingType::InlineUniformData:
@@ -928,10 +971,10 @@ public:
                             break;
                         }
 
-                        auto vkDescriptorType = _mapDescriptorType(slangBindingType);
+                        auto vkDescriptorType = _mapDescriptorType(slangDescriptorType);
                         VkDescriptorSetLayoutBinding vkBindingRangeDesc = {};
-                        vkBindingRangeDesc.binding = offset.binding + (uint32_t)typeLayout->getDescriptorSetDescriptorRangeIndexOffset(s, r);
-                        vkBindingRangeDesc.descriptorCount = (uint32_t)typeLayout->getDescriptorSetDescriptorRangeDescriptorCount(s, r);
+                        vkBindingRangeDesc.binding = offset.binding + (uint32_t)typeLayout->getDescriptorSetDescriptorRangeIndexOffset(slangDescriptorSetIndex, descriptorRangeIndex);
+                        vkBindingRangeDesc.descriptorCount = (uint32_t)typeLayout->getDescriptorSetDescriptorRangeDescriptorCount(slangDescriptorSetIndex, descriptorRangeIndex);
                         vkBindingRangeDesc.descriptorType = vkDescriptorType;
                         vkBindingRangeDesc.stageFlags = VK_SHADER_STAGE_ALL;
 
@@ -939,58 +982,60 @@ public:
                     }
                 }
 
-                // We also need to include any descriptor ranges related to "pending"
-                // data due to static specialization of interface-type sub-objects
-
-                _addPendingDescriptorRanges(typeLayout, offset);
-            }
-
-            void _addPendingDescriptorRanges(
-                slang::TypeLayoutReflection*    typeLayout,
-                BindingOffset const&            offset)
-            {
-                auto subObjectRangeCount = typeLayout->getSubObjectRangeCount();
-                for(SlangInt subObjectRangeIndex = 0; subObjectRangeIndex < subObjectRangeCount; ++subObjectRangeIndex)
+                // We skipped over the sub-object ranges when adding descriptors above,
+                // and now we will address that oversight by iterating over just
+                // the sub-object ranges.
+                //
+                Index subObjectRangeCount = typeLayout->getSubObjectRangeCount();
+                for(Index subObjectRangeIndex = 0; subObjectRangeIndex < subObjectRangeCount; ++subObjectRangeIndex)
                 {
                     auto bindingRangeIndex = typeLayout->getSubObjectRangeBindingRangeIndex(subObjectRangeIndex);
                     auto bindingType = typeLayout->getBindingRangeType(bindingRangeIndex);
+
+                    auto subObjectTypeLayout = typeLayout->getBindingRangeLeafTypeLayout(bindingRangeIndex);
+                    SLANG_ASSERT(subObjectTypeLayout);
+
+                    BindingOffset subObjectRangeOffset = offset;
+                    subObjectRangeOffset += BindingOffset(typeLayout->getSubObjectRangeOffset(subObjectRangeIndex));
+
                     switch(bindingType)
                     {
+                    // A `ParameterBlock<X>` never contributes descripto ranges to the
+                    // decriptor sets of a parent object.
+                    //
+                    case slang::BindingType::ParameterBlock:
                     default:
                         break;
 
                     case slang::BindingType::ExistentialValue:
+                        // An interest/existential-typed sub-object range will only contribute descriptor
+                        // ranges to a parent object in the case where it has been specialied, which
+                        // is precisely the case where the Slang reflection information will tell us
+                        // about its "pending" layout.
+                        //
+                        if(auto pendingTypeLayout = subObjectTypeLayout->getPendingDataTypeLayout())
                         {
-                            auto subObjectTypeLayout = typeLayout->getBindingRangeLeafTypeLayout(bindingRangeIndex);
-                            SLANG_ASSERT(subObjectTypeLayout);
-
-                            if(auto pendingTypeLayout = subObjectTypeLayout->getPendingDataTypeLayout())
-                            {
-                                BindingOffset subOffset = offset;
-                                subOffset += BindingOffset(typeLayout->getSubObjectRangeOffset(subObjectRangeIndex));
-
-                                BindingOffset pendingOffset = BindingOffset(subOffset.pending);
-
-                                _addDescriptorRangesAsValue(pendingTypeLayout, pendingOffset);
-                            }
+                            BindingOffset pendingOffset = BindingOffset(subObjectRangeOffset.pending);
+                            _addDescriptorRangesAsValue(pendingTypeLayout, pendingOffset);
                         }
                         break;
 
                     case slang::BindingType::ConstantBuffer:
                         {
-                            auto subObjectTypeLayout = typeLayout->getBindingRangeLeafTypeLayout(bindingRangeIndex);
+                            // A `ConstantBuffer<X>` range will contribute any nested descriptor
+                            // ranges in `X`, along with a leading descriptor range for a
+                            // uniform buffer to hold ordinary/uniform data, if there is any.
+
                             SLANG_ASSERT(subObjectTypeLayout);
 
                             auto elementTypeLayout = subObjectTypeLayout->getElementTypeLayout();
                             SLANG_ASSERT(elementTypeLayout);
 
-                            BindingOffset subOffset = offset;
-                            subOffset += BindingOffset(typeLayout->getSubObjectRangeOffset(subObjectRangeIndex));
-
-                            _addPendingDescriptorRanges(elementTypeLayout, subOffset);
+                            _addDescriptorRangesAsConstantBuffer(elementTypeLayout, subObjectRangeOffset);
                         }
                         break;
                     }
+
                 }
             }
 
@@ -1438,7 +1483,9 @@ public:
                 info.layout = entryPointLayout;
                 info.offset = entryPointOffset;
 
+                entryPointOffset.pending += m_pendingDataOffset;
                 _addDescriptorRangesAsValue(entryPointVarLayout->getTypeLayout(), entryPointOffset);
+
                 m_entryPoints.add(info);
             }
 
