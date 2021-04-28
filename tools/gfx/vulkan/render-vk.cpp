@@ -715,8 +715,8 @@ public:
         //
         // TODO: Validate that any of this works as intended.
 
-            /// The offset into the push constant space
-        uint32_t pushConstant = 0;
+            /// The offset in push-constant ranges (not bytes)
+        uint32_t pushConstantRange = 0;
 
             /// Create a default (zero) offset
         SimpleBindingOffset()
@@ -732,7 +732,7 @@ public:
 
                 childSet = (uint32_t) varLayout->getOffset(SLANG_PARAMETER_CATEGORY_REGISTER_SPACE);
 
-                pushConstant = (uint32_t) varLayout->getOffset(SLANG_PARAMETER_CATEGORY_PUSH_CONSTANT_BUFFER);
+                pushConstantRange = (uint32_t) varLayout->getOffset(SLANG_PARAMETER_CATEGORY_PUSH_CONSTANT_BUFFER);
             }
         }
 
@@ -742,7 +742,7 @@ public:
             binding += offset.binding;
             bindingSet += offset.bindingSet;
             childSet += offset.childSet;
-            pushConstant += offset.pushConstant;
+            pushConstantRange += offset.pushConstantRange;
         }
     };
 
@@ -844,11 +844,14 @@ public:
             Index m_subObjectCount = 0;
             Index m_varyingInputCount = 0;
             Index m_varyingOutputCount = 0;
-            uint32_t m_pushConstantSize = 0;
+//            uint32_t m_pushConstantSize = 0;
             uint32_t m_childDescriptorSetCount = 0;
             uint32_t m_totalBindingCount = 0;
             List<DescriptorSetInfo> m_descriptorSetBuildInfos;
             Dictionary<Index, Index> m_mapSpaceToDescriptorSetIndex;
+
+            List<VkPushConstantRange> m_ownPushConstantRanges;
+            uint32_t m_childPushConstantRangeCount = 0;
 
             Index findOrAddDescriptorSet(Index space)
             {
@@ -942,6 +945,7 @@ public:
                     case slang::BindingType::ParameterBlock:
                     case slang::BindingType::ConstantBuffer:
                     case slang::BindingType::ExistentialValue:
+                    case slang::BindingType::PushConstant:
                         continue;
                     }
 
@@ -1028,10 +1032,51 @@ public:
 
                             SLANG_ASSERT(subObjectTypeLayout);
 
-                            auto elementTypeLayout = subObjectTypeLayout->getElementTypeLayout();
+                            auto containerVarLayout = subObjectTypeLayout->getContainerVarLayout();
+                            SLANG_ASSERT(containerVarLayout);
+
+                            auto elementVarLayout = subObjectTypeLayout->getElementVarLayout();
+                            SLANG_ASSERT(elementVarLayout);
+
+                            auto elementTypeLayout = elementVarLayout->getTypeLayout();
                             SLANG_ASSERT(elementTypeLayout);
 
-                            _addDescriptorRangesAsConstantBuffer(elementTypeLayout, subObjectRangeOffset);
+                            BindingOffset containerOffset = offset;
+                            containerOffset += BindingOffset(subObjectTypeLayout->getContainerVarLayout());
+
+                            BindingOffset elementOffset = offset;
+                            elementOffset += BindingOffset(elementVarLayout);
+
+                            _addDescriptorRangesAsConstantBuffer(elementTypeLayout, containerOffset, elementOffset);
+                        }
+                        break;
+
+                    case slang::BindingType::PushConstant:
+                        {
+                            // This case indicates a `ConstantBuffer<X>` that was marked as being
+                            // used for push constants.
+                            //
+                            // Much of the handling is the same as for an ordinary `ConstantBuffer<X>`,
+                            // but of course we need to handle the ordinary data part differently.
+
+                            SLANG_ASSERT(subObjectTypeLayout);
+
+                            auto containerVarLayout = subObjectTypeLayout->getContainerVarLayout();
+                            SLANG_ASSERT(containerVarLayout);
+
+                            auto elementVarLayout = subObjectTypeLayout->getElementVarLayout();
+                            SLANG_ASSERT(elementVarLayout);
+
+                            auto elementTypeLayout = elementVarLayout->getTypeLayout();
+                            SLANG_ASSERT(elementTypeLayout);
+
+                            BindingOffset containerOffset = offset;
+                            containerOffset += BindingOffset(subObjectTypeLayout->getContainerVarLayout());
+
+                            BindingOffset elementOffset = offset;
+                            elementOffset += BindingOffset(elementVarLayout);
+
+                            _addDescriptorRangesAsPushConstantBuffer(elementTypeLayout, containerOffset, elementOffset);
                         }
                         break;
                     }
@@ -1040,29 +1085,55 @@ public:
             }
 
             void _addDescriptorRangesAsConstantBuffer(
-                slang::TypeLayoutReflection*    typeLayout,
-                BindingOffset const&            inOffset)
+                slang::TypeLayoutReflection*    elementTypeLayout,
+                BindingOffset const&            containerOffset,
+                BindingOffset const&            elementOffset)
             {
-                BindingOffset offset = inOffset;
-
                 // If the type has ordinary uniform data fields, we need to make sure to create
                 // a descriptor set with a constant buffer binding in the case that the shader
                 // object is bound as a stand alone parameter block.
-                if (typeLayout->getSize(SLANG_PARAMETER_CATEGORY_UNIFORM) != 0)
+                if (elementTypeLayout->getSize(SLANG_PARAMETER_CATEGORY_UNIFORM) != 0)
                 {
-                    auto descriptorSetIndex = findOrAddDescriptorSet(offset.bindingSet);
+                    auto descriptorSetIndex = findOrAddDescriptorSet(containerOffset.bindingSet);
                     auto& descriptorSetInfo = m_descriptorSetBuildInfos[descriptorSetIndex];
                     VkDescriptorSetLayoutBinding vkBindingRangeDesc = {};
-                    vkBindingRangeDesc.binding = offset.binding;
+                    vkBindingRangeDesc.binding = containerOffset.binding;
                     vkBindingRangeDesc.descriptorCount = 1;
                     vkBindingRangeDesc.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
                     vkBindingRangeDesc.stageFlags = VK_SHADER_STAGE_ALL;
                     descriptorSetInfo.vkBindings.add(vkBindingRangeDesc);
-
-                    offset.binding++;
                 }
 
-                _addDescriptorRangesAsValue(typeLayout, offset);
+                _addDescriptorRangesAsValue(elementTypeLayout, elementOffset);
+            }
+
+            void _addDescriptorRangesAsPushConstantBuffer(
+                slang::TypeLayoutReflection*    elementTypeLayout,
+                BindingOffset const&            containerOffset,
+                BindingOffset const&            elementOffset)
+            {
+                // If the type has ordinary uniform data fields, we need to make sure to create
+                // a descriptor set with a constant buffer binding in the case that the shader
+                // object is bound as a stand alone parameter block.
+                auto ordinaryDataSize = (uint32_t) elementTypeLayout->getSize(SLANG_PARAMETER_CATEGORY_UNIFORM);
+                if (ordinaryDataSize != 0)
+                {
+                    auto pushConstantRangeIndex = containerOffset.pushConstantRange;
+
+                    VkPushConstantRange vkPushConstantRange = {};
+                    vkPushConstantRange.size = ordinaryDataSize;
+                    vkPushConstantRange.stageFlags = VK_SHADER_STAGE_ALL; // TODO: be more clever
+
+                    while(m_ownPushConstantRanges.getCount() <= pushConstantRangeIndex)
+                    {
+                        VkPushConstantRange emptyRange = { 0 };
+                        m_ownPushConstantRanges.add(emptyRange);
+                    }
+
+                    m_ownPushConstantRanges[pushConstantRangeIndex] = vkPushConstantRange;
+                }
+
+                _addDescriptorRangesAsValue(elementTypeLayout, elementOffset);
             }
 
             void addBindingRanges(
@@ -1203,11 +1274,13 @@ public:
                     {
                     case slang::BindingType::ParameterBlock:
                         m_childDescriptorSetCount += subObjectLayout->getTotalDescriptorSetCount();
+                        m_childPushConstantRangeCount += subObjectLayout->getTotalPushConstantRangeCount();
                         break;
 
                     case slang::BindingType::ConstantBuffer:
                         m_childDescriptorSetCount += subObjectLayout->getChildDescriptorSetCount();
                         m_totalBindingCount += subObjectLayout->getTotalBindingCount();
+                        m_childPushConstantRangeCount += subObjectLayout->getTotalPushConstantRangeCount();
                         break;
 
                     case slang::BindingType::ExistentialValue:
@@ -1215,6 +1288,7 @@ public:
                         {
                             m_childDescriptorSetCount += subObjectLayout->getChildDescriptorSetCount();
                             m_totalBindingCount += subObjectLayout->getTotalBindingCount();
+                            m_childPushConstantRangeCount += subObjectLayout->getTotalPushConstantRangeCount();
                         }
                         break;
 
@@ -1273,10 +1347,16 @@ public:
             Builder builder(renderer);
             builder.setElementTypeLayout(elementType);
 
-            BindingOffset offset;
-            offset.pending.binding = elementType->getSize(SLANG_PARAMETER_CATEGORY_DESCRIPTOR_TABLE_SLOT)
-                + elementType->getSize(SLANG_PARAMETER_CATEGORY_UNIFORM) ? 1 : 0;
-            builder._addDescriptorRangesAsConstantBuffer(elementType, offset);
+            uint32_t ordinaryDataBufferCount = elementType->getSize(SLANG_PARAMETER_CATEGORY_UNIFORM) ? 1 : 0;
+            uint32_t primaryDescriptorCount = ordinaryDataBufferCount + (uint32_t) elementType->getSize(SLANG_PARAMETER_CATEGORY_DESCRIPTOR_TABLE_SLOT);
+
+            BindingOffset containerOffset;
+
+            BindingOffset elementOffset;
+            elementOffset.binding = ordinaryDataBufferCount;
+            elementOffset.pending.binding = primaryDescriptorCount;
+
+            builder._addDescriptorRangesAsConstantBuffer(elementType, containerOffset, elementOffset);
             return builder.build(outLayout);
         }
 
@@ -1297,7 +1377,11 @@ public:
         uint32_t getChildDescriptorSetCount() { return m_childDescriptorSetCount; }
         uint32_t getTotalDescriptorSetCount() { return getOwnDescriptorSetCount() + getChildDescriptorSetCount(); }
 
-        uint32_t getPushConstantSize() { return m_pushConstantSize; }
+
+        List<VkPushConstantRange> const& getOwnPushConstantRanges() const { return m_ownPushConstantRanges; }
+        uint32_t getOwnPushConstantRangeCount() { return (uint32_t) m_ownPushConstantRanges.getCount(); }
+        uint32_t getChildPushConstantRangeCount() { return m_childPushConstantRangeCount; }
+        uint32_t getTotalPushConstantRangeCount() { return getOwnPushConstantRangeCount() + getChildPushConstantRangeCount(); }
 
         List<BindingRangeInfo> const& getBindingRanges() { return m_bindingRanges; }
 
@@ -1332,7 +1416,7 @@ public:
             m_bindingRanges = builder->m_bindingRanges;
 
             m_descriptorSetInfos = _Move(builder->m_descriptorSetBuildInfos);
-            m_pushConstantSize = builder->m_pushConstantSize;
+            m_ownPushConstantRanges = builder->m_ownPushConstantRanges;
             m_resourceViewCount = builder->m_resourceViewCount;
             m_samplerCount = builder->m_samplerCount;
             m_combinedTextureSamplerCount = builder->m_combinedTextureSamplerCount;
@@ -1362,7 +1446,8 @@ public:
         Index m_samplerCount = 0;
         Index m_combinedTextureSamplerCount = 0;
         Index m_subObjectCount = 0;
-        uint32_t m_pushConstantSize = 0;
+        List<VkPushConstantRange> m_ownPushConstantRanges;
+        uint32_t m_childPushConstantRangeCount = 0;
 
         uint32_t m_childDescriptorSetCount = 0;
         uint32_t m_totalBindingCount = 0;
@@ -1394,8 +1479,8 @@ public:
             {
                 m_slangEntryPointLayout = entryPointLayout;
                 setElementTypeLayout(entryPointLayout->getTypeLayout());
-                m_pushConstantSize = (uint32_t)_unwrapParameterGroups(entryPointLayout->getTypeLayout())
-                                         ->getSize(SLANG_PARAMETER_CATEGORY_UNIFORM);
+//                m_pushConstantSize = (uint32_t)_unwrapParameterGroups(entryPointLayout->getTypeLayout())
+//                                         ->getSize(SLANG_PARAMETER_CATEGORY_UNIFORM);
                 m_shaderStageFlag = VulkanUtil::getShaderStage(entryPointLayout->getStage());
             }
 
@@ -1545,6 +1630,8 @@ public:
         slang::IComponentType* getSlangProgram() const { return m_program; }
         slang::ProgramLayout* getSlangProgramLayout() const { return m_programLayout; }
 
+        List<VkPushConstantRange> const& getAllPushConstantRanges() { return m_allPushConstantRanges; }
+
     protected:
         Result _init(Builder const* builder)
         {
@@ -1565,8 +1652,9 @@ public:
 
             // First, collect `VkDescriptorSetLayout`s for the global scope and all sub-objects
             // referenced via a `ParameterBlock` from shader object layouts.
-            SLANG_RETURN_ON_FAIL(addDescriptorSetLayoutRec(this));
+            SLANG_RETURN_ON_FAIL(addAllRootParamsRec(this));
 
+#if 0
             // Next, collect push constant ranges. We will use one descriptor range for each
             // entry point that has uniform parameters.
             uint32_t pushConstantOffset = 0;
@@ -1583,18 +1671,19 @@ public:
                     pushConstantOffset += size;
                 }
             }
+#endif
 
             // Now call Vulkan API to create a pipeline layout.
             VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {};
             pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
             pipelineLayoutCreateInfo.setLayoutCount = (uint32_t)m_vkDescriptorSetLayouts.getCount();
             pipelineLayoutCreateInfo.pSetLayouts = m_vkDescriptorSetLayouts.getBuffer();
-            if (m_pushConstantRanges.getCount())
+            if (m_allPushConstantRanges.getCount())
             {
                 pipelineLayoutCreateInfo.pushConstantRangeCount =
-                    (uint32_t)m_pushConstantRanges.getCount();
+                    (uint32_t)m_allPushConstantRanges.getCount();
                 pipelineLayoutCreateInfo.pPushConstantRanges =
-                    m_pushConstantRanges.getBuffer();
+                    m_allPushConstantRanges.getBuffer();
             }
             SLANG_RETURN_ON_FAIL(m_renderer->m_api.vkCreatePipelineLayout(
                 m_renderer->m_api.m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayout));
@@ -1603,13 +1692,26 @@ public:
 
         // Recusively add `VkDescriptorSetLayout` for all descriptor sets used by this and children
         // shader objects and add them to `m_vkDescriptorSetLayouts`.
-        Result addDescriptorSetLayoutRec(ShaderObjectLayoutImpl* layout)
+        Result addAllRootParamsRec(ShaderObjectLayoutImpl* layout)
+        {
+            SLANG_RETURN_ON_FAIL(addAllDescriptorSetsRec(layout));
+            SLANG_RETURN_ON_FAIL(addAllPushConstantRangesRec(layout));
+            return SLANG_OK;
+        }
+
+        Result addAllDescriptorSetsRec(ShaderObjectLayoutImpl* layout)
         {
             for (auto& descSetInfo : layout->getOwnDescriptorSets())
             {
                 m_vkDescriptorSetLayouts.add(descSetInfo.descriptorSetLayout);
             }
 
+            SLANG_RETURN_ON_FAIL(addChildDescriptorSetsRec(layout));
+            return SLANG_OK;
+        }
+
+        Result addChildDescriptorSetsRec(ShaderObjectLayoutImpl* layout)
+        {
             // Note: entry point parameters in a `RootShaderObject` has already been included
             // in `layout->getDescriptorSets()` during `RootShaderObjectLayout` construction,
             // so we do not need to enumerate entry point array here.
@@ -1622,9 +1724,43 @@ public:
             for (auto& subObject : layout->getSubObjectRanges())
             {
                 auto bindingRange = layout->getBindingRange(subObject.bindingRangeIndex);
-                if (bindingRange.bindingType == slang::BindingType::ParameterBlock)
+                switch(bindingRange.bindingType)
                 {
-                    SLANG_RETURN_ON_FAIL(addDescriptorSetLayoutRec(subObject.layout));
+                case slang::BindingType::ParameterBlock:
+                    SLANG_RETURN_ON_FAIL(addAllDescriptorSetsRec(subObject.layout));
+                    break;
+
+                default:
+                    if(auto subObjectLayout = subObject.layout)
+                    {
+                        SLANG_RETURN_ON_FAIL(addChildDescriptorSetsRec(subObject.layout));
+                    }
+                    break;
+                }
+            }
+
+            return SLANG_OK;
+        }
+
+        Result addAllPushConstantRangesRec(ShaderObjectLayoutImpl* layout)
+        {
+            // TODO: This logic assumes that push-constant ranges are all contiguous
+            // and have been allocated in a global order that matches the order
+            // of enumeration here.
+
+            for (auto pushConstantRange : layout->getOwnPushConstantRanges())
+            {
+                pushConstantRange.offset = m_totalPushConstantSize;
+                m_totalPushConstantSize += pushConstantRange.size;
+
+                m_allPushConstantRanges.add(pushConstantRange);
+            }
+
+            for (auto& subObject : layout->getSubObjectRanges())
+            {
+                if(auto subObjectLayout = subObject.layout)
+                {
+                    SLANG_RETURN_ON_FAIL(addAllPushConstantRangesRec(subObject.layout));
                 }
             }
 
@@ -1637,7 +1773,10 @@ public:
         List<EntryPointInfo> m_entryPoints;
         VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
         Array<VkDescriptorSetLayout, kMaxDescriptorSets> m_vkDescriptorSetLayouts;
-        Array<VkPushConstantRange, 8> m_pushConstantRanges;
+//        Array<VkPushConstantRange, 8> m_pushConstantRanges;
+        List<VkPushConstantRange> m_allPushConstantRanges;
+        uint32_t m_totalPushConstantSize = 0;
+
         SimpleBindingOffset m_pendingDataOffset;
         VKDevice* m_renderer = nullptr;
     };
@@ -1811,6 +1950,8 @@ public:
         DescriptorSetAllocator* descriptorSetAllocator;
         VKDevice* device;
         VkDescriptorSet* descriptorSets;
+
+        ConstArrayView<VkPushConstantRange> pushConstantRanges;
     };
 
     class ShaderObjectImpl : public ShaderObjectBase
@@ -2832,7 +2973,7 @@ public:
 
                             objOffset.binding += subObjectLayout->getTotalBindingCount();
                             objOffset.childSet += subObjectLayout->getChildDescriptorSetCount();
-                            objOffset.pushConstant += subObjectLayout->getPushConstantSize();
+                            objOffset.pushConstantRange += subObjectLayout->getTotalPushConstantRangeCount();
                         }
                     }
                     break;
@@ -2846,7 +2987,7 @@ public:
                             subObject->bindAsParameterBlock(encoder, context, objOffset, subObjectLayout);
 
                             objOffset.childSet += subObjectLayout->getChildDescriptorSetCount();
-                            objOffset.pushConstant += subObjectLayout->getPushConstantSize();
+                            objOffset.pushConstantRange += subObjectLayout->getTotalPushConstantRangeCount();
                         }
                     }
                     break;
@@ -2863,7 +3004,7 @@ public:
 
                             objOffset.binding += subObjectLayout->getTotalBindingCount();
                             objOffset.childSet += subObjectLayout->getChildDescriptorSetCount();
-                            objOffset.pushConstant += subObjectLayout->getPushConstantSize();
+                            objOffset.pushConstantRange += subObjectLayout->getTotalPushConstantRangeCount();
                         }
                     }
                     break;
@@ -3066,19 +3207,20 @@ public:
             // Set data in `m_ordinaryData` into the push constant range.
             if (m_ordinaryData.getCount())
             {
-                auto pushConstantShaderStageFlags = getLayout()->getShaderStageFlag();
-                auto pushConstantDataSize = (uint32_t) m_ordinaryData.getCount();
+                auto pushConstantRangeIndex = offset.pushConstantRange++;
+
+                auto const& pushConstantRange = context.pushConstantRanges[pushConstantRangeIndex];
+                SLANG_ASSERT(pushConstantRange.size == (uint32_t) m_ordinaryData.getCount());
+
                 auto pushConstantData = m_ordinaryData.getBuffer();
 
                 encoder->m_api->vkCmdPushConstants(
                     encoder->m_commandBuffer->m_commandBuffer,
                     context.pipelineLayout,
-                    pushConstantShaderStageFlags,
-                    offset.pushConstant,
-                    pushConstantDataSize,
+                    pushConstantRange.stageFlags,
+                    pushConstantRange.offset,
+                    pushConstantRange.size,
                     pushConstantData);
-
-                offset.pushConstant += pushConstantDataSize;
             }
 
             // Process the rest of binding ranges.
@@ -4402,11 +4544,10 @@ Result VKDevice::PipelineCommandEncoder::bindRootShaderObjectImpl(
         return SLANG_FAIL;
 
     RootBindingContext context;
-//    RootBindingState bindState = {};
-//    bindState.pushConstantRanges = specializedLayout->m_pushConstantRanges.getView();
     context.pipelineLayout = specializedLayout->m_pipelineLayout;
     context.device = m_device;
     context.descriptorSetAllocator = &m_commandBuffer->m_transientHeap->m_descSetAllocator;
+    context.pushConstantRanges = specializedLayout->getAllPushConstantRanges().getArrayView();
 
     List<VkDescriptorSet> descriptorSetsStorage;
 

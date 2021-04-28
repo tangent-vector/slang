@@ -1291,12 +1291,24 @@ namespace Slang
         }
     }
 
-
-
     SlangBindingType _calcBindingType(
         Slang::TypeLayout*  typeLayout,
         LayoutResourceKind  kind)
     {
+        // At the type level, a push-constant buffer and a regular constant
+        // buffer are currently not distinct, so we need to detect push
+        // constant buffers/ranges before we inspect the `typeLayout` to
+        // avoid reflecting them all as ordinary constant buffers.
+        //
+        switch(kind)
+        {
+        default:
+            break;
+
+        case LayoutResourceKind::PushConstantBuffer:
+            return SLANG_BINDING_TYPE_PUSH_CONSTANT;
+        }
+
         // If the type or type layout implies a specific binding type
         // (e.g., a `Texture2D` implies a texture binding), then we
         // will always favor the binding type implied.
@@ -1314,24 +1326,6 @@ namespace Slang
         // it is used (e.g., as a varying parameter, a root constant, etc.).
         //
         return _calcBindingType(kind);
-    }
-
-        /// Calculate the type to use for a descriptor range representin
-        /// resources of the given `kind` in the given `typeLayout`.
-    SlangBindingType _calcDescriptorType(
-        Slang::TypeLayout*  typeLayout,
-        LayoutResourceKind  kind)
-    {
-        switch(kind)
-        {
-        default:
-            break;
-
-        case LayoutResourceKind::PushConstantBuffer:
-            return SLANG_BINDING_TYPE_PUSH_CONSTANT;
-        }
-
-        return _calcBindingType(typeLayout, kind);
     }
 
     static DeclRefType* asInterfaceType(Type* type)
@@ -1614,18 +1608,9 @@ namespace Slang
 
                                 TypeLayout::ExtendedInfo::DescriptorRangeInfo descriptorRange;
                                 descriptorRange.kind = resInfo.kind;
-                                descriptorRange.bindingType = _calcDescriptorType(typeLayout, resInfo.kind);
+                                descriptorRange.bindingType = _calcBindingType(typeLayout, resInfo.kind);
                                 descriptorRange.count = multiplier;
                                 descriptorRange.indexOffset = _calcIndexOffset(path.primary, resInfo.kind);
-
-                                if( resInfo.kind == LayoutResourceKind::PushConstantBuffer )
-                                {
-                                    if(auto uniformResInfo = parameterGroupTypeLayout->elementVarLayout->typeLayout->FindResourceInfo(LayoutResourceKind::Uniform))
-                                    {
-                                        descriptorRange.count *= uniformResInfo->count;
-                                    }
-                                }
-
                                 descriptorSet->descriptorRanges.add(descriptorRange);
                             }
                         }
