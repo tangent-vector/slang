@@ -468,8 +468,11 @@ struct ResourceOutputSpecializationPass
         //
         // Any failures along the way cause the whole process to fail.
 
-        for( auto param : func->getParams() )
+        IRParam* nextParam = nullptr;
+        for( IRParam* param = func->getFirstParam(); param; param = nextParam )
         {
+            nextParam = param->getNextParam();
+
             ParamInfo paramInfo;
             SLANG_RETURN_ON_FAIL(maybeSpecializeParam(param, paramInfo, outFuncInfo));
             outFuncInfo.oldParams.add(paramInfo);

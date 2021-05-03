@@ -70,7 +70,7 @@ LegalVal LegalVal::implicitDeref(LegalVal const& val)
     return result;
 }
 
-LegalVal LegalVal::getImplicitDeref()
+LegalVal LegalVal::getImplicitDeref() const
 {
     SLANG_ASSERT(flavor == Flavor::implicitDeref);
     return as<ImplicitDerefVal>(obj)->val;
@@ -194,90 +194,337 @@ static LegalVal legalizeOperand(
     return LegalVal::simple(irValue);
 }
 
-static void getArgumentValues(
-    List<IRInst*> & instArgs,
-    LegalVal val)
+struct LegalCallBuilder
 {
-    switch (val.flavor)
+    LegalCallBuilder(
+        IRTypeLegalizationContext* context,
+        IRCall* call)
+        : m_context(context)
+        , m_call(call)
+    {}
+
+    IRTypeLegalizationContext* m_context = nullptr;
+    IRCall* m_call = nullptr;
+
+
+    List<IRInst*> m_args;
+
+    void addArg(
+        LegalVal const& val)
     {
-    case LegalVal::Flavor::none:
-        break;
-
-    case LegalVal::Flavor::simple:
-        instArgs.add(val.getSimple());
-        break;
-
-    case LegalVal::Flavor::implicitDeref:
-        getArgumentValues(instArgs, val.getImplicitDeref());
-        break;
-
-    case LegalVal::Flavor::pair:
+        switch (val.flavor)
         {
-            auto pairVal = val.getPair();
-            getArgumentValues(instArgs, pairVal->ordinaryVal);
-            getArgumentValues(instArgs, pairVal->specialVal);
-        }
-        break;
+        case LegalVal::Flavor::none:
+            break;
 
-    case LegalVal::Flavor::tuple:
-        {
-            auto tuplePsuedoVal = val.getTuple();
-            for (auto elem : val.getTuple()->elements)
+        case LegalVal::Flavor::simple:
+            m_args.add(val.getSimple());
+            break;
+
+        case LegalVal::Flavor::implicitDeref:
+            addArg(val.getImplicitDeref());
+            break;
+
+        case LegalVal::Flavor::pair:
             {
-                getArgumentValues(instArgs, elem.val);
+                auto pairVal = val.getPair();
+                addArg(pairVal->ordinaryVal);
+                addArg(pairVal->specialVal);
             }
-        }
-        break;
+            break;
 
-    default:
-        SLANG_UNEXPECTED("uhandled val flavor");
-        break;
+        case LegalVal::Flavor::tuple:
+            {
+                auto tuplePsuedoVal = val.getTuple();
+                for (auto elem : val.getTuple()->elements)
+                {
+                    addArg(elem.val);
+                }
+            }
+            break;
+
+        default:
+            SLANG_UNEXPECTED("uhandled val flavor");
+            break;
+        }
     }
-}
+
+    LegalVal build(LegalType const& resultType)
+    {
+        switch (resultType.flavor)
+        {
+        case LegalType::Flavor::simple:
+            return LegalVal::simple(_emitCall(resultType.getSimple()));
+
+        case LegalType::Flavor::none:
+            _emitCall(m_context->builder->getVoidType());
+            return LegalVal();
+
+        case LegalVal::Flavor::implicitDeref:
+            return LegalVal::implicitDeref(build(resultType.getImplicitDeref()->valueType));
+
+        case LegalVal::Flavor::pair:
+            {
+                auto pairType = resultType.getPair();
+                auto specialVal = _addOutArg(pairType->specialType);
+                auto ordinaryVal = build(pairType->ordinaryType);
+
+                RefPtr<PairPseudoVal> pairVal = new PairPseudoVal();
+                pairVal->pairInfo = pairType->pairInfo;
+                pairVal->ordinaryVal = ordinaryVal;
+                pairVal->specialVal = specialVal;
+
+                return LegalVal::pair(pairVal);
+            }
+            break;
+
+        case LegalVal::Flavor::tuple:
+            {
+                auto resultVal = _addOutArg(resultType);
+                _emitCall(m_context->builder->getVoidType());
+                return resultVal;
+            }
+            break;
+
+        default:
+            // TODO: implement legalization of non-simple return types
+            SLANG_UNEXPECTED("unimplemented legalized return type for IRCall.");
+        }
+    }
+
+    LegalVal _addOutArg(LegalType const& resultType)
+    {
+        switch (resultType.flavor)
+        {
+        case LegalType::Flavor::simple:
+            {
+                auto simpleType = resultType.getSimple();
+                auto builder = m_context->builder;
+
+                auto varPtr = builder->emitVar(simpleType);
+                m_args.add(varPtr);
+
+                builder->setInsertBefore(m_call->getNextInst());
+                auto val = builder->emitLoad(simpleType, varPtr);
+                builder->setInsertBefore(m_call);
+
+                return LegalVal::simple(val);
+            }
+            break;
+
+        case LegalType::Flavor::none:
+            return LegalVal();
+
+        case LegalVal::Flavor::implicitDeref:
+            return LegalVal::implicitDeref(_addOutArg(resultType.getImplicitDeref()->valueType));
+
+        case LegalVal::Flavor::pair:
+            {
+                auto pairType = resultType.getPair();
+                auto specialVal = _addOutArg(pairType->specialType);
+                auto ordinaryVal = _addOutArg(pairType->ordinaryType);
+
+                RefPtr<PairPseudoVal> pairVal = new PairPseudoVal();
+                pairVal->pairInfo = pairType->pairInfo;
+                pairVal->ordinaryVal = ordinaryVal;
+                pairVal->specialVal = specialVal;
+
+                return LegalVal::pair(pairVal);
+            }
+            break;
+
+        case LegalVal::Flavor::tuple:
+            {
+                auto tuplePsuedoType = resultType.getTuple();
+
+                RefPtr<TuplePseudoVal> tupleVal = new TuplePseudoVal();
+                for (auto typeElement : tuplePsuedoType->elements)
+                {
+                    TuplePseudoVal::Element valElement;
+                    valElement.key = typeElement.key;
+                    valElement.val = _addOutArg(typeElement.type);
+                    tupleVal->elements.add(valElement);
+                }
+
+                return LegalVal::tuple(tupleVal);
+            }
+            break;
+
+        default:
+            // TODO: implement legalization of non-simple return types
+            SLANG_UNEXPECTED("unimplemented legalized return type for IRCall.");
+        }
+    }
+
+private:
+    IRInst* _emitCall(IRType* resultType)
+    {
+        return m_context->builder->emitCallInst(
+            resultType,
+            m_call->getCallee(),
+            m_args.getCount(),
+            m_args.getBuffer());
+    }
+};
+
 
 static LegalVal legalizeCall(
     IRTypeLegalizationContext*    context,
     IRCall* callInst)
 {
-    auto retType = legalizeType(context, callInst->getFullType());
-    IRType* retIRType = nullptr;
-    switch (retType.flavor)
+    LegalCallBuilder builder(context, callInst);
+
+    auto argCount = callInst->getArgCount();
+    for( UInt i = 0; i < argCount; i++ )
     {
-    case LegalType::Flavor::simple:
-        retIRType = retType.getSimple();
-        break;
-    case LegalType::Flavor::none:
-        retIRType = context->builder->getVoidType();
-        break;
-    default:
-        // TODO: implement legalization of non-simple return types
-        SLANG_UNEXPECTED("unimplemented legalized return type for IRInstCall.");
+        auto legalArg = legalizeOperand(context, callInst->getArg(i));
+        builder.addArg(legalArg);
     }
 
-    List<IRInst*> instArgs;
-    for (auto i = 1u; i < callInst->getOperandCount(); i++)
-        getArgumentValues(instArgs, legalizeOperand(context, callInst->getOperand(i)));
-
-    return LegalVal::simple(context->builder->emitCallInst(
-        retIRType,
-        callInst->getCallee(),
-        instArgs.getCount(),
-        instArgs.getBuffer()));
+    auto legalResultType = legalizeType(context, callInst->getFullType());
+    return builder.build(legalResultType);
 }
 
-static LegalVal legalizeRetVal(IRTypeLegalizationContext*    context,
-    LegalVal retVal)
+struct LegalReturnBuilder
 {
-    switch (retVal.flavor)
+    LegalReturnBuilder(IRTypeLegalizationContext* context, IRReturn* returnInst)
+        : m_context(context)
+        , m_returnInst(returnInst)
+    {}
+
+    void returnVal(LegalVal val)
     {
-    case LegalVal::Flavor::simple:
-        return LegalVal::simple(context->builder->emitReturn(retVal.getSimple()));
-    case LegalVal::Flavor::none:
-        return LegalVal::simple(context->builder->emitReturn());
-    default:
-        // TODO: implement legalization of non-simple return types
-        SLANG_UNEXPECTED("unimplemented legalized return type for IRReturnVal.");
+        auto builder = m_context->builder;
+
+        switch (val.flavor)
+        {
+        case LegalVal::Flavor::simple:
+            builder->emitReturn(val.getSimple());
+            break;
+
+        case LegalVal::Flavor::none:
+            builder->emitReturn();
+            break;
+
+        case LegalVal::Flavor::implicitDeref:
+            returnVal(val.getImplicitDeref());
+            break;
+
+        case LegalVal::Flavor::pair:
+            {
+                auto pairVal = val.getPair();
+                _writeResultParam(pairVal->specialVal);
+                returnVal(pairVal->ordinaryVal);
+            }
+            break;
+
+        case LegalVal::Flavor::tuple:
+            {
+                auto tupleVal = val.getTuple();
+
+                for (auto element : tupleVal->elements)
+                {
+                    _writeResultParam(element.val);
+                }
+
+                builder->emitReturn();
+            }
+            break;
+
+        default:
+            // TODO: implement legalization of non-simple return types
+            SLANG_UNEXPECTED("unimplemented legalized return type for IRReturnVal.");
+        }
     }
+
+    void _writeResultParam(LegalVal const& val)
+    {
+        switch (val.flavor)
+        {
+        case LegalVal::Flavor::simple:
+            {
+                // TODO: Need to find the context for the function we are returning from...
+                if( !m_parentFuncInfo )
+                {
+                    auto p = m_returnInst->getParent();
+                    while( p && !as<IRGlobalValueWithCode>(p) )
+                    {
+                        p = p->parent;
+                    }
+
+                    auto parentFunc = as<IRFunc>(p);
+                    SLANG_ASSERT(parentFunc);
+                    if(!parentFunc)
+                        return;
+
+                    RefPtr<LegalFuncInfo> parentFuncInfo;
+                    if( !m_context->mapFuncToInfo.TryGetValue(parentFunc, parentFuncInfo) )
+                    {
+                        SLANG_ASSERT(parentFuncInfo);
+                        return;
+                    }
+
+                    m_parentFuncInfo = parentFuncInfo;
+                    m_resultParamCounter = 0;
+                }
+                SLANG_ASSERT(m_parentFuncInfo);
+
+                Index resultParamIndex = m_resultParamCounter++;
+                SLANG_ASSERT(resultParamIndex >= 0);
+                SLANG_ASSERT(resultParamIndex < m_parentFuncInfo->resultParamVals.getCount());
+
+                auto resultParamVal = m_parentFuncInfo->resultParamVals[resultParamIndex];
+
+                m_context->builder->emitStore(resultParamVal, val.getSimple());
+            }
+            break;
+
+        case LegalVal::Flavor::none:
+            break;
+
+        case LegalVal::Flavor::implicitDeref:
+            _writeResultParam(val.getImplicitDeref());
+            break;
+
+        case LegalVal::Flavor::pair:
+            {
+                auto pairVal = val.getPair();
+                _writeResultParam(pairVal->ordinaryVal);
+                _writeResultParam(pairVal->specialVal);
+            }
+            break;
+
+        case LegalVal::Flavor::tuple:
+            {
+                auto tupleVal = val.getTuple();
+                for (auto element : tupleVal->elements)
+                {
+                    _writeResultParam(element.val);
+                }
+            }
+            break;
+
+        default:
+            // TODO: implement legalization of non-simple return types
+            SLANG_UNEXPECTED("unimplemented legalized return type for IRReturnVal.");
+        }
+    }
+
+    IRTypeLegalizationContext* m_context = nullptr;
+    IRReturn* m_returnInst = nullptr;
+
+    RefPtr<LegalFuncInfo> m_parentFuncInfo;
+    Index m_resultParamCounter = 0;
+};
+
+static LegalVal legalizeRetVal(
+    IRTypeLegalizationContext*  context,
+    LegalVal                    retVal,
+    IRReturnVal*                returnInst)
+{
+    LegalReturnBuilder builder(context, returnInst);
+    builder.returnVal(retVal);
+    return LegalVal();
 }
 
 static LegalVal legalizeLoad(
@@ -1232,7 +1479,7 @@ static LegalVal legalizeInst(
     case kIROp_Call:
         return legalizeCall(context, (IRCall*)inst);
     case kIROp_ReturnVal:
-        return legalizeRetVal(context, args[0]);
+        return legalizeRetVal(context, args[0], (IRReturnVal*)inst);
     case kIROp_makeStruct:
         return legalizeMakeStruct(
             context,
@@ -1487,82 +1734,202 @@ static LegalVal legalizeInst(
     return legalVal;
 }
 
-static void addParamType(List<IRType*>& ioParamTypes, LegalType t)
+struct LegalFuncBuilder
 {
-    switch (t.flavor)
-    {
-    case LegalType::Flavor::none:
-        break;
+    LegalFuncBuilder(IRTypeLegalizationContext* context)
+        : m_context(context)
+    {}
 
-    case LegalType::Flavor::simple:
-        ioParamTypes.add(t.getSimple());
-        break;
-
-    case LegalType::Flavor::implicitDeref:
+    LegalVal build(IRFunc* oldFunc)
     {
-        auto imp = t.getImplicitDeref();
-        addParamType(ioParamTypes, imp->valueType);
-        break;
-    }
-    case LegalType::Flavor::pair:
+        IRFuncType* oldFuncType = oldFunc->getDataType();
+
+        UInt oldParamCount = oldFuncType->getParamCount();
+        for (UInt pp = 0; pp < oldParamCount; ++pp)
         {
-            auto pairInfo = t.getPair();
-            addParamType(ioParamTypes, pairInfo->ordinaryType);
-            addParamType(ioParamTypes, pairInfo->specialType);
+            auto legalParamType = legalizeType(m_context, oldFuncType->getParamType(pp));
+            _addParam(legalParamType);
         }
-        break;
-    case LegalType::Flavor::tuple:
+
+        Index baseParamCount = m_paramTypes.getCount();
+
+        auto legalResultType = legalizeType(m_context, oldFuncType->getResultType());
+        _addResult(legalResultType);
+
+        Index resultParamCount = m_paramTypes.getCount() - baseParamCount;
+
+        auto irBuilder = m_context->builder;
+
+        if( !m_resultType )
+        {
+            m_resultType = irBuilder->getVoidType();
+        }
+
+        auto newFuncType = irBuilder->getFuncType(
+            m_paramTypes.getCount(),
+            m_paramTypes.getBuffer(),
+            m_resultType);
+        irBuilder->setDataType(oldFunc, newFuncType);
+
+        // If the function required any new parameters to be created
+        // to represent the result/return type, then we need to
+        // actually add the appropriate IR parameters to represent
+        // that stuff as well.
+        //
+        if( resultParamCount != 0 )
+        {
+            auto firstBlock = oldFunc->getFirstBlock();
+            if( firstBlock )
+            {
+                RefPtr<LegalFuncInfo> funcInfo = new LegalFuncInfo();
+
+                m_context->mapFuncToInfo.Add(oldFunc, funcInfo);
+
+                auto firstResultParamIndex = baseParamCount;
+                auto firstOrdinaryInst = firstBlock->getFirstOrdinaryInst();
+                for( Index i = 0; i < resultParamCount; ++i )
+                {
+                    auto paramType = m_paramTypes[firstResultParamIndex + i];
+                    auto param = irBuilder->createParam(paramType);
+                    param->insertBefore(firstOrdinaryInst);
+
+                    funcInfo->resultParamVals.add(param);
+                }
+            }
+        }
+
+        return LegalVal::simple(oldFunc);
+    }
+
+
+private:
+    IRTypeLegalizationContext* m_context = nullptr;;
+
+    List<IRType*> m_paramTypes;
+    IRType* m_resultType = nullptr;
+
+    void _addParam(LegalType t)
     {
-        auto tup = t.getTuple();
-        for (auto & elem : tup->elements)
-            addParamType(ioParamTypes, elem.type);
+        switch (t.flavor)
+        {
+        case LegalType::Flavor::none:
+            break;
+
+        case LegalType::Flavor::simple:
+            m_paramTypes.add(t.getSimple());
+            break;
+
+        case LegalType::Flavor::implicitDeref:
+            {
+                auto imp = t.getImplicitDeref();
+                _addParam(imp->valueType);
+            }
+            break;
+        case LegalType::Flavor::pair:
+            {
+                auto pairInfo = t.getPair();
+                _addParam(pairInfo->ordinaryType);
+                _addParam(pairInfo->specialType);
+            }
+            break;
+        case LegalType::Flavor::tuple:
+            {
+                auto tup = t.getTuple();
+                for (auto & elem : tup->elements)
+                    _addParam(elem.type);
+            }
+            break;
+        default:
+            SLANG_UNEXPECTED("unknown legalized type flavor");
+        }
     }
-    break;
-    default:
-        SLANG_UNEXPECTED("unknown legalized type flavor");
+
+    void _addResult(LegalType t)
+    {
+        switch (t.flavor)
+        {
+        case LegalType::Flavor::none:
+            break;
+
+        case LegalType::Flavor::simple:
+            m_resultType = t.getSimple();
+            break;
+
+        case LegalType::Flavor::implicitDeref:
+            {
+                auto imp = t.getImplicitDeref();
+                _addResult(imp->valueType);
+            }
+            break;
+
+        case LegalType::Flavor::pair:
+            {
+                auto pairInfo = t.getPair();
+                _addResult(pairInfo->ordinaryType);
+                _addOutParam(pairInfo->specialType);
+            }
+            break;
+
+        case LegalType::Flavor::tuple:
+            {
+                auto tup = t.getTuple();
+                for( auto & elem : tup->elements )
+                {
+                    _addOutParam(elem.type);
+                }
+            }
+            break;
+
+        default:
+            SLANG_UNEXPECTED("unknown legalized type flavor");
+        }
     }
-}
+
+    void _addOutParam(LegalType t)
+    {
+        switch (t.flavor)
+        {
+        case LegalType::Flavor::none:
+            break;
+
+        case LegalType::Flavor::simple:
+            m_paramTypes.add(m_context->builder->getOutType(t.getSimple()));
+            break;
+
+        case LegalType::Flavor::implicitDeref:
+            {
+                auto imp = t.getImplicitDeref();
+                _addOutParam(imp->valueType);
+            }
+            break;
+        case LegalType::Flavor::pair:
+            {
+                auto pairInfo = t.getPair();
+                _addOutParam(pairInfo->ordinaryType);
+                _addOutParam(pairInfo->specialType);
+            }
+            break;
+        case LegalType::Flavor::tuple:
+            {
+                auto tup = t.getTuple();
+                for (auto & elem : tup->elements)
+                    _addOutParam(elem.type);
+            }
+            break;
+        default:
+            SLANG_UNEXPECTED("unknown legalized type flavor");
+        }
+    }
+
+
+};
 
 static LegalVal legalizeFunc(
     IRTypeLegalizationContext*  context,
     IRFunc*                     irFunc)
 {
-    // Overwrite the function's type with the result of legalization.
-
-    IRFuncType* oldFuncType = irFunc->getDataType();
-    UInt oldParamCount = oldFuncType->getParamCount();
-
-    // TODO: we should give an error message when the result type of a function
-    // can't be legalized (e.g., trying to return a texture, or a structue that
-    // contains one).
-    auto legalReturnType = legalizeType(context, oldFuncType->getResultType());
-    IRType* newResultType = nullptr;
-    switch (legalReturnType.flavor)
-    {
-    case LegalType::Flavor::simple:
-        newResultType = legalReturnType.getSimple();
-        break;
-    case LegalType::Flavor::none:
-        newResultType = context->builder->getVoidType();
-        break;
-    default:
-        SLANG_UNEXPECTED("unknown legalized function return type.");
-    }
-    List<IRType*> newParamTypes;
-    for (UInt pp = 0; pp < oldParamCount; ++pp)
-    {
-        auto legalParamType = legalizeType(context, oldFuncType->getParamType(pp));
-        addParamType(newParamTypes, legalParamType);
-    }
-
-    auto newFuncType = context->builder->getFuncType(
-        newParamTypes.getCount(),
-        newParamTypes.getBuffer(),
-        newResultType);
-
-    context->builder->setDataType(irFunc, newFuncType);
-
-    return LegalVal::simple(irFunc);
+    LegalFuncBuilder builder(context);
+    return builder.build(irFunc);
 }
 
 static LegalVal declareSimpleVar(

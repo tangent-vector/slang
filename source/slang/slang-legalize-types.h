@@ -509,7 +509,7 @@ struct LegalVal
     }
 
     static LegalVal implicitDeref(LegalVal const& val);
-    LegalVal getImplicitDeref();
+    LegalVal getImplicitDeref() const;
 
     static LegalVal pair(RefPtr<PairPseudoVal> pairInfo);
     static LegalVal pair(
@@ -568,6 +568,13 @@ struct WrappedBufferPseudoVal : LegalValImpl
 
 //
 
+struct LegalFuncInfo : RefObject
+{
+    List<IRInst*> resultParamVals;
+};
+
+//
+
     /// Context that drives type legalization
     ///
     /// This type is an abstract base class, and there are
@@ -600,6 +607,8 @@ struct IRTypeLegalizationContext
     List<IRInst*> replacedInstructions;
 
     Dictionary<IRType*, LegalType> mapTypeToLegalType;
+
+    Dictionary<IRFunc*, RefPtr<LegalFuncInfo>> mapFuncToInfo;
 
     IRBuilder* getBuilder() { return builder; }
 
