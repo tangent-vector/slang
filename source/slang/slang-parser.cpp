@@ -4949,6 +4949,22 @@ namespace Slang
         return tryExpr;
     }
 
+    static NodeBase* parseDerivativeOfExpr(Parser* parser, void* /*userData*/)
+    {
+        // This will be invoked whenever the parser sees our new keyword, so we can
+        // use operations on `parser` to read whatever we expect to see.
+
+        // derivative-expr := `__forwardDerivativeOf` `(` expression `)`
+
+        expect(parser, TokenType::LParent);
+        auto funcExpr = parser->ParseArgExpr();
+        expect(parser, TokenType::RParent);
+
+        auto derivativeExpr = parser->astBuilder->create<DerivateExpr>();
+        derivativeExpr->base = funcExpr;
+        return derivativeExpr;
+    }
+
     static bool _isFinite(double value)
     {
         // Lets type pun double to uint64_t, so we can detect special double values
@@ -6435,6 +6451,8 @@ namespace Slang
         _makeParseExpr("nullptr", parseNullPtrExpr),
         _makeParseExpr("try",     parseTryExpr),
         _makeParseExpr("__TaggedUnion", parseTaggedUnionType),
+
+        _makeParseExpr("__forwardDerivativeOf", parseDerivativeOfExpr),
     };
 
     ConstArrayView<SyntaxParseInfo> getSyntaxParseInfos()

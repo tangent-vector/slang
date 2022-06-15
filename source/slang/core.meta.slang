@@ -71,6 +71,21 @@ syntax snorm : SNormModifier;
 ///
 syntax __extern_cpp : ExternCppModifier;
 
+/// Modifier that says to differentiate this function for some reason...
+syntax __please_differentiate_me : PleaseDifferentiateMeModifier;
+
+/*
+// (1) declaration-site annotation of differentiability
+@differentiable(wrt: x)
+func myFunction( x : Float, /* other stuff */ ) { ... }
+
+...
+
+// (2) use-site higher-order operation to get derivative/gradient from function
+let myFuncD = gradient(of: myFunction, ....);
+*/
+
+
 /// A type that can be used as an operand for builtins
 [sealed]
 [builtin]

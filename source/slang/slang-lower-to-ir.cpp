@@ -1149,6 +1149,10 @@ static void addLinkageDecoration(
     {
         builder->addExternCppDecoration(inst, mangledName);
     }
+    if (decl->findModifier<PleaseDifferentiateMeModifier>())
+    {
+        builder->addPleaseDifferentiateMeDecoration(inst);
+    }
     if (as<InterfaceDecl>(decl->parentDecl) &&
         decl->parentDecl->hasModifier<ComInterfaceAttribute>())
     {
@@ -3747,6 +3751,17 @@ struct ExprLoweringVisitorBase : ExprVisitor<Derived, LoweredValInfo>
         TryClauseEnvironment tryEnv;
         tryEnv.clauseType = expr->tryClauseType;
         return visitInvokeExprImpl(invokeExpr, tryEnv);
+    }
+
+    /// Emit code for a `derivativeOf` invoke.
+    LoweredValInfo visitDerivateExpr(DerivateExpr* expr)
+    {
+        // lower the sub-expression to IR
+        IRInst* baseExpr = getSimpleVal(context, lowerRValueExpr(context, expr->base));
+
+        // emit an IR instruciton to represent this operation...
+
+        return LoweredValInfo::simple(getBuilder()->emitDerivativeOf(baseExpr));
     }
 
         /// Emit code to cast `value` to a concrete `superType` (e.g., a `struct`).

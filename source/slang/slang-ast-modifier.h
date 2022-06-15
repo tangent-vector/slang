@@ -30,6 +30,7 @@ class ExportedModifier : public Modifier { SLANG_AST_CLASS(ExportedModifier)};
 class ConstExprModifier : public Modifier { SLANG_AST_CLASS(ConstExprModifier)};
 class GloballyCoherentModifier : public Modifier { SLANG_AST_CLASS(GloballyCoherentModifier)};
 class ExternCppModifier : public Modifier { SLANG_AST_CLASS(ExternCppModifier)};
+class PleaseDifferentiateMeModifier : public Modifier { SLANG_AST_CLASS(PleaseDifferentiateMeModifier) };
 
 // An 'ActualGlobal' is a global that is output as a normal global in CPU code. 
 // Globals in HLSL/Slang are constant state passed into kernel execution 

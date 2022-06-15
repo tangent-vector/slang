@@ -181,6 +181,13 @@ class TryExpr : public Expr
     Scope* scope = nullptr;
 };
 
+class DerivateExpr : public Expr
+{
+    SLANG_AST_CLASS(DerivateExpr)
+
+    Expr* base;
+};
+
 class OperatorExpr: public InvokeExpr
 {
     SLANG_AST_CLASS(OperatorExpr)

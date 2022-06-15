@@ -1631,6 +1631,16 @@ namespace Slang
         return expr;
     }
 
+    Expr* SemanticsExprVisitor::visitDerivateExpr(DerivateExpr* expr)
+    {
+        // TODO: semantic checking rules!
+
+        // - check sub-expression(s)
+        // - determine type of result based on types of sub-expressions
+
+        return expr;
+    }
+
     Expr* SemanticsVisitor::MaybeDereference(Expr* inExpr)
     {
         Expr* expr = inExpr;

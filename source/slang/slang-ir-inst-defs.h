@@ -659,6 +659,8 @@ INST(HighLevelDeclDecoration,               highLevelDecl,          1, 0)
 
     INST(SemanticDecoration, semantic, 2, 0)
 
+    INST(PleaseDifferentiateMeDecoration, pleaseDifferentiateMe, 0, 0)
+
     INST(SPIRVOpDecoration, spirvOpDecoration, 1, 0)
 
         /// Marks a struct type as being used as a structured buffer block.

@@ -51,6 +51,16 @@ struct ByteAddressBufferLegalizationContext
     //
     void processInstRec(IRInst* inst)
     {
+        // Is this a function?
+        if (auto func = as<IRFunc>(inst))
+        {
+            if (auto differentiateMeDecoration = func->findDecoration<IRPleaseDifferentiateMeDecoration>())
+            {
+                doDifferentiabilityStuff(func);
+            }
+
+        }
+
         switch( inst->getOp() )
         {
         case kIROp_ByteAddressBufferLoad:
@@ -73,6 +83,62 @@ struct ByteAddressBufferLegalizationContext
             nextChild = child->getNextInst();
             processInstRec(child);
         }
+    }
+
+    void doDifferentiabilityStuff(IRFunc* primalFunc)
+    {
+        // better not be empty...
+        SLANG_ASSERT(primalFunc->getFirstBlock());
+
+        // better not have control flow...
+        SLANG_ASSERT(primalFunc->getFirstBlock() == primalFunc->getLastBlock());
+
+        auto primalBlock = primalFunc->getFirstBlock();
+
+        m_builder.setInsertBefore(primalFunc);
+
+        auto fwdDerivativeFunc = m_builder.createFunc();
+        m_builder.setInsertInto(fwdDerivativeFunc);
+
+        auto fwdDerivativeBlock = m_builder.createBlock();
+        m_builder.setInsertInto(fwdDerivativeBlock);
+
+        Dictionary<IRInst*, IRInst*> mapPrimalInstToFwdDerviativeSomeQuantityINeed;
+        for (auto primalInst : primalBlock->getOrdinaryInsts())
+        {
+            // We are walking through instructions in `primalBlock` in order,
+            // and we can emit IR code using `m_builder` to insert equivalent/matching
+            // instructions into `fwdDerivativeBlock`.
+
+            mapPrimalInstToFwdDerviativeSomeQuantityINeed.Add(primalInst, derivedThing);
+
+            if (IRCall* primalCall = as<IRCall>(primalInst))
+            {
+                auto callee = primalCall->getCallee();
+                auto calleeFunc = as<IRFunc>(callee);
+                if (!calleeFunc)
+                {
+                    // ERROR: trying to call something that isn't a statically-resolved function!!!
+                }
+
+                if (!calleeFunc->findDecoration<IRPleaseDifferentiateMeDecoration>())
+                {
+                    // ERROR: callee wasn't marked as differentiable!!!
+                }
+            }
+        }
+
+        // reverse
+
+        for (IRInst* inst = primalBlock->getLastOrdinaryInst(); inst; inst = inst->getPrevInst())
+        {
+            IRInst* a = inst->getOperand(0);
+            IRInst* b = inst->getOperand(1);
+
+            // 
+
+        }
+
     }
 
     void processGetEquivalentStructuredBuffer(IRInst* inst)

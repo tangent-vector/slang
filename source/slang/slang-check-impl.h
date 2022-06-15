@@ -1685,6 +1685,8 @@ namespace Slang
 
         Expr* visitTryExpr(TryExpr* expr);
 
+        Expr* visitDerivateExpr(DerivateExpr* expr);
+
         //
         // Some syntax nodes should not occur in the concrete input syntax,
         // and will only appear *after* checking is complete. We need to
