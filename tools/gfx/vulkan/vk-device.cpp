@@ -139,6 +139,19 @@ static bool _hasAnySetBits(const T& val, size_t offset)
     return false;
 }
 
+static bool _calcIsRenderDocAttached()
+{
+    return GetModuleHandleA("renderdoc.dll") != NULL;
+}
+
+static bool isRenderDocAttached()
+{
+    static bool result = _calcIsRenderDocAttached();
+    return result;
+}
+
+
+
 Result DeviceImpl::initVulkanInstanceAndDevice(
     const InteropHandle* handles, bool useValidationLayer)
 {
@@ -518,6 +531,7 @@ Result DeviceImpl::initVulkanInstanceAndDevice(
             m_features.add("shader-subgroup-extended-types");
         }
 
+        if(!isRenderDocAttached())
         if (extendedFeatures.accelerationStructureFeatures.accelerationStructure)
         {
             extendedFeatures.accelerationStructureFeatures.pNext = (void*)deviceCreateInfo.pNext;
@@ -527,6 +541,7 @@ Result DeviceImpl::initVulkanInstanceAndDevice(
             m_features.add("acceleration-structure");
         }
 
+        if (!isRenderDocAttached())
         if (extendedFeatures.rayTracingPipelineFeatures.rayTracingPipeline)
         {
             extendedFeatures.rayTracingPipelineFeatures.pNext = (void*)deviceCreateInfo.pNext;
@@ -535,6 +550,7 @@ Result DeviceImpl::initVulkanInstanceAndDevice(
             m_features.add("ray-tracing-pipeline");
         }
 
+        if (!isRenderDocAttached())
         if (extendedFeatures.rayQueryFeatures.rayQuery)
         {
             extendedFeatures.rayQueryFeatures.pNext = (void*)deviceCreateInfo.pNext;

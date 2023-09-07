@@ -215,7 +215,7 @@ Slang::Result initialize()
 {
     // Create a window for our application to render into.
     //
-    initializeBase("hello-world", 1024, 768);
+    initializeBase("hello-world", 1024, 768, gfx::DeviceType::Vulkan);
 
     // We will create objects needed to configur the "input assembler"
     // (IA) stage of the D3D pipeline.
