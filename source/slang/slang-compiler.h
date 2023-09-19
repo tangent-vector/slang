@@ -1613,7 +1613,11 @@ namespace Slang
 
         bool shouldEmitSPIRVDirectly()
         {
+#if 0
             return isKhronosTarget(this) && ((targetFlags & SLANG_TARGET_FLAG_GENERATE_SPIRV_DIRECTLY) != 0);
+#else
+    return true;
+#endif
         }
 
         bool isWholeProgramRequest()
@@ -1625,7 +1629,10 @@ namespace Slang
 
         const HLSLToVulkanLayoutOptions* getHLSLToVulkanLayoutOptions() const { return hlslToVulkanLayoutOptions; }
 
-        bool shouldDumpIntermediates() { return dumpIntermediates; }
+        bool shouldDumpIntermediates() {
+            return true;
+        }
+        // { return dumpIntermediates; }
 
         void setTrackLiveness(bool enable) { enableLivenessTracking = enable; }
 
