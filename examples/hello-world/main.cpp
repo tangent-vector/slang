@@ -13,6 +13,35 @@
 #include "vulkan-api.h"
 #include "examples/example-base/example-base.h"
 
+
+
+
+//
+
+#include "renderdoc_app.h"
+#include <Windows.h>
+
+static RENDERDOC_API_1_1_2* _initRenderDoc()
+{
+    HMODULE module = GetModuleHandleA("renderdoc.dll");
+    pRENDERDOC_GetAPI RENDERDOC_GetAPI =
+        (pRENDERDOC_GetAPI)GetProcAddress(module, "RENDERDOC_GetAPI");
+
+    RENDERDOC_API_1_1_2* api = nullptr;
+    int ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_1_2, (void**)&api);
+    assert(ret == 1);
+
+    return api;
+}
+
+static RENDERDOC_API_1_1_2* getRenderDoc()
+{
+    RENDERDOC_API_1_1_2* api = _initRenderDoc();
+    return api;
+}
+
+//
+
 using Slang::ComPtr;
 
 struct HelloWorldExample
@@ -68,7 +97,11 @@ int main()
 {
     initDebugCallback();
     HelloWorldExample example;
-    return example.run();
+
+    if (auto rdoc = getRenderDoc()) rdoc->StartFrameCapture(NULL, NULL);
+    int result = example.run();
+    if (auto rdoc = getRenderDoc()) rdoc->EndFrameCapture(NULL, NULL);
+    return result;
 }
 
 /************************************************************/
