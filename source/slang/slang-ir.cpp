@@ -3159,23 +3159,214 @@ namespace Slang
     {
         return emitIntrinsicInst((IRType*)type, kIROp_OutImplicitCast, 1, &value);
     }
-    IRInst* IRBuilder::emitDebugSource(UnownedStringSlice fileName, UnownedStringSlice source)
+    IRDebugSource* IRBuilder::emitDebugSource(UnownedStringSlice fileName, UnownedStringSlice source)
     {
         IRInst* args[] = { getStringValue(fileName), getStringValue(source) };
-        return emitIntrinsicInst(getVoidType(), kIROp_DebugSource, 2, args);
+        return (IRDebugSource*) emitIntrinsicInst(getVoidType(), kIROp_DebugSource, 2, args);
     }
-    IRInst* IRBuilder::emitDebugLine(IRInst* source, IRIntegerValue lineStart, IRIntegerValue lineEnd, IRIntegerValue colStart, IRIntegerValue colEnd)
+
+
+    IRDebugSourceLoc* IRBuilder::emitDebugSourceLoc(IRDebugSource* source, IRIntegerValue line, IRIntegerValue col)
     {
-        IRInst* args[] = 
+        IRInst* args[] =
         {
             source,
-            getIntValue(getIntType(), lineStart),
-            getIntValue(getIntType(), lineEnd),
-            getIntValue(getIntType(), colStart),
-            getIntValue(getIntType(), colEnd)
+            getIntValue(getIntType(), line),
+            getIntValue(getIntType(), col)
         };
-        return emitIntrinsicInst(getVoidType(), kIROp_DebugLine, 5, args);
+        return (IRDebugSourceLoc*)emitIntrinsicInst(getVoidType(), kIROp_DebugSourceLoc, SLANG_COUNT_OF(args), args);
     }
+
+    IRDebugSourceRange* IRBuilder::emitDebugSourceRange(
+        IRDebugSourceLoc* start,
+        IRDebugSourceLoc* end)
+    {
+        IRInst* args[] = { start, end };
+        return (IRDebugSourceRange*)emitIntrinsicInst(getVoidType(), kIROp_DebugSourceRange, SLANG_COUNT_OF(args), args);
+    }
+
+    IRDebugSourceRange* IRBuilder::emitDebugSourceRange(IRDebugSource* source, IRIntegerValue lineStart, IRIntegerValue lineEnd, IRIntegerValue colStart, IRIntegerValue colEnd)
+    {
+        return emitDebugSourceRange(
+            emitDebugSourceLoc(source, lineStart, colStart),
+            emitDebugSourceLoc(source, lineEnd, colEnd));
+    }
+
+    IRDebugLine* IRBuilder::emitDebugLine(IRDebugSourceRange* sourceRange, IRDebugInfo* scope)
+    {
+        IRInst* args[] =
+        {
+            sourceRange,
+            scope,
+        };
+        return (IRDebugLine*)emitIntrinsicInst(getVoidType(), kIROp_DebugLine, SLANG_COUNT_OF(args), args);
+    }
+
+    IRDebugLine* IRBuilder::emitDebugLine(IRDebugSource* source, IRIntegerValue lineStart, IRIntegerValue lineEnd, IRIntegerValue colStart, IRIntegerValue colEnd,
+        IRDebugInfo* scope)
+    {
+        return emitDebugLine(emitDebugSourceRange(source, lineStart, lineEnd, colStart, colEnd), scope);
+    }
+
+    //
+
+    IRFuncTypeDebugInfo* IRBuilder::getFuncTypeDebugInfo(
+        IRTypeDebugInfo* resultType,
+        List<IRTypeDebugInfo*> const& paramTypes)
+    {
+        List<IRInst*> operands;
+        operands.add(resultType);
+        for (auto paramType : paramTypes)
+            operands.add(paramType);
+
+        return (IRFuncTypeDebugInfo*)emitIntrinsicInst(
+            getVoidType(),
+            kIROp_FuncTypeDebugInfo,
+            operands.getCount(), operands.getBuffer());
+    }
+
+    IRFuncDebugInfo* IRBuilder::createFuncDebugInfo(
+        List<IRInst*> const& attrs)
+    {
+        return (IRFuncDebugInfo*)emitIntrinsicInst(
+            getVoidType(),
+            kIROp_FuncDebugInfo,
+            attrs.getCount(),
+            attrs.getBuffer());
+    }
+
+    IRFuncDebugInfo* IRBuilder::createFuncDebugInfo(
+        IRStringLit* name,
+        IRFuncTypeDebugInfo* debugType,
+        IRDebugSourceRange* sourceRange,
+        IRDebugInfo* parentScope)
+    {
+        List<IRInst*> attrs;
+        if (name)
+            attrs.add(getDebugNameAttr(name));
+        if (debugType)
+            attrs.add(getDebugTypeAttr(debugType));
+        if (sourceRange)
+            attrs.add(getDebugSourceRangeAttr(sourceRange));
+        if (parentScope)
+            attrs.add(getDebugParentScopeAttr(parentScope));
+
+        return createFuncDebugInfo(attrs);
+    }
+
+
+    IRStructDebugInfo* IRBuilder::createStructDebugInfo(
+        List<IRInst*> const& attrs)
+    {
+        return (IRStructDebugInfo*)emitIntrinsicInst(
+            getVoidType(),
+            kIROp_StructDebugInfo,
+            attrs.getCount(),
+            attrs.getBuffer());
+    }
+
+    IRStructDebugInfo* IRBuilder::createStructDebugInfo(
+        IRStringLit*        name,
+        IRDebugSourceRange* sourceRange,
+        IRDebugInfo* parentScope)
+    {
+        List<IRInst*> attrs;
+        if (name)
+            attrs.add(getDebugNameAttr(name));
+        if (sourceRange)
+            attrs.add(getDebugSourceRangeAttr(sourceRange));
+        if (parentScope)
+            attrs.add(getDebugParentScopeAttr(parentScope));
+
+        return createStructDebugInfo(attrs);
+    }
+
+    IRModuleDebugInfo* IRBuilder::createModuleDebugInfo(
+        List<IRInst*> const& attrs)
+    {
+        return (IRModuleDebugInfo*)emitIntrinsicInst(
+            getVoidType(),
+            kIROp_ModuleDebugInfo,
+            attrs.getCount(),
+            attrs.getBuffer());
+    }
+
+    IRModuleDebugInfo* IRBuilder::createModuleDebugInfo(
+        IRStringLit* name,
+        IRDebugSourceRange* sourceRange)
+    {
+        List<IRInst*> attrs;
+        if (name)
+            attrs.add(getDebugNameAttr(name));
+        if (sourceRange)
+            attrs.add(getDebugSourceRangeAttr(sourceRange));
+
+        return createModuleDebugInfo(attrs);
+    }
+
+    IRVectorTypeDebugInfo* IRBuilder::createVectorTypeDebugInfo(
+        IRTypeDebugInfo*    elementType,
+        IRInst*             elementCount)
+    {
+        IRInst* operands[] = { elementType, elementCount };
+        return (IRVectorTypeDebugInfo*)emitIntrinsicInst(
+            getVoidType(),
+            kIROp_VectorTypeDebugInfo,
+            SLANG_COUNT_OF(operands), operands);
+    }
+
+    IRDebugNameAttr* IRBuilder::getDebugNameAttr(
+        IRStringLit* name)
+    {
+        IRInst* operands[] = { name };
+        return (IRDebugNameAttr*)emitIntrinsicInst(
+            getVoidType(),
+            kIROp_DebugNameAttr,
+            SLANG_COUNT_OF(operands), operands);
+    }
+
+    IRDebugTypeAttr* IRBuilder::getDebugTypeAttr(
+        IRTypeDebugInfo* debugType)
+    {
+        IRInst* operands[] = { debugType };
+        return (IRDebugTypeAttr*)emitIntrinsicInst(
+            getVoidType(),
+            kIROp_DebugTypeAttr,
+            SLANG_COUNT_OF(operands), operands);
+    }
+
+    IRDebugSourceRangeAttr* IRBuilder::getDebugSourceRangeAttr(
+        IRDebugSourceRange* sourceRange)
+    {
+        IRInst* operands[] = { sourceRange };
+        return (IRDebugSourceRangeAttr*)emitIntrinsicInst(
+            getVoidType(),
+            kIROp_DebugSourceRangeAttr,
+            SLANG_COUNT_OF(operands), operands);
+    }
+
+    IRDebugParentScopeAttr* IRBuilder::getDebugParentScopeAttr(
+        IRDebugInfo* scope)
+    {
+        IRInst* operands[] = { scope };
+        return (IRDebugParentScopeAttr*)emitIntrinsicInst(
+            getVoidType(),
+            kIROp_DebugParentScopeAttr,
+            SLANG_COUNT_OF(operands), operands);
+    }
+
+    void IRBuilder::addDebugDecoration(
+        IRInst* inst,
+        IRDebugInfo* debugInfo)
+    {
+        addDecoration(
+            inst,
+            kIROp_DebugInfoDecoration,
+            debugInfo);
+    }
+
+    //
+
     IRLiveRangeStart* IRBuilder::emitLiveRangeStart(IRInst* referenced)
     {
         // This instruction doesn't produce any result, 

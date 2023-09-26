@@ -24,5 +24,121 @@ SpvInst* emitOpDebugLine(SpvInstParent* parent, IRInst* inst, const T& idResultT
     return emitInst(parent, inst, SpvOpExtInst, idResultType, kResultID, set, SpvWord(103), source, lineStart, lineEnd, colStart, colEnd);
 }
 
+// https://github.com/KhronosGroup/SPIRV-Registry/blob/main/nonsemantic/NonSemantic.Shader.DebugInfo.100.asciidoc#DebugScope
+template<typename T>
+SpvInst* emitOpDebugScope(
+    SpvInstParent* parent, IRInst* inst, const T& idResultType, SpvInst* set,
+    IRInst* scope)
+{
+    static_assert(isSingular<T>);
+    return emitInst(parent, inst, SpvOpExtInst, idResultType, kResultID, set, SpvWord(23),
+        scope);
+}
+
+template<typename T>
+SpvInst* emitOpDebugFunction(
+    SpvInstParent* parent,
+    IRInst* inst,
+    const T& idResultType,
+    SpvInst* set,
+    SpvInst* name,
+    IRInst* debugType,
+    SpvInst* debugSource,
+    SpvInst* line,
+    SpvInst* col,
+    SpvInst* scope,
+    SpvInst* linkageName,
+    SpvInst* flags,
+    IRInst* scopeLine)
+{
+    static_assert(isSingular<T>);
+    return emitInst(parent, inst, SpvOpExtInst, idResultType, kResultID, set, SpvWord(20),
+        name, debugType, debugSource, line, col, scope, linkageName, flags, scopeLine);
+}
+
+template<typename T>
+SpvInst* emitOpDebugFunctionDefinition(
+    SpvInstParent* parent,
+    IRInst* inst,
+    const T& idResultType,
+    SpvInst* set,
+    SpvInst*    debugFunc,
+    SpvInst*    func)
+{
+    static_assert(isSingular<T>);
+    return emitInst(parent, inst, SpvOpExtInst, idResultType, kResultID, set, SpvWord(101), debugFunc, func);
+}
+
+template<typename T>
+SpvInst* emitOpDebugTypeFunction(
+    SpvInstParent*  parent,
+    IRInst*         inst,
+    const T&        idResultType,
+    SpvInst*        set,
+    SpvInst*        flags,
+    IRInst*         debugFuncType)
+{
+    static_assert(isSingular<T>);
+    return emitInst(parent, inst, SpvOpExtInst, idResultType, kResultID, set, SpvWord(8),
+        flags,
+        OperandsOf(debugFuncType));
+}
+
+template<typename T>
+SpvInst* emitOpDebugTypeVector(
+    SpvInstParent* parent,
+    IRInst* inst,
+    const T& idResultType,
+    SpvInst* set,
+    IRInst* elementType,
+    IRInst* elementCount)
+{
+    static_assert(isSingular<T>);
+    return emitInst(parent, inst, SpvOpExtInst, idResultType, kResultID, set, SpvWord(6),
+        elementType, elementCount);
+}
+
+template<typename T>
+SpvInst* emitOpDebugTypeComposite(
+    SpvInstParent* parent,
+    IRInst* inst,
+    const T& idResultType,
+    SpvInst* set,
+    SpvInst* name,
+    SpvInst* tag,
+    SpvInst* source,
+    SpvInst* line,
+    SpvInst* col,
+    SpvInst* parentScope,
+    SpvInst* linkageName,
+    SpvInst* size,
+    SpvInst* flags
+    /* TODO: members... */
+    )
+{
+    static_assert(isSingular<T>);
+    return emitInst(parent, inst, SpvOpExtInst, idResultType, kResultID, set, SpvWord(10),
+        name,
+        tag,
+        source,
+        line,
+        col,
+        parentScope,
+        linkageName,
+        size,
+        flags);
+}
+
+template<typename T>
+SpvInst* emitOpDebugInfoNone(
+    SpvInstParent* parent,
+    IRInst* inst,
+    const T& idResultType,
+    SpvInst* set)
+{
+    static_assert(isSingular<T>);
+    return emitInstMemoized(parent, inst, SpvOpExtInst, idResultType, kResultID, set, SpvWord(0));
+}
+
 
 #endif        // SLANG_IN_SPIRV_EMIT_CONTEXT

@@ -2125,6 +2125,16 @@ struct IRLayoutDecoration : IRDecoration
     IRLayout* getLayout() { return cast<IRLayout>(getOperand(0)); }
 };
 
+    /// Associate debug information with an instruction.
+struct IRDebugInfoDecoration : IRDecoration
+{
+    enum { kOp = kIROp_DebugInfoDecoration };
+    IR_LEAF_ISA(DebugInfoDecoration)
+
+        /// Get the debug info that is being attached to the parent instruction
+    IRInst* getDebugInfo() { return cast<IRInst>(getOperand(0)); }
+};
+
 //
 
 struct IRCall : IRInst
@@ -2956,6 +2966,8 @@ struct IRCastFloatToInt : IRInst
     IR_LEAF_ISA(CastFloatToInt)
 };
 
+    /// An immutable instruction that represents a source unit (file, string, etc.)
+    /// for the purposes of source location and debugging information.
 struct IRDebugSource : IRInst
 {
     IR_LEAF_ISA(DebugSource)
@@ -2963,15 +2975,296 @@ struct IRDebugSource : IRInst
     IRInst* getSource() { return getOperand(1); }
 };
 
+    /// A location within a single source unit.
+struct IRDebugSourceLoc : IRInst
+{
+    IR_LEAF_ISA(DebugSourceLoc)
+
+    IRDebugSource* getSource() { return cast<IRDebugSource>(getOperand(0)); }
+    IRInst* getLine() { return getOperand(1); }
+    IRInst* getCol() { return getOperand(2); }
+};
+
+    /// A range of source locations.
+    ///
+struct IRDebugSourceRange : IRInst
+{
+    IR_LEAF_ISA(DebugSourceRange)
+    IRDebugSourceLoc* getStart() { return cast<IRDebugSourceLoc>(getOperand(0)); }
+    IRDebugSourceLoc* getEnd() { return cast<IRDebugSourceLoc>(getOperand(1)); }
+
+    IRDebugSource* getSource() { return getStart()->getSource(); }
+    IRInst* getLineStart() { return getStart()->getLine(); }
+    IRInst* getLineEnd() { return getEnd()->getLine();}
+    IRInst* getColStart() { return getStart()->getCol(); }
+    IRInst* getColEnd() { return getEnd()->getCol(); }
+};
+
+struct IRDebugInfo;
+struct IRTypeDebugInfo;
+
+    /// An executable instruction that may be placed inside of a block to
+    /// indicate source line information for subsequent instructions in
+    /// the same block.
+    ///
 struct IRDebugLine : IRInst
 {
     IR_LEAF_ISA(DebugLine)
-    IRInst* getSource() { return getOperand(0); }
-    IRInst* getLineStart() { return getOperand(1); }
-    IRInst* getLineEnd() { return getOperand(2); }
-    IRInst* getColStart() { return getOperand(3); }
-    IRInst* getColEnd() { return getOperand(4); }
+
+    IRDebugSourceRange* getSourceRange() { return cast<IRDebugSourceRange>(getOperand(0)); }
+    IRDebugInfo* getScope() { return cast<IRDebugInfo>(getOperand(1)); }
+
+    IRDebugSource* getSource() { return getSourceRange()->getSource(); }
+    IRInst* getLineStart() { return getSourceRange()->getLineStart(); }
+    IRInst* getLineEnd() { return getSourceRange()->getLineEnd(); }
+    IRInst* getColStart() { return getSourceRange()->getColStart(); }
+    IRInst* getColEnd() { return getSourceRange()->getColEnd(); }
 };
+
+struct IRDebugAttr : public IRAttr
+{
+    IR_PARENT_ISA(DebugAttr);
+};
+
+struct IRDebugNameAttr : public IRDebugAttr
+{
+    IR_LEAF_ISA(DebugNameAttr);
+
+    IRStringLit* getNameInst() { return cast<IRStringLit>(getOperand(0)); }
+    UnownedStringSlice getName() { return getNameInst()->getStringSlice(); }
+};
+
+struct IRDebugTypeAttr : public IRDebugAttr
+{
+    IR_LEAF_ISA(DebugTypeAttr);
+
+    IRTypeDebugInfo* getDebugType() { return (IRTypeDebugInfo*) getOperand(0); }
+};
+
+struct IRDebugSourceRangeAttr : public IRDebugAttr
+{
+    IR_LEAF_ISA(DebugSourceRangeAttr);
+
+    IRDebugSourceRange* getSourceRange() { return cast<IRDebugSourceRange>(getOperand(0)); }
+};
+
+struct IRDebugParentScopeAttr : public IRDebugAttr
+{
+    IR_LEAF_ISA(DebugParentScopeAttr);
+
+    IRDebugInfo* getParentScope() { return cast<IRDebugInfo>(getOperand(0)); }
+};
+
+    /// An instruction that represents debugging information for some entity
+    /// in the original source program.
+    ///
+struct IRDebugInfo : IRInst
+{
+    IRStringLit* findNameInst()
+    {
+        if (auto attr = findAttr<IRDebugNameAttr>())
+            return attr->getNameInst();
+        return nullptr;
+    }
+
+    IRTypeDebugInfo* findDebugType()
+    {
+        if (auto attr = findAttr<IRDebugTypeAttr>())
+            return attr->getDebugType();
+        return nullptr;
+    }
+
+    IRDebugSourceRange* findSourceRange()
+    {
+        if (auto attr = findAttr<IRDebugSourceRangeAttr>())
+            return attr->getSourceRange();
+        return nullptr;
+    }
+
+    IRDebugSourceLoc* findSourceLoc()
+    {
+        if(auto sourceRange = findSourceRange())
+            return sourceRange->getStart();
+        return nullptr;
+    }
+
+    IRDebugInfo* findParentScope()
+    {
+        if (auto attr = findAttr<IRDebugParentScopeAttr>())
+            return attr->getParentScope();
+        return nullptr;
+    }
+};
+
+struct IRModuleDebugInfo : IRDebugInfo
+{
+};
+
+struct IRSourceUnitDebugInfo : IRDebugInfo
+{
+};
+
+struct IREntryPointDebugInfo : IRDebugInfo
+{
+    IR_LEAF_ISA(EntryPointDebugInfo);
+};
+
+struct IRFuncDebugInfo : IRDebugInfo
+{
+    IR_LEAF_ISA(FuncDebugInfo);
+
+    UnownedStringSlice getName() { return findNameInst()->getStringSlice(); }
+    IRTypeDebugInfo* getDebugType() { return findDebugType(); }
+
+    IRDebugSource* getSource() { return findSourceRange()->getSource(); }
+    IRInst* getLine() { return findSourceRange()->getLineStart(); }
+    IRInst* getColumn() { return findSourceRange()->getColStart(); }
+
+    IRDebugInfo* getParentScope() { return findParentScope(); }
+
+    // TODO: Make this more correct...
+    IRDebugSourceRange* getBodyRange() { return findSourceRange(); }
+};
+
+
+struct IRGlobalVarDebugInfo : IRDebugInfo
+{
+    IR_LEAF_ISA(GlobalVarDebugInfo);
+};
+
+struct IRTypeDebugInfo : IRDebugInfo
+{};
+
+struct IRBasicTypeDebugInfo : IRTypeDebugInfo
+{};
+
+struct IRPointerTypeDebugInfo : IRTypeDebugInfo
+{};
+
+struct IRArrayTypeDebugInfo : IRTypeDebugInfo
+{
+    IRTypeDebugInfo* getElementType() { return (IRTypeDebugInfo*)getOperand(0); }
+};
+
+struct IRVectorTypeDebugInfo : IRTypeDebugInfo
+{
+    IRTypeDebugInfo* getElementType() { return (IRTypeDebugInfo*)getOperand(0); }
+    IRIntLit* getElementCountInst() { return cast<IRIntLit>(getOperand(1)); }
+};
+
+struct IRMatrixTypeDebugInfo : IRTypeDebugInfo
+{
+    IRTypeDebugInfo* getElementType() { return (IRTypeDebugInfo*)getOperand(0); }
+    IRIntLit* getElementCountInst() { return cast<IRIntLit>(getOperand(1)); }
+
+    IRBoolLit* getIsColumnMajorInst() { return cast<IRBoolLit>(getOperand(2)); }
+};
+
+struct IRTypeAliasDebugInfo : IRTypeDebugInfo
+{
+    IRTypeDebugInfo* getBaseType() { return (IRTypeDebugInfo*)getOperand(0); }
+};
+
+struct IRFuncTypeDebugInfo : IRTypeDebugInfo
+{
+    IRTypeDebugInfo* getResultType() { return (IRTypeDebugInfo*)getOperand(0); }
+    IRTypeDebugInfo* getParamType(Index index) { return (IRTypeDebugInfo*)getOperand(index + 1); }
+};
+
+struct IREnumDebugInfo : IRTypeDebugInfo
+{
+    IRTypeDebugInfo* getTagType() { return (IRTypeDebugInfo*)getOperand(0); }
+};
+
+struct IREnumCaseDebugInfo : IRDebugInfo
+{
+    IRInst* getValue() { return getOperand(0); }
+};
+
+struct IRAggTypeDebugInfo : IRTypeDebugInfo
+{
+    // TODO: need to list members here...
+
+    UnownedStringSlice getName() { return findNameInst()->getStringSlice(); }
+
+    IRDebugSourceLoc* getDebugLoc() { return findSourceLoc(); }
+
+    IRDebugSource* getSource() { return findSourceRange()->getSource(); }
+    IRInst* getLine() { return findSourceRange()->getLineStart(); }
+    IRInst* getColumn() { return findSourceRange()->getColStart(); }
+
+    IRDebugInfo* getParentScope() { return findParentScope(); }
+};
+
+struct IRStructDebugInfo : IRAggTypeDebugInfo
+{
+};
+
+struct IRFieldDebugInfo : IRDebugInfo
+{};
+
+struct IRLocalVarDebugInfo : IRDebugInfo
+{};
+
+struct IRParamDebugInfo : IRDebugInfo
+{};
+
+struct IRInheritanceDebugInfo : IRDebugInfo
+{};
+
+struct IRGenericDebugInfo : IRDebugInfo
+{
+};
+
+struct IRLexicalBlockDebugInfo : IRDebugInfo
+{};
+
+struct IRNamespaceDebugInfo : IRDebugInfo
+{};
+
+struct IRSpecializationDebugInfo : IRDebugInfo
+{
+    IRDebugInfo* getBase() { return cast<IRDebugInfo>(getOperand(0)); }
+    IRInst* getArg(Index index) { return getOperand(1 + index); }
+};
+
+#if 0
+struct IRDebugInst : IRInst
+{};
+
+struct IRDebugScopeInst : IRDebugInst
+{};
+
+struct IRSetDebugScopeInst : IRDebugScopeInst
+{};
+
+struct IRUnsetDebugScopeInst : IRDebugScopeInst
+{};
+
+struct IRDebugRangeInst : IRDebugInst
+{};
+
+struct IRSetDebugRangeInst : IRDebugRangeInst
+{};
+
+struct IRUnsetDebugRangeInst : IRDebugRangeInst
+{};
+
+struct IRSetDebugScope : IRInst
+{};
+
+struct IRFieldRefDebugInfo : IRDebugInfo
+{
+    IRDebugInfo* getBase();
+};
+
+struct IRElementRefDebugInfo : IRDebugInfo
+{
+    IRDebugInfo* getBase();
+    IRDebugInfo* getIndex();
+};
+#endif
+
 
 struct IRSPIRVAsm;
 
@@ -3391,8 +3684,59 @@ public:
         return getAttributedType(baseType, attributes.getCount(), attributes.getBuffer());
     }
 
-    IRInst* emitDebugSource(UnownedStringSlice fileName, UnownedStringSlice source);
-    IRInst* emitDebugLine(IRInst* source, IRIntegerValue lineStart, IRIntegerValue lineEnd, IRIntegerValue colStart, IRIntegerValue colEnd);
+    IRDebugSource* emitDebugSource(UnownedStringSlice fileName, UnownedStringSlice source);
+
+    IRDebugSourceLoc* emitDebugSourceLoc(IRDebugSource* source, IRIntegerValue line, IRIntegerValue col);
+    IRDebugSourceRange* emitDebugSourceRange(
+        IRDebugSourceLoc* start,
+        IRDebugSourceLoc* end);
+    IRDebugSourceRange* emitDebugSourceRange(IRDebugSource* source, IRIntegerValue lineStart, IRIntegerValue lineEnd, IRIntegerValue colStart, IRIntegerValue colEnd);
+    IRDebugLine* emitDebugLine(IRDebugSourceRange* sourceRange, IRDebugInfo* scope);
+    IRDebugLine* emitDebugLine(IRDebugSource* source, IRIntegerValue lineStart, IRIntegerValue lineEnd, IRIntegerValue colStart, IRIntegerValue colEnd,
+        IRDebugInfo* scope);
+
+    IRFuncTypeDebugInfo* getFuncTypeDebugInfo(
+        IRTypeDebugInfo*                resultType,
+        List<IRTypeDebugInfo*> const&   paramTypes);
+
+    void addDebugDecoration(
+        IRInst*         inst,
+        IRDebugInfo*    debugInfo);
+
+    IRFuncDebugInfo* createFuncDebugInfo(
+        List<IRInst*> const& attrs);
+
+    IRFuncDebugInfo* createFuncDebugInfo(
+        IRStringLit*            name,
+        IRFuncTypeDebugInfo*    debugType,
+        IRDebugSourceRange*     sourceRange,
+        IRDebugInfo*            parentScope);
+
+    IRStructDebugInfo* createStructDebugInfo(
+        List<IRInst*> const& attrs);
+    IRStructDebugInfo* createStructDebugInfo(
+        IRStringLit*        name,
+        IRDebugSourceRange* sourceRange,
+        IRDebugInfo*        parentScope);
+
+    IRModuleDebugInfo* createModuleDebugInfo(
+        List<IRInst*> const& attrs);
+    IRModuleDebugInfo* createModuleDebugInfo(
+        IRStringLit* name,
+        IRDebugSourceRange* sourceRange);
+
+    IRVectorTypeDebugInfo* createVectorTypeDebugInfo(
+        IRTypeDebugInfo*    elementType,
+        IRInst*             elementCount);
+
+    IRDebugNameAttr* getDebugNameAttr(
+        IRStringLit* name);
+    IRDebugTypeAttr* getDebugTypeAttr(
+        IRTypeDebugInfo* debugType);
+    IRDebugSourceRangeAttr* getDebugSourceRangeAttr(
+        IRDebugSourceRange* sourceRange);
+    IRDebugParentScopeAttr* getDebugParentScopeAttr(
+        IRDebugInfo* scope);
 
         /// Emit an LiveRangeStart instruction indicating the referenced item is live following this instruction
     IRLiveRangeStart* emitLiveRangeStart(IRInst* referenced);

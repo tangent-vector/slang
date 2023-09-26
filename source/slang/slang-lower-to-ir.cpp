@@ -496,7 +496,12 @@ struct SharedIRGenContext
     Dictionary<Stmt*, IRBlock*> breakLabels;
     Dictionary<Stmt*, IRBlock*> continueLabels;
 
-    Dictionary<SourceFile*, IRInst*> mapSourceFileToDebugSourceInst;
+    Dictionary<SourceFile*, IRDebugSource*> mapSourceFileToDebugSourceInst;
+
+        /// Map from an AST-level syntax node to IR-level debug
+        /// information associated with that node.
+        ///
+    Dictionary<SyntaxNode*, IRDebugInfo*> mapDeclToDebugInfo;
 
     void setGlobalValue(Decl* decl, LoweredValInfo value)
     {
@@ -569,6 +574,8 @@ struct IRGenContext
 
     bool includeDebugInfo = false;
 
+    IRDebugInfo* currentDebugScope = nullptr;
+
     explicit IRGenContext(SharedIRGenContext* inShared, ASTBuilder* inAstBuilder)
         : shared(inShared)
         , astBuilder(inAstBuilder)
@@ -616,6 +623,14 @@ struct IRGenContext
             envToFindIn = envToFindIn->outer;
         }
         return nullptr;
+    }
+
+    IRGenContext withDebugScope(IRDebugInfo* debugScope)
+    {
+        IRGenContext result(*this);
+        if (debugScope)
+            result.currentDebugScope = debugScope;
+        return result;
     }
 };
 
@@ -3083,6 +3098,300 @@ void _lowerFuncDeclBaseTypeInfo(
         outInfo.type =
             builder->getFuncType(paramTypes.getCount(), paramTypes.getBuffer(), irResultType);
     }
+}
+
+// TODO: Hi Future Tess!!!
+//
+// Okay, so at this point we probably need to implement the function right below here,
+// and put some kind of caching in the `IRGenContext` so that we can properly re-use
+// the debug info for declarations.
+//
+// There's the somewhat messy details around which cases should be encoded with the
+// child debug info having a pointer to the parent (and not the other way around)
+// vs. the ones where the parent should explicitly enumerate the children (and thus
+// the children shouldn't refer to the parent).
+//
+// In general, declarations that could get DCE'd out of existence should point to
+// their parent scope (and not the other way around), while child declarations that
+// are needed in order to understand the structure of their parent should have
+// links from parent->child.
+//
+// Nesting makes the most sense for the per-instance fields of a structure type
+// (as well as the inheritance relationships that would affect its layout), as
+// well as for the cases/tags of an `enum` (so that a debugger can visualize them).
+//
+// Nesting does *not* make sense for struct/class/union/interface types, enums,
+// namespaces, functions/callables, or static/global variables.
+
+static IRDebugInfo* _getDeclDebugInfo(
+    IRGenContext*   context,
+    Decl*           decl);
+
+static IRDebugInfo* _getDeclRefDebugInfo(
+    IRGenContext*   context,
+    DeclRef<Decl>   declRef);
+
+static IRTypeDebugInfo* _getTypeDebugInfo(
+    IRGenContext*   context,
+    Type*           type);
+
+static IRDebugInfo* _getStmtDebugScope(
+    IRGenContext*   context,
+    Stmt*           stmt);
+
+static IRStringLit* _findDebugName(
+    IRGenContext* context,
+    Decl* decl)
+{
+    if (auto name = decl->getName())
+    {
+        return context->irBuilder->getStringValue(
+            name->text.getUnownedSlice());
+    }
+
+    return nullptr;
+}
+
+static IRDebugSourceRange* _findDebugSourceRange(
+    IRGenContext* context,
+    SourceRange     range)
+{
+    if (!context->includeDebugInfo)
+        return nullptr;
+
+    auto beginLoc = range.begin;
+    auto endLoc = range.end;
+
+    auto sourceManager = context->getLinkage()->getSourceManager();
+
+    auto beginView = sourceManager->findSourceView(beginLoc);
+    if (!beginView)
+        return nullptr;
+
+    auto endView = sourceManager->findSourceView(endLoc);
+    if (!endView)
+        return nullptr;
+
+    auto beginSourceFile = beginView->getSourceFile();
+    auto endSourceFile = endView->getSourceFile();
+    if (beginSourceFile != endSourceFile)
+        return nullptr;
+
+    IRDebugSource* irDebugSource = nullptr;
+    if (!context->shared->mapSourceFileToDebugSourceInst.tryGetValue(beginSourceFile, irDebugSource))
+        return nullptr;
+
+    auto humaneBeginLoc = sourceManager->getHumaneLoc(beginLoc, SourceLocType::Emit);
+    auto humaneEndLoc = sourceManager->getHumaneLoc(endLoc, SourceLocType::Emit);
+
+    auto irDebugRange = context->irBuilder->emitDebugSourceRange(
+        irDebugSource,
+        humaneBeginLoc.line,
+        humaneEndLoc.line,
+        humaneBeginLoc.column,
+        humaneEndLoc.column);
+    return irDebugRange;
+}
+
+static SourceRange _getSourceRange(
+    SyntaxNodeBase* node)
+{
+    // TODO: We should either extend `SyntaxNodeBase` to include
+    // a full `SourceRange` (perhaps in addition to the canonical
+    // `SourceLoc`) *or* we should add support here to detect an
+    // ending location for the specific kinds of syntax nodes that
+    // have one.
+
+    auto loc = node->loc;
+    return SourceRange(loc, loc);
+}
+
+static IRDebugSourceRange* _findDebugSourceRange(
+    IRGenContext* context,
+    SyntaxNodeBase* node)
+{
+    if (!context->includeDebugInfo)
+        return nullptr;
+
+    return _findDebugSourceRange(
+        context,
+        _getSourceRange(node));
+}
+
+struct GetValDebugInfoVisitor
+    : ValVisitor<GetValDebugInfoVisitor, IRDebugInfo*>
+{
+public:
+    IRGenContext* context = nullptr;
+
+    GetValDebugInfoVisitor(IRGenContext* context)
+        : context(context)
+    {}
+
+    IRBuilder* getBuilder()
+    {
+        return context->irBuilder;
+    }
+
+    IRDebugInfo* visitVal(
+        Val*)
+    {
+        throw 99;
+    }
+
+    IRDebugInfo* visitDeclRefType(
+        DeclRefType* type)
+    {
+        // TODO: need to get debug into for the underlying
+        // `DeclRef` / `Decl`, and return *that* (which
+        // will be compatible with being used as a type,
+        // even if it *isn't* a type.
+        //
+
+        return _getDeclRefDebugInfo(context, type->getDeclRef());
+    }
+
+    IRDebugInfo* visitDirectDeclRef(
+        DirectDeclRef* declRef)
+    {
+        return _getDeclDebugInfo(context, declRef->getDecl());
+    }
+
+    IRDebugInfo* visitVectorExpressionType(
+        VectorExpressionType* type)
+    {
+        return getBuilder()->createVectorTypeDebugInfo(
+            _getTypeDebugInfo(context, type->getElementType()),
+            lowerSimpleVal(context, type->getElementCount()));
+    }
+};
+
+struct CreateDeclDebugInfoVisitor : DeclVisitor<CreateDeclDebugInfoVisitor, IRDebugInfo*>
+{
+    IRGenContext* context = nullptr;
+
+    CreateDeclDebugInfoVisitor(IRGenContext* context)
+        : context(context)
+    {}
+
+    IRBuilder* getBuilder()
+    {
+        return context->irBuilder;
+    }
+
+    IRDebugInfo* visitDeclBase(DeclBase* decl)
+    {
+        throw 99;
+    }
+
+    IRDebugInfo* visitStructDecl(StructDecl* decl)
+    {
+        //
+
+        // TODO: properties:
+        // - name
+        // - size in bytes (?)
+        //
+        auto debugInfo = getBuilder()->createStructDebugInfo(
+            _findDebugName(context, decl),
+            _findDebugSourceRange(context, decl),
+            _getDeclDebugInfo(context, decl->parentDecl));
+
+        // TODO: register...
+
+        // TODO: attach inheritance + field data...
+
+        //
+        return debugInfo;
+    }
+
+    IRDebugInfo* visitModuleDecl(ModuleDecl* decl)
+    {
+        auto debugInfo = getBuilder()->createModuleDebugInfo(
+            _findDebugName(context, decl),
+            _findDebugSourceRange(context, decl));
+        return debugInfo;
+    }
+};
+
+static IRDebugInfo* _createDeclDebugInfo(
+    IRGenContext* context,
+    Decl* decl)
+{
+    CreateDeclDebugInfoVisitor visitor(context);
+    return visitor.dispatch(decl);
+}
+
+static IRDebugInfo* _getDeclDebugInfo(
+    IRGenContext*   context,
+    Decl*           decl)
+{
+    if (auto found = context->shared->mapDeclToDebugInfo.tryGetValue(decl))
+        return *found;
+
+    IRDebugInfo* debugInfo = _createDeclDebugInfo(
+        context,
+        decl);
+    context->shared->mapDeclToDebugInfo.set(decl, debugInfo);
+    return debugInfo;
+}
+
+static IRDebugInfo* _getDeclRefDebugInfo(
+    IRGenContext*   context,
+    DeclRef<Decl>   declRef)
+{
+    GetValDebugInfoVisitor visitor(context);
+    return visitor.dispatch(declRef);
+}
+
+static IRTypeDebugInfo* _getTypeDebugInfo(
+    IRGenContext*   context,
+    Type*           type)
+{
+    GetValDebugInfoVisitor visitor(context);
+    return (IRTypeDebugInfo*) visitor.dispatch(type);
+}
+
+static IRDebugInfo* _getStmtDebugScope(
+    IRGenContext* context,
+    Stmt* stmt)
+{
+    throw 99;
+}
+
+static IRFuncTypeDebugInfo* _createFuncTypeDebugInfo(
+    IRGenContext*               context,
+    DeclRef<FunctionDeclBase>   declRef,
+    FuncDeclBaseTypeInfo const& info)
+{
+    auto irDebugResultType = _getTypeDebugInfo(
+        context, getResultType(context->astBuilder, declRef));
+
+    List<IRTypeDebugInfo*> irDebugParamTypes;
+    for (auto param : info.parameterLists.params)
+    {
+        auto irDebugParamType = _getTypeDebugInfo(
+            context, param.type);
+
+        // TODO: We may need to associate additional information
+        // with the parameter type, based on its direction.
+
+        irDebugParamTypes.add(irDebugParamType);
+    }
+
+    // The `info` collected above may include a parameter entry
+    // for the function's return value, in keeping with the
+    // way we lower AST function signatures to Slang IR. However,
+    // for the purposes of debugging we do *not* want to include
+    // such a parameter.
+    //
+    if (info.returnViaLastRefParam)
+    {
+        irDebugParamTypes.removeLast();
+    }
+
+    return context->irBuilder->getFuncTypeDebugInfo(
+        irDebugResultType, irDebugParamTypes);
 }
 
 static LoweredValInfo _emitCallToAccessor(
@@ -6157,17 +6466,20 @@ void maybeEmitDebugLine(IRGenContext* context, Stmt* stmt)
 {
     if (!context->includeDebugInfo)
         return;
+    if (!context->currentDebugScope)
+        return;
     if (as<EmptyStmt>(stmt))
         return;
     auto sourceView = context->getLinkage()->getSourceManager()->findSourceView(stmt->loc);
     if (!sourceView)
         return;
     auto source = sourceView->getSourceFile();
-    IRInst* debugSourceInst = nullptr;
+    IRDebugSource* debugSourceInst = nullptr;
     if (context->shared->mapSourceFileToDebugSourceInst.tryGetValue(source, debugSourceInst))
     {
         auto humaneLoc = context->getLinkage()->getSourceManager()->getHumaneLoc(stmt->loc, SourceLocType::Emit);
-        context->irBuilder->emitDebugLine(debugSourceInst, humaneLoc.line, humaneLoc.line, humaneLoc.column, humaneLoc.column + 1);
+        context->irBuilder->emitDebugLine(debugSourceInst, humaneLoc.line, humaneLoc.line, humaneLoc.column, humaneLoc.column + 1,
+            context->currentDebugScope);
     }
 }
 
@@ -6193,6 +6505,13 @@ void lowerStmt(
         context->getSink()->noteInternalErrorLoc(stmt->loc);
         throw;
     }
+}
+
+void lowerStmt(
+    IRGenContext& context,
+    Stmt* stmt)
+{
+    lowerStmt(&context, stmt);
 }
 
 /// Create and return a mutable temporary initialized with `val`
@@ -6789,6 +7108,8 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
     IRGenContext*   context;
 
     DiagnosticSink* getSink() { return context->getSink(); }
+
+    bool shouldIncludeDebugInfo() { return context->includeDebugInfo; }
 
     IRBuilder* getBuilder()
     {
@@ -8001,6 +8322,11 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
             return LoweredValInfo::simple(subBuilder->getVoidType());
         }
 
+        if(shouldIncludeDebugInfo())
+        {
+            // Emit an IR representation of the type, so that it can show up nicely in tools...
+        }
+
         const auto finishedVal = _getFinishOuterGenericsReturnValue(irAggType, outerGeneric);
 
         // We add the decl now such that if there are Ptr or other references 
@@ -8898,6 +9224,25 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
         addNameHint(subContext, irFunc, decl);
         addLinkageDecoration(subContext, irFunc, decl);
 
+        IRFuncDebugInfo* irFuncDebugInfo = nullptr;
+        if (shouldIncludeDebugInfo())
+        {
+            auto irFuncTypeDebugInfo = _createFuncTypeDebugInfo(
+                subContext,
+                decl,
+                info);
+
+            irFuncDebugInfo = subBuilder->createFuncDebugInfo(
+                _findDebugName(context, decl),
+                irFuncTypeDebugInfo,
+                _findDebugSourceRange(context, decl),
+                _getDeclDebugInfo(context, decl->parentDecl));
+
+            subBuilder->addDebugDecoration(
+                irFunc,
+                irFuncDebugInfo);
+        }
+
         // Always force inline diff setter accessor to prevent downstream compiler from complaining
         // fields are not fully initialized for the first `inout` parameter.
         if (as<SetterDecl>(decl))
@@ -9116,7 +9461,9 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
             // We lower whatever statement was stored on the declaration
             // as the body of the new IR function.
             //
-            lowerStmt(subContext, decl->body);
+            lowerStmt(
+                subContext->withDebugScope(irFuncDebugInfo),
+                decl->body);
 
             // We need to carefully add a terminator instruction to the end
             // of the body, in case the user didn't do so.

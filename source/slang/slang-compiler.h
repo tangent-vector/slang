@@ -1966,7 +1966,7 @@ namespace Slang
         MatrixLayoutMode defaultMatrixLayoutMode = kMatrixLayoutMode_ColumnMajor;
         MatrixLayoutMode getDefaultMatrixLayoutMode() { return defaultMatrixLayoutMode; }
 
-        DebugInfoLevel debugInfoLevel = DebugInfoLevel::None;
+        DebugInfoLevel debugInfoLevel = DebugInfoLevel::Standard;
         DebugInfoFormat debugInfoFormat = DebugInfoFormat::Default;
 
         OptimizationLevel optimizationLevel = OptimizationLevel::Default;

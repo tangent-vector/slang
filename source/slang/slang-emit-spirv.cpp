@@ -1022,26 +1022,58 @@ struct SPIRVEmitContext
             parent,
             irInst,
             opcode,
+            [&]() {},
             resultId,
             [&](){(emitOperand(ops), ...);}
         );
     }
 
-    template<typename OperandEmitFunc>
+    template<typename ResultTypeOperand, typename... Operands>
+    SpvInst* emitInstMemoized(
+        SpvInstParent* parent,
+        IRInst* irInst,
+        SpvOp opcode,
+        const ResultTypeOperand& resultType,
+        // We take the resultId here explicitly here to make sure we don't try
+        // and memoize its value.
+        ResultIDToken resultId,
+        const Operands& ...ops
+    )
+    {
+        return emitInstMemoizedCustomOperandFunc(
+            parent,
+            irInst,
+            opcode,
+            [&]() { emitOperand(resultType); },
+            resultId,
+            [&]() {(emitOperand(ops), ...); }
+        );
+    }
+    template<typename PrefixOperandEmitFunc, typename OperandEmitFunc>
     SpvInst* emitInstMemoizedCustomOperandFunc(
         SpvInstParent* parent,
         IRInst* irInst,
         SpvOp opcode,
+        const PrefixOperandEmitFunc& prefixOperandFunc,
         // We take the resultId here explicitly here to make sure we don't try
         // and memoize its value.
         ResultIDToken resultId,
-        const OperandEmitFunc& f
+        const OperandEmitFunc& operandFunc
     )
     {
+        List<SpvWord> prefixOperands;
+        {
+            auto scopePeek = OperandMemoizeScope(this);
+            prefixOperandFunc();
+            // Steal our operands back, so we don't have to calculate them
+            // again
+            prefixOperands = std::move(m_operandStack);
+        }
+
         List<SpvWord> ourOperands;
         {
             auto scopePeek = OperandMemoizeScope(this);
-            f();
+            operandFunc();
             // Steal our operands back, so we don't have to calculate them
             // again
             ourOperands = std::move(m_operandStack);
@@ -1050,6 +1082,7 @@ struct SPIRVEmitContext
         // Hash the whole global stack and opcode
         SpvTypeInstKey key;
         key.words.add(opcode);
+        key.words.addRange(prefixOperands);
         key.words.addRange(ourOperands);
 
         // If we have seen this before, return the memoized instruction
@@ -1062,6 +1095,7 @@ struct SPIRVEmitContext
         m_spvTypeInsts[key] = spvInst;
 
         // Emit our operands, this time with the resultId too
+        m_operandStack.addRange(prefixOperands);
         emitOperand(resultId);
         m_operandStack.addRange(ourOperands);
 
@@ -1229,6 +1263,9 @@ struct SPIRVEmitContext
         ///
     SpvInst* emitGlobalInst(IRInst* inst)
     {
+        IRBuilder builder(m_irModule);
+        builder.setInsertInto(m_irModule->getModuleInst());
+
         switch( inst->getOp() & kIROpMask_OpMask )
         {
         // [3.32.6: Type-Declaration Instructions]
@@ -1478,7 +1515,6 @@ struct SPIRVEmitContext
                 auto moduleInst = inst->getModule()->getModuleInst();
                 if (!m_mapIRInstToSpvDebugInst.containsKey(moduleInst))
                 {
-                    IRBuilder builder(inst);
                     builder.setInsertBefore(inst);
                     auto translationUnit = emitOpDebugCompilationUnit(
                         getSection(SpvLogicalSectionID::ConstantsAndTypes),
@@ -1488,7 +1524,7 @@ struct SPIRVEmitContext
                         emitIntConstant(100, builder.getUIntType()),  // ExtDebugInfo version.
                         emitIntConstant(5, builder.getUIntType()),    // DWARF version.
                         result,
-                        emitIntConstant(6, builder.getUIntType()));   // Language, use HLSL's ID for now.
+                        emitIntConstant(5, builder.getUIntType()));   // Language, use HLSL's ID for now.
                     registerDebugInst(moduleInst, translationUnit);
                 }
                 return result;
@@ -1501,6 +1537,86 @@ struct SPIRVEmitContext
         case kIROp_HLSLLineStreamType:
         case kIROp_HLSLPointStreamType:
             return nullptr;
+
+        case kIROp_FuncDebugInfo:
+            // While we want to translate Slang IR debug information for
+            // functions into SPIR-V, there is an important difference in
+            // the encodings.
+            //
+            // The Slang IR allows multiple IR functions to reference the
+            // same `FuncDebugInfo`, in cases where we might have specialized
+            // or otherwise cloned a single AST-level function to yield
+            // multiple IR-level definitions.
+            //
+            // The SPIR-V `DebugInfo.NonSemantic.100` extension has an
+            // IR function definition (`OpFunc`) refernece its `DebugFunction`
+            // info via a `DebugFunctionDefinition` in its entry block,
+            // and requires that a given `DebugFunction` only be referenced
+            // by *at most one* `DebugFunctionDefinition`. That restriction
+            // means that we need to emit a distinct SPIR-V debug representation
+            // for each `IRFunc` definition.
+            //
+            return nullptr;
+
+        case kIROp_FuncTypeDebugInfo:
+            return emitOpDebugTypeFunction(
+                getSection(SpvLogicalSectionID::ConstantsAndTypes),
+                inst,
+                builder.getVoidType(),
+                getNonSemanticDebugInfoExtInst(),
+                emitIntConstant(0, builder.getIntType()),
+                inst);
+
+        case kIROp_VectorTypeDebugInfo:
+            {
+                auto type = cast<IRVectorTypeDebugInfo>(inst);
+                return emitOpDebugTypeVector(
+                    getSection(SpvLogicalSectionID::ConstantsAndTypes),
+                    inst,
+                    builder.getVoidType(),
+                    getNonSemanticDebugInfoExtInst(),
+                    type->getElementType(),
+                    type->getElementCountInst());
+            }
+            break;
+
+        case kIROp_StructDebugInfo:
+            {
+                auto irDebugInfo = cast<IRStructDebugInfo>(inst);
+                auto irSourceLoc = irDebugInfo->getDebugLoc();
+                return emitOpDebugTypeComposite(
+                    getSection(SpvLogicalSectionID::ConstantsAndTypes),
+                    inst,
+                    builder.getVoidType(),
+                    getNonSemanticDebugInfoExtInst(),
+                    getDebugString(irDebugInfo->findNameInst()),
+                    emitIntConstant(/* Tag::Structure == */ 1, builder.getIntType()),
+                    getDebugSource(irSourceLoc),
+                    getDebugLine(irSourceLoc),
+                    getDebugCol(irSourceLoc),
+                    getDebugScope(irDebugInfo->getParentScope()),
+                    getDebugLinkageName(irDebugInfo),
+                    emitIntConstant(1, builder.getIntType()),
+                    emitIntConstant(0, builder.getIntType()));
+
+            }
+            break;
+
+        case kIROp_ModuleDebugInfo:
+            {
+//                auto irDebugInfo = cast<IRModuleDebugInfo>(inst);
+                return emitOpDebugCompilationUnit(
+                    getSection(SpvLogicalSectionID::ConstantsAndTypes),
+                    inst,
+                    builder.getVoidType(),
+                    getNonSemanticDebugInfoExtInst(),
+                    emitIntConstant(100, builder.getUIntType()),  // ExtDebugInfo version.
+                    emitIntConstant(5, builder.getUIntType()),    // DWARF version.
+                    getDebugInfoNone(),                             // Source file
+                    emitIntConstant(5, builder.getUIntType()));   // Language, use HLSL's ID for now.
+            }
+            break;
+
         default:
             {
                 if (as<IRSPIRVAsmOperand>(inst))
@@ -1989,6 +2105,76 @@ struct SPIRVEmitContext
         UNREACHABLE_RETURN(nullptr);
     }
 
+    static IRInst* getDebugInfo(IRInst* inst)
+    {
+        auto debugInfoDecoration = inst->findDecoration<IRDebugInfoDecoration>();
+        if (!debugInfoDecoration)
+            return nullptr;
+        return debugInfoDecoration->getDebugInfo();
+    }
+
+    SpvInst* getDebugLinkageName(IRInst* irInst)
+    {
+        auto irLinkageDecoration = irInst->findDecoration<IRLinkageDecoration>();
+        if (!irLinkageDecoration)
+            return getDebugInfoNone();
+        return getDebugString(irLinkageDecoration->getMangledNameOperand());
+    }
+
+    SpvInst* getDebugInfoNone()
+    {
+        IRBuilder builder(m_irModule);
+        builder.setInsertInto(m_irModule);
+
+        return emitOpDebugInfoNone(
+            getSection(SpvLogicalSectionID::ConstantsAndTypes),
+            nullptr,
+            builder.getVoidType(),
+            getNonSemanticDebugInfoExtInst());
+    }
+
+    SpvInst* getDebugString(IRStringLit* irString)
+    {
+        if (!irString)
+            return getDebugInfoNone();
+        return ensureInst(irString);
+    }
+
+    SpvInst* getDebugName(IRDebugInfo* irDebugInfo)
+    {
+        if (!irDebugInfo)
+            return getDebugInfoNone();
+        return getDebugString(irDebugInfo->findNameInst());
+    }
+
+    SpvInst* getDebugSource(IRDebugSourceLoc* irSourceLoc)
+    {
+        if (!irSourceLoc)
+            return getDebugInfoNone();
+        return ensureInst(irSourceLoc->getSource());
+    }
+
+    SpvInst* getDebugLine(IRDebugSourceLoc* irSourceLoc)
+    {
+        if (!irSourceLoc)
+            return getDebugInfoNone();
+        return ensureInst(irSourceLoc->getLine());
+    }
+
+    SpvInst* getDebugCol(IRDebugSourceLoc* irSourceLoc)
+    {
+        if (!irSourceLoc)
+            return getDebugInfoNone();
+        return ensureInst(irSourceLoc->getCol());
+    }
+
+    SpvInst* getDebugScope(IRDebugInfo* irDebugInfo)
+    {
+        if (!irDebugInfo)
+            return getDebugInfoNone();
+        return ensureInst(irDebugInfo);
+    }
+
         /// Emit a SPIR-V function definition for the Slang IR function `irFunc`.
     SpvInst* emitFuncDefinition(IRFunc* irFunc)
     {
@@ -2035,6 +2221,34 @@ struct SPIRVEmitContext
             irFunc->getDataType()
         );
 
+        auto irDebugFunc = as<IRFuncDebugInfo>(getDebugInfo(irFunc));
+        SpvInst* spvDebugFunc = nullptr;
+        if (irDebugFunc)
+        {
+            IRBuilder builder(m_irModule);
+            builder.setInsertInto(m_irModule);
+
+            auto irDebugLoc = irDebugFunc->findSourceLoc();
+            spvDebugFunc = emitOpDebugFunction(
+                getSection(SpvLogicalSectionID::ConstantsAndTypes),
+                irDebugFunc,
+                irDebugFunc->getFullType(),
+                getNonSemanticDebugInfoExtInst(),
+                getDebugName(irDebugFunc),
+                irDebugFunc->getDebugType(),
+                getDebugSource(irDebugLoc),
+                getDebugLine(irDebugLoc),
+                getDebugCol(irDebugLoc),
+                getDebugScope(irDebugFunc->getParentScope()),
+                getDebugLinkageName(irFunc),
+                emitIntConstant(0, builder.getIntType()),
+                irDebugFunc->getBodyRange()->getLineStart());
+
+            m_mapIRInstToSpvDebugInst.add(
+                irFunc,
+                spvDebugFunc);
+        }
+
         // > OpFunctionParameter
         //
         // Unlike Slang, where parameters always belong to blocks,
@@ -2067,6 +2281,23 @@ struct SPIRVEmitContext
             auto spvBlock = emitOpLabel(spvFunc, irBlock);
             if (irBlock == irFunc->getFirstBlock())
             {
+                // OpDebugFunctionDefinition
+                //
+                // The debug instruction to represent the function definition
+                // must be placed inside the first block.
+                //
+                if(irDebugFunc)
+                {
+                    emitOpDebugFunctionDefinition(
+                        spvBlock,
+                        nullptr,
+                        irDebugFunc->getFullType(),
+                        getNonSemanticDebugInfoExtInst(),
+                        spvDebugFunc,
+                        spvFunc);
+                }
+
+
                 // OpVariable
                 // All variables used in the function must be declared before anything else.
                 for (auto block : irFunc->getBlocks())
@@ -4386,6 +4617,22 @@ struct SPIRVEmitContext
         auto scope = findDebugScope(debugLine);
         if (!scope)
             return nullptr;
+
+        auto debugSource = debugLine->getSource();
+        auto sourceFileName = debugSource->getFileName();
+
+        emitInst(
+            parent,
+            nullptr,
+            SpvOp::SpvOpLine,
+            sourceFileName,
+            debugLine->getLineStart(),
+            debugLine->getColStart());
+
+        emitOpDebugScope(
+            parent, nullptr, debugLine->getFullType(), getNonSemanticDebugInfoExtInst(),
+            debugLine->getScope());
+
         return emitOpDebugLine(parent, debugLine, debugLine->getFullType(), getNonSemanticDebugInfoExtInst(),
             debugLine->getSource(),
             debugLine->getLineStart(),
@@ -4687,6 +4934,7 @@ struct SPIRVEmitContext
                         opParent,
                         assignedInst,
                         opcode,
+                        [&]() {},
                         kResultID,
                         [&](){
                             Index i = 0;

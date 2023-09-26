@@ -24,6 +24,7 @@
 static RENDERDOC_API_1_1_2* _initRenderDoc()
 {
     HMODULE module = GetModuleHandleA("renderdoc.dll");
+    if(!module) return nullptr;
     pRENDERDOC_GetAPI RENDERDOC_GetAPI =
         (pRENDERDOC_GetAPI)GetProcAddress(module, "RENDERDOC_GetAPI");
 

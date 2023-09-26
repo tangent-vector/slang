@@ -938,8 +938,10 @@ INST(HighLevelDeclDecoration,               highLevelDecl,          1, 0)
         /// Recognized by SPIRV-emit pass so we can emit a SPIRV `Block` decoration.
     INST(SPIRVBlockDecoration, spvBlock, 0, 0)
 
+        /// Associates debugging information with an instruction
+    INST(DebugInfoDecoration, debugInfo, 1, 0)
 
-    INST_RANGE(Decoration, HighLevelDeclDecoration, SPIRVBlockDecoration)
+    INST_RANGE(Decoration, HighLevelDeclDecoration, DebugInfoDecoration)
 
     //
 
@@ -1000,15 +1002,15 @@ INST(IsUnsignedInt, IsUnsignedInt, 1, 0)
 INST(IsSignedInt, IsSignedInt, 1, 0)
 INST(IsVector, IsVector, 1, 0)
 
-INST(ForwardDifferentiate,                   ForwardDifferentiate,            1, 0)
+INST(ForwardDifferentiate, ForwardDifferentiate, 1, 0)
 
 // Produces the primal computation of backward derivatives, will return an intermediate context for
 // backward derivative func.
-INST(BackwardDifferentiatePrimal,            BackwardDifferentiatePrimal,     1, 0)
+INST(BackwardDifferentiatePrimal, BackwardDifferentiatePrimal, 1, 0)
 
 // Produces the actual backward derivative propagate function, using the intermediate context returned by the
 // primal func produced from `BackwardDifferentiatePrimal`.
-INST(BackwardDifferentiatePropagate,         BackwardDifferentiatePropagate,  1, 0)
+INST(BackwardDifferentiatePropagate, BackwardDifferentiatePropagate, 1, 0)
 
 // Represents the conceptual backward derivative function. Only produced by lower-to-ir and will be
 // replaced with `BackwardDifferentiatePrimal` and `BackwardDifferentiatePropagate`.
@@ -1020,52 +1022,59 @@ INST(DispatchKernel, DispatchKernel, 3, 0)
 INST(CudaKernelLaunch, CudaKernelLaunch, 6, 0)
 
 // Converts other resources (such as ByteAddressBuffer) to the equivalent StructuredBuffer
-INST(GetEquivalentStructuredBuffer,     getEquivalentStructuredBuffer, 1, 0)
+INST(GetEquivalentStructuredBuffer, getEquivalentStructuredBuffer, 1, 0)
 
 /* Layout */
-    INST(VarLayout, varLayout, 1, HOISTABLE)
+INST(VarLayout, varLayout, 1, HOISTABLE)
 
-    /* TypeLayout */
-        INST(TypeLayoutBase, typeLayout, 0, HOISTABLE)
-        INST(ParameterGroupTypeLayout, parameterGroupTypeLayout, 2, HOISTABLE)
-        INST(ArrayTypeLayout, arrayTypeLayout, 1, HOISTABLE)
-        INST(StreamOutputTypeLayout, streamOutputTypeLayout, 1, HOISTABLE)
-        INST(MatrixTypeLayout, matrixTypeLayout, 1, HOISTABLE)
-        INST(ExistentialTypeLayout, existentialTypeLayout, 0, HOISTABLE)
-        INST(StructTypeLayout, structTypeLayout, 0, HOISTABLE)
-        INST(TupleTypeLayout, tupleTypeLayout, 0, HOISTABLE)
-        INST(StructuredBufferTypeLayout, structuredBufferTypeLayout, 1, HOISTABLE)
-        // TODO(JS): Ideally we'd have the layout to the pointed to value type (ie 1 instead of 0 here). But to avoid infinite recursion we don't.
-        INST(PointerTypeLayout, ptrTypeLayout, 0, HOISTABLE)
-    INST_RANGE(TypeLayout, TypeLayoutBase, PointerTypeLayout)
+/* TypeLayout */
+INST(TypeLayoutBase, typeLayout, 0, HOISTABLE)
+INST(ParameterGroupTypeLayout, parameterGroupTypeLayout, 2, HOISTABLE)
+INST(ArrayTypeLayout, arrayTypeLayout, 1, HOISTABLE)
+INST(StreamOutputTypeLayout, streamOutputTypeLayout, 1, HOISTABLE)
+INST(MatrixTypeLayout, matrixTypeLayout, 1, HOISTABLE)
+INST(ExistentialTypeLayout, existentialTypeLayout, 0, HOISTABLE)
+INST(StructTypeLayout, structTypeLayout, 0, HOISTABLE)
+INST(TupleTypeLayout, tupleTypeLayout, 0, HOISTABLE)
+INST(StructuredBufferTypeLayout, structuredBufferTypeLayout, 1, HOISTABLE)
+// TODO(JS): Ideally we'd have the layout to the pointed to value type (ie 1 instead of 0 here). But to avoid infinite recursion we don't.
+INST(PointerTypeLayout, ptrTypeLayout, 0, HOISTABLE)
+INST_RANGE(TypeLayout, TypeLayoutBase, PointerTypeLayout)
 
-    INST(EntryPointLayout, EntryPointLayout, 1, HOISTABLE)
+INST(EntryPointLayout, EntryPointLayout, 1, HOISTABLE)
 INST_RANGE(Layout, VarLayout, EntryPointLayout)
 
 /* Attr */
-    INST(PendingLayoutAttr, pendingLayout, 1, HOISTABLE)
-    INST(StageAttr, stage, 1, HOISTABLE)
-    INST(StructFieldLayoutAttr, fieldLayout, 2, HOISTABLE)
-    INST(TupleFieldLayoutAttr, fieldLayout, 1, HOISTABLE)
-    INST(CaseTypeLayoutAttr, caseLayout, 1, HOISTABLE)
-    INST(UNormAttr, unorm, 0, HOISTABLE)
-    INST(SNormAttr, snorm, 0, HOISTABLE)
-    INST(NoDiffAttr, no_diff, 0, HOISTABLE)
+INST(PendingLayoutAttr, pendingLayout, 1, HOISTABLE)
+INST(StageAttr, stage, 1, HOISTABLE)
+INST(StructFieldLayoutAttr, fieldLayout, 2, HOISTABLE)
+INST(TupleFieldLayoutAttr, fieldLayout, 1, HOISTABLE)
+INST(CaseTypeLayoutAttr, caseLayout, 1, HOISTABLE)
+INST(UNormAttr, unorm, 0, HOISTABLE)
+INST(SNormAttr, snorm, 0, HOISTABLE)
+INST(NoDiffAttr, no_diff, 0, HOISTABLE)
 
-    /* SemanticAttr */
-        INST(UserSemanticAttr, userSemantic, 2, HOISTABLE)
-        INST(SystemValueSemanticAttr, systemValueSemantic, 2, HOISTABLE)
-    INST_RANGE(SemanticAttr, UserSemanticAttr, SystemValueSemanticAttr)
-    /* LayoutResourceInfoAttr */
-        INST(TypeSizeAttr, size, 2, HOISTABLE)
-        INST(VarOffsetAttr, offset, 2, HOISTABLE)
-    INST_RANGE(LayoutResourceInfoAttr, TypeSizeAttr, VarOffsetAttr)
-    INST(FuncThrowTypeAttr, FuncThrowType, 1, HOISTABLE)
+/* DebugAttr */
+INST(DebugNameAttr, debugName, 1, HOISTABLE)
+INST(DebugTypeAttr, debugType, 1, HOISTABLE)
+INST(DebugSourceRangeAttr, debugSourceRange, 1, HOISTABLE)
+INST(DebugParentScopeAttr, debugParentScope, 1, HOISTABLE)
+INST_RANGE(DebugAttr, DebugNameAttr, DebugParentScopeAttr)
+
+/* SemanticAttr */
+INST(UserSemanticAttr, userSemantic, 2, HOISTABLE)
+INST(SystemValueSemanticAttr, systemValueSemantic, 2, HOISTABLE)
+INST_RANGE(SemanticAttr, UserSemanticAttr, SystemValueSemanticAttr)
+/* LayoutResourceInfoAttr */
+INST(TypeSizeAttr, size, 2, HOISTABLE)
+INST(VarOffsetAttr, offset, 2, HOISTABLE)
+INST_RANGE(LayoutResourceInfoAttr, TypeSizeAttr, VarOffsetAttr)
+INST(FuncThrowTypeAttr, FuncThrowType, 1, HOISTABLE)
 INST_RANGE(Attr, PendingLayoutAttr, FuncThrowTypeAttr)
 
 /* Liveness */
-    INST(LiveRangeStart, liveRangeStart, 2, 0)
-    INST(LiveRangeEnd, liveRangeEnd, 0, 0)
+INST(LiveRangeStart, liveRangeStart, 2, 0)
+INST(LiveRangeEnd, liveRangeEnd, 0, 0)
 INST_RANGE(LiveRangeMarker, LiveRangeStart, LiveRangeEnd)
 
 /* IRSpecialization */
@@ -1079,7 +1088,51 @@ INST(DifferentiableTypeDictionaryItem, DifferentiableTypeDictionaryItem, 0, 0)
 
 /* DebugInfo */
 INST(DebugSource, DebugSource, 2, HOISTABLE)
-INST(DebugLine, DebugLine, 5, 0)
+INST(DebugSourceLoc, DebugSourceLoc, 3, HOISTABLE)
+INST(DebugSourceRange, DebugSourceRange, 2, HOISTABLE)
+
+INST(DebugLine, DebugLine, 1, 0)
+
+
+
+    INST(ModuleDebugInfo,       ModuleDebugInfo,        0, HOISTABLE)
+
+        INST(BasicTypeDebugInfo, BasicTypeDebugInfo, 0, HOISTABLE)
+        INST(PointerTypeDebugInfo, PointerTypeDebugInfo, 0, HOISTABLE)
+        INST(ArrayTypeDebugInfo, ArrayTypeDebugInfo, 0, HOISTABLE)
+        INST(VectorTypeDebugInfo, VectorTypeDebugInfo, 0, HOISTABLE)
+        INST(MatrixTypeDebugInfo, MatrixTypeDebugInfo, 0, HOISTABLE)
+        INST(FuncTypeDebugInfo, FuncTypeDebugInfo, 0, HOISTABLE)
+
+            INST(StructDebugInfo,       StructDebugInfo, 0, HOISTABLE)
+            INST(ClassDebugInfo,        ClassDebugInfo, 0, HOISTABLE)
+            INST(InterfaceDebugInfo,    InterfaceDebugInfo, 0, HOISTABLE)
+        INST_RANGE(AggTypeDebugInfo, StructDebugInfo, InterfaceDebugInfo)
+
+        INST(EnumDebugInfo, EnumDebugInfo, 0, HOISTABLE)
+    INST_RANGE(TypeDebugInfo, BasicTypeDebugInfo, EnumDebugInfo)
+
+    INST(AliasDebugInfo, AliasDebugInfo, 0, HOISTABLE)
+    INST(SourceUnitDebugInfo,   SourceUnitDebugInfo,    0, HOISTABLE)
+    INST(EntryPointDebugInfo,   EntryPointDebugInfo,    0, HOISTABLE)
+    INST(FuncDebugInfo,         FuncDebugInfo,          0, HOISTABLE)
+    INST(InheritanceDebugInfo,  InheritanceDebugInfo, 0, HOISTABLE)
+
+    INST(GenericDebugInfo, GenericDebugInfo, 0, HOISTABLE)
+    INST(SpecializationDebugInfo, SpecializationDebugInfo, 0, HOISTABLE)
+
+    INST(LexicalBlockDebugInfo, LexicalBlockDebugInfo, 0, HOISTABLE)
+    INST(NamespaceDebugInfo, NamespaceDebugInfo, 0, HOISTABLE)
+
+    INST(GlobalVarDebugInfo, GlobalVarDebugInfo, 0, HOISTABLE)
+    INST(LocalVarDebugInfo, LocalVarDebugInfo, 0, HOISTABLE)
+    INST(ParamDebugInfo, ParamDebugInfo, 0, HOISTABLE)
+    INST(GlobalConstDebugInfo, GlobalConstDebugInfo, 0, HOISTABLE)
+    INST(EnumCaseDebugInfo, EnumCaseDebugInfo, 0, HOISTABLE)
+
+
+
+INST_RANGE(DebugInfo, ModuleDebugInfo, EnumCaseDebugInfo)
 
 /* Inline assembly */
 
