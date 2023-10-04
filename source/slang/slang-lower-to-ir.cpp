@@ -2314,6 +2314,8 @@ LoweredValInfo createVar(
         builder->addHighLevelDeclDecoration(irAlloc, decl);
 
         addNameHint(context, irAlloc, decl);
+
+
     }
 
     return LoweredValInfo::ptr(irAlloc);
@@ -3131,6 +3133,10 @@ static IRDebugInfo* _getDeclRefDebugInfo(
     IRGenContext*   context,
     DeclRef<Decl>   declRef);
 
+static IRDebugInfo* _getValDebugInfo(
+    IRGenContext*   context,
+    Val*            val);
+
 static IRTypeDebugInfo* _getTypeDebugInfo(
     IRGenContext*   context,
     Type*           type);
@@ -3239,6 +3245,31 @@ public:
         throw 99;
     }
 
+    IRDebugInfo* visitSubtypeWitness(
+        SubtypeWitness* witness)
+    {
+        return getBuilder()->createSubtypeWitnessDebugInfo(
+            _getTypeDebugInfo(context, witness->getSub()),
+            _getTypeDebugInfo(context, witness->getSup()));
+    }
+
+    IRDebugInfo* visitModifiedType(
+        ModifiedType* type)
+    {
+        IRTypeDebugInfo* result = _getTypeDebugInfo(context, type->getBase());
+        Count modifierCount = type->getModifierCount();
+        for (Index i = 0; i < modifierCount; ++i)
+        {
+            auto astModifier = type->getModifier(i);
+            auto irModifier = lowerSimpleVal(context, astModifier);
+
+            result = getBuilder()->createModifiedTypeDebugInfo(
+                result,
+                irModifier);
+        }
+        return result;
+    }
+
     IRDebugInfo* visitDeclRefType(
         DeclRefType* type)
     {
@@ -3257,12 +3288,48 @@ public:
         return _getDeclDebugInfo(context, declRef->getDecl());
     }
 
+
+    IRDebugInfo* visitLookupDeclRef(
+        LookupDeclRef* declRef)
+    {
+        return getBuilder()->createLookupDebugInfo(
+            _getTypeDebugInfo(context, declRef->getLookupSource()),
+            nullptr,
+            _getValDebugInfo(context, declRef->getWitness()));
+    }
+
+
+    IRDebugInfo* visitGenericAppDeclRef(
+        GenericAppDeclRef* declRef)
+    {
+        auto baseDebugInfo = _getDeclRefDebugInfo(context, declRef->getGenericDeclRef());
+
+        List<IRDebugInfo*> argDebugInfos;
+        for (auto& arg : declRef->getArgs())
+        {
+            argDebugInfos.add(
+                _getValDebugInfo(context, arg));
+        }
+
+        return getBuilder()->createSpecializedDebugInfo(
+            baseDebugInfo,
+            argDebugInfos);
+    }
+
     IRDebugInfo* visitVectorExpressionType(
         VectorExpressionType* type)
     {
         return getBuilder()->createVectorTypeDebugInfo(
             _getTypeDebugInfo(context, type->getElementType()),
             lowerSimpleVal(context, type->getElementCount()));
+    }
+
+    IRDebugInfo* visitBasicExpressionType(
+        BasicExpressionType* type)
+    {
+        return getBuilder()->createBaseTypeDebugInfo(
+            getBuilder()->getStringValue(type->getDeclRef().getName()->text.getUnownedSlice()),
+            type->getBaseType());
     }
 };
 
@@ -3305,6 +3372,23 @@ struct CreateDeclDebugInfoVisitor : DeclVisitor<CreateDeclDebugInfoVisitor, IRDe
         return debugInfo;
     }
 
+    IRDebugInfo* visitGenericTypeParamDecl(
+        GenericTypeParamDecl* decl)
+    {
+        return getBuilder()->createGenericTypeParamDebugInfo(
+            _findDebugName(context, decl),
+            _findDebugSourceRange(context, decl),
+            _getDeclDebugInfo(context, decl->parentDecl));
+    }
+
+    IRDebugInfo* visitInterfaceDecl(InterfaceDecl* decl)
+    {
+        auto debugInfo = getBuilder()->createInterfaceDebugInfo(
+            _findDebugName(context, decl),
+            _findDebugSourceRange(context, decl),
+            _getDeclDebugInfo(context, decl->parentDecl));
+        return debugInfo;
+    }
     IRDebugInfo* visitModuleDecl(ModuleDecl* decl)
     {
         auto debugInfo = getBuilder()->createModuleDebugInfo(
@@ -3312,6 +3396,24 @@ struct CreateDeclDebugInfoVisitor : DeclVisitor<CreateDeclDebugInfoVisitor, IRDe
             _findDebugSourceRange(context, decl));
         return debugInfo;
     }
+
+    IRDebugInfo* visitGenericDecl(GenericDecl* decl)
+    {
+        auto debugInfo = getBuilder()->createGenericDebugInfo(
+            _findDebugName(context, decl),
+            _findDebugSourceRange(context, decl),
+            _getDeclDebugInfo(context, decl->parentDecl));
+
+        return debugInfo;
+    }
+
+    IRDebugInfo* visitThisTypeDecl(ThisTypeDecl* decl)
+    {
+        auto debugInfo = getBuilder()->createThisTypeDebugInfo(
+            _getDeclDebugInfo(context, decl->parentDecl));
+        return debugInfo;
+    }
+
 };
 
 static IRDebugInfo* _createDeclDebugInfo(
@@ -3350,6 +3452,14 @@ static IRTypeDebugInfo* _getTypeDebugInfo(
 {
     GetValDebugInfoVisitor visitor(context);
     return (IRTypeDebugInfo*) visitor.dispatch(type);
+}
+
+static IRDebugInfo* _getValDebugInfo(
+    IRGenContext*   context,
+    Val*            val)
+{
+    GetValDebugInfoVisitor visitor(context);
+    return (IRTypeDebugInfo*)visitor.dispatch(val);
 }
 
 static IRDebugInfo* _getStmtDebugScope(
@@ -7939,6 +8049,23 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
             lowerType(context, decl->type));
     }
 
+    void _debugBind(IRGenContext* context, IRDebugInfo* debugInfo, LoweredValInfo const& valInfo)
+    {
+        switch (valInfo.flavor)
+        {
+        default:
+            break;
+
+        case LoweredValInfo::Flavor::Simple:
+            context->irBuilder->emitDebugBindValue(debugInfo, valInfo.val);
+            break;
+
+        case LoweredValInfo::Flavor::Ptr:
+            context->irBuilder->emitDebugBindStorage(debugInfo, valInfo.val);
+            break;
+        }
+    }
+
     LoweredValInfo visitVarDecl(VarDecl* decl)
     {
         // Detect global (or effectively global) variables
@@ -7958,6 +8085,17 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
             return lowerMemberVarDecl(decl);
         }
 
+
+        IRLocalVarDebugInfo* irDebugInfo = nullptr;
+        if (shouldIncludeDebugInfo())
+        {
+            irDebugInfo = getBuilder()->createLocalVarDebugInfo(
+                _findDebugName(context, decl),
+                _getTypeDebugInfo(context, decl->getType()),
+                _findDebugSourceRange(context, decl),
+                context->currentDebugScope);
+        }
+
         // A user-defined variable declaration will usually turn into
         // an `alloca` operation for the variable's storage,
         // plus some code to initialize it and then store to the variable.
@@ -7974,6 +8112,12 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
                 auto initVal = lowerRValueExpr(context, initExpr);
                 initVal = LoweredValInfo::simple(getSimpleVal(context, initVal));
                 context->setGlobalValue(decl, initVal);
+
+                if (irDebugInfo)
+                {
+                    _debugBind(context, irDebugInfo, initVal);
+                }
+
                 return initVal;
             }
         }
@@ -7984,6 +8128,11 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
         if( auto initExpr = decl->initExpr )
         {
             assignExpr(context, varVal, initExpr, decl->loc);
+        }
+
+        if (irDebugInfo)
+        {
+            _debugBind(context, irDebugInfo, varVal);
         }
 
         context->setGlobalValue(decl, varVal);
@@ -9296,14 +9445,38 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
             IRBlock* entryBlock = subBuilder->emitBlock();
             subBuilder->setInsertInto(entryBlock);
 
-            UInt paramTypeIndex = 0;
+            Count paramCounter = 0;
             for (auto paramInfo : parameterLists.params)
             {
-                auto irParamType = paramTypes[paramTypeIndex++];
+                Index paramIndex = paramCounter++;
+                auto irParamType = paramTypes[paramIndex];
 
                 LoweredValInfo paramVal;
 
                 IRParam* irParam = nullptr;
+
+                IRDebugInfo* irParamDebugInfo = nullptr;
+                if (irFuncDebugInfo)
+                {
+                    if (auto paramDecl = paramInfo.decl)
+                    {
+                        irParamDebugInfo = subBuilder->createParamDebugInfo(
+                            paramIndex,
+                            _findDebugName(context, paramDecl),
+                            _getTypeDebugInfo(context, paramInfo.type),
+                            _findDebugSourceRange(context, paramDecl),
+                            irFuncDebugInfo);
+                    }
+                    else if (paramInfo.isThisParam)
+                    {
+                        irParamDebugInfo = subBuilder->createParamDebugInfo(
+                            paramIndex,
+                            subBuilder->getStringValue(UnownedTerminatedStringSlice("this")),
+                            _getTypeDebugInfo(context, paramInfo.type),
+                            nullptr, // no source range
+                            irFuncDebugInfo);
+                    }
+                }
 
                 switch (paramInfo.direction)
                 {
@@ -9323,6 +9496,20 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
                     addParamNameHint(irParam, paramInfo);
 
                     paramVal = LoweredValInfo::ptr(irParam);
+
+                    if (irParamDebugInfo)
+                    {
+                        // The `irParam` represents a storage location where
+                        // the value of the AST-level parameter is stored.
+                        //
+                        // We need to associate the debug representation
+                        // of the AST-level parameter with this storage
+                        // location.
+                        //
+                        subBuilder->emitDebugBindStorage(
+                            irParamDebugInfo,
+                            irParam);
+                    }
 
                     if (paramInfo.isReturnDestination)
                         subContext->returnDestination = paramVal;
@@ -9369,6 +9556,19 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
                         // This parameter was declared to be immutable,
                         // so there should be no assignment to it in the
                         // function body, and we don't need a temporary.
+
+
+                        if (irParamDebugInfo)
+                        {
+                            // The `irParam` represents the *value* of the
+                            // AST-level parameter, so we can associate it
+                            // directly.
+                            //
+                            subBuilder->emitDebugBindValue(
+                                irParamDebugInfo,
+                                irParam);
+                        }
+
                     }
                     else
                     {
@@ -9387,6 +9587,17 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
                         // to the value stored in the local variable.
                         //
                         paramVal = localVal;
+
+                        if (irParamDebugInfo)
+                        {
+                            // The `irParam` represents the *value* of the
+                            // AST-level parameter, so we can associate it
+                            // directly.
+                            //
+                            subBuilder->emitDebugBindStorage(
+                                irParamDebugInfo,
+                                irLocal);
+                        }
                     }
                 }
                 break;

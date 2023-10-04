@@ -1993,6 +1993,9 @@ InstPair ForwardDiffTranscriber::transcribeInstImpl(IRBuilder* builder, IRInst* 
     case kIROp_MakeExistentialWithRTTI:
         SLANG_UNEXPECTED("MakeExistentialWithRTTI inst is not expected in autodiff pass.");
         break;
+
+    case kIROp_DebugBindValue:
+        return transcribeDebugBindValue(builder, cast<IRDebugBindValue>(origInst));
     }
 
     return InstPair(nullptr, nullptr);

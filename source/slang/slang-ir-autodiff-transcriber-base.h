@@ -113,6 +113,8 @@ struct AutoDiffTranscriberBase
 
     InstPair transcribeReturn(IRBuilder* builder, IRReturn* origReturn);
 
+    InstPair transcribeDebugBindValue(IRBuilder* builder, IRDebugBindValue* origInst);
+
     InstPair transcribeParam(IRBuilder* builder, IRParam* origParam);
 
     virtual InstPair transcribeFuncParam(IRBuilder* builder, IRParam* origParam, IRInst* primalType) = 0;

@@ -85,6 +85,22 @@ SpvInst* emitOpDebugTypeFunction(
 }
 
 template<typename T>
+SpvInst* emitOpDebugTypeBasic(
+    SpvInstParent* parent,
+    IRInst* inst,
+    const T& idResultType,
+    SpvInst* set,
+    IRInst* name,
+    SpvInst* size,
+    SpvInst* encoding,
+    SpvInst* flags)
+{
+    static_assert(isSingular<T>);
+    return emitInst(parent, inst, SpvOpExtInst, idResultType, kResultID, set, SpvWord(2),
+        name, size, encoding, flags);
+}
+
+template<typename T>
 SpvInst* emitOpDebugTypeVector(
     SpvInstParent* parent,
     IRInst* inst,
@@ -140,5 +156,41 @@ SpvInst* emitOpDebugInfoNone(
     return emitInstMemoized(parent, inst, SpvOpExtInst, idResultType, kResultID, set, SpvWord(0));
 }
 
+template<typename T>
+SpvInst* emitOpDebugLocalVariable(
+    SpvInstParent* parent,
+    IRInst* inst,
+    const T& idResultType,
+    SpvInst* set,
+    SpvInst* name,
+    IRInst* debugType,
+    SpvInst* debugSource,
+    SpvInst* line,
+    SpvInst* col,
+    SpvInst* scope,
+    SpvInst* flags,
+    SpvInst* optParamIndex = nullptr)
+{
+    static_assert(isSingular<T>);
+    return emitInst(
+        parent, inst, SpvOpExtInst, idResultType, kResultID, set, SpvWord(26),
+        name, debugType, debugSource, line, col, scope, flags,
+        optionalPtrOperand(optParamIndex));
+}
+
+#if 0
+
+    getSection(SpvLogicalSectionID::ConstantsAndTypes),
+    inst,
+    getVoidType(),
+    getNonSemanticDebugInfoExtInst(),
+    getDebugString(irDebugInfo->findNameInst()),
+    irDebugInfo->findDebugType(),
+    getDebugSource(irSourceLoc),
+    getDebugLine(irSourceLoc),
+    getDebugCol(irSourceLoc),
+    getDebugScope(irDebugInfo->getParentScope()),
+    emitIntConstant(0, builder.getIntType()));
+#endif
 
 #endif        // SLANG_IN_SPIRV_EMIT_CONTEXT

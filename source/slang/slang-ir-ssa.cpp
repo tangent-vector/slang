@@ -121,6 +121,11 @@ bool allUsesLeadToLoads(IRInst* inst)
         case kIROp_Load:
             break;
 
+        case kIROp_DebugBindStorage:
+            // A `debugBindStorage(debugInfo, irPtr)` effectively
+            // acts like a `load` instruction.
+            break;
+
         case kIROp_GetElementPtr:
         case kIROp_FieldAddress:
             {
@@ -192,6 +197,13 @@ bool isPromotableVar(
                 // A load has only a single argument, so
                 // it had better be our pointer.
                 SLANG_ASSERT(u == &((IRLoad*) user)->ptr);
+            }
+            break;
+
+        case kIROp_DebugBindStorage:
+            {
+                auto bind = (IRDebugBindStorage*)user;
+                SLANG_ASSERT(var == bind->getBoundPtr());
             }
             break;
 
@@ -915,6 +927,31 @@ void processBlock(
                     // since it is no longer needed.
                     loadInst->removeAndDeallocate();
                 }
+            }
+            break;
+
+        case kIROp_DebugBindStorage:
+            {
+                IRDebugBindStorage* bindStorage = cast<IRDebugBindStorage>(ii);
+                auto ptrArg = bindStorage->getBoundPtr();
+
+                auto var = asPromotableVarAccessChain(context, ptrArg);
+                if(!var)
+                    break;
+
+                auto val = readVar(context, blockInfo, var);
+                cloneRelevantDecorations(var, val);
+
+                val = applyAccessChain(context, &blockInfo->builder, ptrArg, val);
+
+                IRBuilder builder(context->module);
+                builder.setInsertBefore(bindStorage);
+
+                auto bindValue = builder.emitDebugBindValue(
+                    bindStorage->getDebugInfo(),
+                    val);
+                bindStorage->replaceUsesWith(bindValue);
+                bindStorage->removeAndDeallocate();
             }
             break;
         }

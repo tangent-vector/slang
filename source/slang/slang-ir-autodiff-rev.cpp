@@ -220,6 +220,9 @@ namespace Slang
         case kIROp_MakeExistentialWithRTTI:
             return transcribeNonDiffInst(builder, origInst);
 
+        case kIROp_DebugBindValue:
+            return transcribeDebugBindValue(builder, cast<IRDebugBindValue>(origInst));
+
         case kIROp_StructKey:
             return InstPair(origInst, nullptr);
         }

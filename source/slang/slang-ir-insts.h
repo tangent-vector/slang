@@ -3021,6 +3021,22 @@ struct IRDebugLine : IRInst
     IRInst* getColEnd() { return getSourceRange()->getColEnd(); }
 };
 
+struct IRDebugBindStorage : IRInst
+{
+    IR_LEAF_ISA(DebugBindStorage)
+
+    IRDebugInfo* getDebugInfo() { return cast<IRDebugInfo>(getOperand(0)); }
+    IRInst* getBoundPtr() { return getOperand(1); }
+};
+
+struct IRDebugBindValue : IRInst
+{
+    IR_LEAF_ISA(DebugBindValue)
+
+    IRDebugInfo* getDebugInfo() { return cast<IRDebugInfo>(getOperand(0)); }
+    IRInst* getBoundValue() { return getOperand(1); }
+};
+
 struct IRDebugAttr : public IRAttr
 {
     IR_PARENT_ISA(DebugAttr);
@@ -3135,8 +3151,19 @@ struct IRGlobalVarDebugInfo : IRDebugInfo
 struct IRTypeDebugInfo : IRDebugInfo
 {};
 
-struct IRBasicTypeDebugInfo : IRTypeDebugInfo
+struct IRLookupMemberDebugInfo : IRDebugInfo
 {};
+
+struct IRBaseTypeDebugInfo : IRTypeDebugInfo
+{
+    IRStringLit* getNameInst() { return cast<IRStringLit>(getOperand(0)); }
+    IRIntLit* getBaseTypeInst() { return cast<IRIntLit>(getOperand(1)); }
+
+    BaseType getBaseType()
+    {
+        return (BaseType)(getBaseTypeInst()->getValue());
+    }
+};
 
 struct IRPointerTypeDebugInfo : IRTypeDebugInfo
 {};
@@ -3200,6 +3227,22 @@ struct IRStructDebugInfo : IRAggTypeDebugInfo
 {
 };
 
+struct IRInterfaceDebugInfo : IRAggTypeDebugInfo
+{
+};
+
+struct IRGenericTypeParamDebugInfo : IRTypeDebugInfo
+{
+};
+
+struct IRClassDebugInfo : IRAggTypeDebugInfo
+{
+};
+
+struct IRThisTypeDebugInfo : IRTypeDebugInfo
+{
+};
+
 struct IRFieldDebugInfo : IRDebugInfo
 {};
 
@@ -3207,7 +3250,10 @@ struct IRLocalVarDebugInfo : IRDebugInfo
 {};
 
 struct IRParamDebugInfo : IRDebugInfo
-{};
+{
+    IRIntLit* getParamIndexInst() { return cast<IRIntLit>(getOperand(0)); }
+    IRIntegerValue getParamIndex() { return getParamIndexInst()->getValue(); }
+};
 
 struct IRInheritanceDebugInfo : IRDebugInfo
 {};
@@ -3719,15 +3765,60 @@ public:
         IRDebugSourceRange* sourceRange,
         IRDebugInfo*        parentScope);
 
+    IRInterfaceDebugInfo* createInterfaceDebugInfo(
+        List<IRInst*> const& attrs);
+    IRInterfaceDebugInfo* createInterfaceDebugInfo(
+        IRStringLit* name,
+        IRDebugSourceRange* sourceRange,
+        IRDebugInfo* parentScope);
+
+    IRGenericTypeParamDebugInfo* createGenericTypeParamDebugInfo(
+        List<IRInst*> const& attrs);
+    IRGenericTypeParamDebugInfo* createGenericTypeParamDebugInfo(
+        IRStringLit* name,
+        IRDebugSourceRange* sourceRange,
+        IRDebugInfo* parentScope);
+
+    IRGenericDebugInfo* createGenericDebugInfo(
+        List<IRInst*> const& attrs);
+    IRGenericDebugInfo* createGenericDebugInfo(
+        IRStringLit* name,
+        IRDebugSourceRange* sourceRange,
+        IRDebugInfo* parentScope);
+
     IRModuleDebugInfo* createModuleDebugInfo(
         List<IRInst*> const& attrs);
     IRModuleDebugInfo* createModuleDebugInfo(
         IRStringLit* name,
         IRDebugSourceRange* sourceRange);
 
+    IRDebugInfo* createSpecializedDebugInfo(
+        IRDebugInfo* base,
+        List<IRDebugInfo*> const& args);
+
+    IRTypeDebugInfo* createThisTypeDebugInfo(
+        IRDebugInfo* parentScope);
+
+    IRLookupMemberDebugInfo* createLookupDebugInfo(
+        IRTypeDebugInfo* type,
+        IRDebugInfo* virtualMember,
+        IRDebugInfo* witness);
+
     IRVectorTypeDebugInfo* createVectorTypeDebugInfo(
         IRTypeDebugInfo*    elementType,
         IRInst*             elementCount);
+
+    IRDebugInfo* createSubtypeWitnessDebugInfo(
+        IRTypeDebugInfo* subType,
+        IRTypeDebugInfo* superType);
+
+    IRTypeDebugInfo* createModifiedTypeDebugInfo(
+        IRTypeDebugInfo*    base,
+        IRInst*             modifier);
+
+    IRBaseTypeDebugInfo* createBaseTypeDebugInfo(
+        IRStringLit*    name,
+        BaseType        baseType);
 
     IRDebugNameAttr* getDebugNameAttr(
         IRStringLit* name);
@@ -3737,6 +3828,33 @@ public:
         IRDebugSourceRange* sourceRange);
     IRDebugParentScopeAttr* getDebugParentScopeAttr(
         IRDebugInfo* scope);
+
+    IRParamDebugInfo* createParamDebugInfo(
+        List<IRInst*> const& attrs);
+
+    IRParamDebugInfo* createParamDebugInfo(
+        Index                   paramIndex,
+        IRStringLit*            name,
+        IRTypeDebugInfo*    debugType,
+        IRDebugSourceRange*     sourceRange,
+        IRDebugInfo*            parentScope);
+
+    IRLocalVarDebugInfo* createLocalVarDebugInfo(
+        List<IRInst*> const& attrs);
+
+    IRLocalVarDebugInfo* createLocalVarDebugInfo(
+        IRStringLit*            name,
+        IRTypeDebugInfo*    debugType,
+        IRDebugSourceRange*     sourceRange,
+        IRDebugInfo*            parentScope);
+
+    IRInst* emitDebugBindStorage(
+        IRDebugInfo* debugInfo,
+        IRInst* ptr);
+
+    IRInst* emitDebugBindValue(
+        IRDebugInfo* debugInfo,
+        IRInst* val);
 
         /// Emit an LiveRangeStart instruction indicating the referenced item is live following this instruction
     IRLiveRangeStart* emitLiveRangeStart(IRInst* referenced);

@@ -1091,7 +1091,10 @@ INST(DebugSource, DebugSource, 2, HOISTABLE)
 INST(DebugSourceLoc, DebugSourceLoc, 3, HOISTABLE)
 INST(DebugSourceRange, DebugSourceRange, 2, HOISTABLE)
 
-INST(DebugLine, DebugLine, 1, 0)
+INST(DebugBindStorage, DebugBindStorage, 2, 0)
+INST(DebugBindValue, DebugBindValue, 2, 0)
+
+INST(DebugLine, DebugLine, 2, 0)
 
 
 
@@ -1102,6 +1105,10 @@ INST(DebugLine, DebugLine, 1, 0)
         INST(ArrayTypeDebugInfo, ArrayTypeDebugInfo, 0, HOISTABLE)
         INST(VectorTypeDebugInfo, VectorTypeDebugInfo, 0, HOISTABLE)
         INST(MatrixTypeDebugInfo, MatrixTypeDebugInfo, 0, HOISTABLE)
+        INST(ThisTypeDebugInfo, ThisTypeDebugInfo, 1, HOISTABLE)
+        INST(DiffPairTypeDebugInfo, DiffPairTypeDebugInfo, 1, HOISTABLE)
+        INST(ModifiedTypeDebugInfo, ModifiedTypeDebugInfo, 2, HOISTABLE)
+        INST(GenericTypeParamDebugInfo, GenericTypeParamDebugInfo, 0, HOISTABLE)
         INST(FuncTypeDebugInfo, FuncTypeDebugInfo, 0, HOISTABLE)
 
             INST(StructDebugInfo,       StructDebugInfo, 0, HOISTABLE)
@@ -1117,9 +1124,11 @@ INST(DebugLine, DebugLine, 1, 0)
     INST(EntryPointDebugInfo,   EntryPointDebugInfo,    0, HOISTABLE)
     INST(FuncDebugInfo,         FuncDebugInfo,          0, HOISTABLE)
     INST(InheritanceDebugInfo,  InheritanceDebugInfo, 0, HOISTABLE)
+    INST(SubtypeWitnessDebugInfo, SubtypeWitnessDebugInfo, 1, HOISTABLE)
+    INST(LookupMemberDebugInfo, LookupMemberDebugInfo, 3, HOISTABLE)
 
-    INST(GenericDebugInfo, GenericDebugInfo, 0, HOISTABLE)
-    INST(SpecializationDebugInfo, SpecializationDebugInfo, 0, HOISTABLE)
+    INST(GenericDebugInfo,      GenericDebugInfo, 0, HOISTABLE)
+    INST(SpecializedDebugInfo, SpecializedDebugInfo, 0, HOISTABLE)
 
     INST(LexicalBlockDebugInfo, LexicalBlockDebugInfo, 0, HOISTABLE)
     INST(NamespaceDebugInfo, NamespaceDebugInfo, 0, HOISTABLE)

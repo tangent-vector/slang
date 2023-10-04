@@ -945,6 +945,43 @@ InstPair AutoDiffTranscriberBase::transcribeReturn(IRBuilder* builder, IRReturn*
     }
 }
 
+InstPair AutoDiffTranscriberBase::transcribeDebugBindValue(IRBuilder* builder, IRDebugBindValue* origInst)
+{
+    auto origDebugInfo = origInst->getDebugInfo();
+    auto origBoundVal = origInst->getBoundValue();
+    auto origBoundValType = (IRType*)findOrTranscribePrimalInst(builder, origBoundVal->getDataType());
+
+    auto primalDebugInfo = (IRTypeDebugInfo*) findOrTranscribePrimalInst(builder, origDebugInfo);
+    auto primalBoundVal = findOrTranscribePrimalInst(builder, origBoundVal);
+    auto primalBind = builder->emitDebugBindValue(primalDebugInfo, primalBoundVal);
+
+    if (auto pairBoundValType = tryGetDiffPairType(builder, origBoundValType))
+    {
+        auto diffDebugInfo = (IRDebugInfo*)findOrTranscribeDiffInst(builder, origDebugInfo);
+
+        // TODO: If we can't find or create debug info for the differential
+        // type, we need to bail out here and only debug the primal value...
+        //
+        SLANG_RELEASE_ASSERT(diffDebugInfo);
+
+        auto diffBoundVal = findOrTranscribeDiffInst(builder, origBoundVal);
+        if (!diffBoundVal)
+            diffBoundVal = getDifferentialZeroOfType(builder, origBoundValType);
+
+        // If the pair type can be formed, this must be non-null.
+        SLANG_RELEASE_ASSERT(diffBoundVal);
+
+        auto diffBind = builder->emitDebugBindValue(diffDebugInfo, diffBoundVal);
+
+        return InstPair(primalBind, diffBind);
+    }
+    else
+    {
+        builder->markInstAsMixedDifferential(primalBind, nullptr);
+        return InstPair(primalBind, nullptr);
+    }
+}
+
 static void _markGenericChildrenWithoutRelaventUse(IRGeneric* origGeneric, HashSet<IRInst*>& outInstsToSkip)
 {
     for (;;)

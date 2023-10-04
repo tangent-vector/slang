@@ -372,6 +372,12 @@ OptionalOperand<T> someOptionOperand(T t)
 }
 
 template<typename T>
+OptionalOperand<T*> optionalPtrOperand(T* t)
+{
+    return t ? OptionalOperand<T*>(t) : SkipThisOptionalOperand();
+}
+
+template<typename T>
 constexpr bool isPlural = false;
 template<typename T>
 constexpr bool isPlural<List<T>> = true;
@@ -1567,6 +1573,59 @@ struct SPIRVEmitContext
                 emitIntConstant(0, builder.getIntType()),
                 inst);
 
+        case kIROp_BasicTypeDebugInfo:
+            {
+                auto type = cast<IRBaseTypeDebugInfo>(inst);
+            
+                UInt32 size = 0;
+                UInt32 encoding = 0;
+                UInt32 flags = 0;
+
+                switch (type->getBaseType())
+                {
+                default:
+                    flags |= (1 << 17); // FlagUnknownPhysicalLayout
+                    break;
+
+#define CASE(TAG, SIZE, ENCODING) \
+    case BaseType::TAG: size = SIZE * 8; encoding = ENCODING; break
+
+                    CASE(Void, 0, 0);
+                    CASE(Bool, 1, 2);
+
+                    CASE(Int8,      1, 4);
+                    CASE(Int16,     2, 4);
+                    CASE(Int,       4, 4);
+                    CASE(IntPtr,    8, 4);
+                    CASE(Int64,     8, 4);
+
+                    CASE(UInt8,     1,  6);
+                    CASE(UInt16,    2,  6);
+                    CASE(UInt,      4,  6);
+                    CASE(UIntPtr,   8,  6);
+                    CASE(UInt64,    8,  6);
+
+                    CASE(Half,      2, 3);
+                    CASE(Float,     4, 3);
+                    CASE(Double,    8, 3);
+
+                    CASE(Char,      1, 7);
+
+#undef CASE
+                }
+
+                return emitOpDebugTypeBasic(
+                    getSection(SpvLogicalSectionID::ConstantsAndTypes),
+                    inst,
+                    builder.getVoidType(),
+                    getNonSemanticDebugInfoExtInst(),
+                    type->getNameInst(),
+                    emitIntConstant(size, builder.getIntType()),
+                    emitIntConstant(encoding, builder.getIntType()),
+                    emitIntConstant(flags, builder.getIntType()));
+            }
+            break;
+
         case kIROp_VectorTypeDebugInfo:
             {
                 auto type = cast<IRVectorTypeDebugInfo>(inst);
@@ -1614,6 +1673,45 @@ struct SPIRVEmitContext
                     emitIntConstant(5, builder.getUIntType()),    // DWARF version.
                     getDebugInfoNone(),                             // Source file
                     emitIntConstant(5, builder.getUIntType()));   // Language, use HLSL's ID for now.
+            }
+            break;
+
+        case kIROp_ParamDebugInfo:
+            {
+                auto irDebugInfo = cast<IRParamDebugInfo>(inst);
+                auto irSourceLoc = irDebugInfo->findSourceLoc();
+                return emitOpDebugLocalVariable(
+                    getSection(SpvLogicalSectionID::ConstantsAndTypes),
+                    inst,
+                    getVoidType(),
+                    getNonSemanticDebugInfoExtInst(),
+                    getDebugString(irDebugInfo->findNameInst()),
+                    irDebugInfo->findDebugType(),
+                    getDebugSource(irSourceLoc),
+                    getDebugLine(irSourceLoc),
+                    getDebugCol(irSourceLoc),
+                    getDebugScope(irDebugInfo->findParentScope()),
+                    emitIntConstant(0, builder.getIntType()),
+                    emitIntConstant(irDebugInfo->getParamIndex(), builder.getIntType()));
+            }
+            break;
+
+        case kIROp_LocalVarDebugInfo:
+            {
+                auto irDebugInfo = cast<IRLocalVarDebugInfo>(inst);
+                auto irSourceLoc = irDebugInfo->findSourceLoc();
+                return emitOpDebugLocalVariable(
+                    getSection(SpvLogicalSectionID::ConstantsAndTypes),
+                    inst,
+                    getVoidType(),
+                    getNonSemanticDebugInfoExtInst(),
+                    getDebugString(irDebugInfo->findNameInst()),
+                    irDebugInfo->findDebugType(),
+                    getDebugSource(irSourceLoc),
+                    getDebugLine(irSourceLoc),
+                    getDebugCol(irSourceLoc),
+                    getDebugScope(irDebugInfo->findParentScope()),
+                    emitIntConstant(0, builder.getIntType()));
             }
             break;
 
@@ -2121,6 +2219,13 @@ struct SPIRVEmitContext
         return getDebugString(irLinkageDecoration->getMangledNameOperand());
     }
 
+    SpvInst* getVoidType()
+    {
+        IRBuilder builder(m_irModule);
+        builder.setInsertInto(m_irModule);
+        return ensureInst(builder.getVoidType());
+    }
+
     SpvInst* getDebugInfoNone()
     {
         IRBuilder builder(m_irModule);
@@ -2131,6 +2236,21 @@ struct SPIRVEmitContext
             nullptr,
             builder.getVoidType(),
             getNonSemanticDebugInfoExtInst());
+    }
+
+    SpvInst* getEmptyDebugExpr()
+    {
+        IRBuilder builder(m_irModule);
+        builder.setInsertInto(m_irModule);
+
+        return emitInstMemoized(
+            getSection(SpvLogicalSectionID::ConstantsAndTypes),
+            nullptr,
+            SpvOpExtInst,
+            builder.getVoidType(),
+            kResultID,
+            getNonSemanticDebugInfoExtInst(),
+            31);
     }
 
     SpvInst* getDebugString(IRStringLit* irString)
@@ -2281,6 +2401,17 @@ struct SPIRVEmitContext
             auto spvBlock = emitOpLabel(spvFunc, irBlock);
             if (irBlock == irFunc->getFirstBlock())
             {
+                // OpVariable
+                // All variables used in the function must be declared before anything else.
+                for (auto block : irFunc->getBlocks())
+                {
+                    for (auto inst : block->getChildren())
+                    {
+                        if (as<IRVar>(inst))
+                            emitLocalInst(spvBlock, inst);
+                    }
+                }
+
                 // OpDebugFunctionDefinition
                 //
                 // The debug instruction to represent the function definition
@@ -2295,18 +2426,6 @@ struct SPIRVEmitContext
                         getNonSemanticDebugInfoExtInst(),
                         spvDebugFunc,
                         spvFunc);
-                }
-
-
-                // OpVariable
-                // All variables used in the function must be declared before anything else.
-                for (auto block : irFunc->getBlocks())
-                {
-                    for (auto inst : block->getChildren())
-                    {
-                        if (as<IRVar>(inst))
-                            emitLocalInst(spvBlock, inst);
-                    }
                 }
             }
 
@@ -2622,6 +2741,10 @@ struct SPIRVEmitContext
             return emitImageStore(parent, as<IRImageStore>(inst));
         case kIROp_ImageSubscript:
             return emitImageSubscript(parent, as<IRImageSubscript>(inst));
+        case kIROp_DebugBindStorage:
+            return emitDebugBindStorage(parent, as<IRDebugBindStorage>(inst));
+        case kIROp_DebugBindValue:
+            return emitDebugBindValue(parent, as<IRDebugBindValue>(inst));
         }
     }
 
@@ -2640,6 +2763,31 @@ struct SPIRVEmitContext
         IRBuilder builder(subscript);
         builder.setInsertBefore(subscript);
         return emitInst(parent, subscript, SpvOpImageTexelPointer, subscript->getDataType(), kResultID, subscript->getImage(), subscript->getCoord(), builder.getIntValue(builder.getIntType(), 0));
+    }
+
+    SpvInst* emitDebugBindStorage(SpvInstParent* parent, IRDebugBindStorage* bind)
+    {
+        return emitInst(parent, bind, SpvOpExtInst,
+            getVoidType(),
+            kResultID,
+            getNonSemanticDebugInfoExtInst(),
+            28,
+            bind->getDebugInfo(),
+            bind->getBoundPtr(),
+            getEmptyDebugExpr());
+    }
+
+    SpvInst* emitDebugBindValue(SpvInstParent* parent, IRDebugBindValue* bind)
+    {
+        return emitInst(parent, bind, SpvOpExtInst,
+            getVoidType(),
+            kResultID,
+            getNonSemanticDebugInfoExtInst(),
+            29,
+            bind->getDebugInfo(),
+            bind->getBoundValue(),
+            getEmptyDebugExpr());
+>>>>>>> 2ab73ce8 (WIP:adding more and more)
     }
 
     SpvInst* emitGetStringHash(IRInst* inst)
