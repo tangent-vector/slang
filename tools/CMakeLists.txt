@@ -56,6 +56,7 @@ generator(slang-embed)
 generator(slang-generate USE_FEWER_WARNINGS)
 generator(slang-lookup-generator LINK_WITH_PRIVATE compiler-core)
 generator(slang-capability-generator LINK_WITH_PRIVATE compiler-core)
+generator(slang-ast-generator LINK_WITH_PRIVATE compiler-core)
 generator(slang-spirv-embed-generator LINK_WITH_PRIVATE compiler-core)
 generator(
     ${slang_SOURCE_DIR}/source/slangc
@@ -96,6 +97,7 @@ if(SLANG_ENABLE_SLANGD)
             slang
             slang-reflect-headers
             slang-capability-defs
+            slang-ast-defs
             Threads::Threads
         INSTALL
         EXPORT_SET_NAME SlangTargets

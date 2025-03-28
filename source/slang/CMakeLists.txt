@@ -1,4 +1,59 @@
 #
+# generate AST files
+#
+glob_append(SLANG_AST_SOURCE "*.astdef")
+
+set(SLANG_AST_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/ast")
+
+# Generate the output file list
+set(SLANG_AST_GENERATED_HEADERS
+    "${SLANG_AST_OUTPUT_DIR}/slang-generated-ast-defs.h"
+    "${SLANG_AST_OUTPUT_DIR}/slang-generated-ast-defs-impl.h"
+)
+set(SLANG_AST_GENERATED_SOURCE
+    ${SLANG_AST_GENERATED_HEADERS}
+    "${SLANG_AST_OUTPUT_DIR}/slang-lookup-ast-defs.cpp"
+)
+add_custom_command(
+    OUTPUT ${SLANG_AST_GENERATED_SOURCE}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${SLANG_AST_OUTPUT_DIR}
+    COMMAND
+        slang-ast-generator ${SLANG_AST_SOURCE} --target-directory
+        ${SLANG_AST_OUTPUT_DIR}
+    DEPENDS ${SLANG_AST_SOURCE} slang-ast-generator
+    WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
+    VERBATIM
+)
+slang_add_target(
+    slang-ast-defs
+    OBJECT
+    EXPORT_MACRO_PREFIX SLANG
+    USE_EXTRA_WARNINGS
+    EXPLICIT_SOURCE ${SLANG_AST_GENERATED_HEADERS}
+    EXPORT_TYPE_AS ${SLANG_LIB_TYPE}
+    LINK_WITH_PRIVATE core
+    INCLUDE_DIRECTORIES_PUBLIC
+        "${SLANG_AST_OUTPUT_DIR}"
+        "${slang_SOURCE_DIR}/source/slang"
+    EXCLUDE_FROM_ALL
+    FOLDER generated
+)
+slang_add_target(
+    slang-ast-lookup
+    OBJECT
+    EXPORT_MACRO_PREFIX SLANG
+    USE_EXTRA_WARNINGS
+    EXPLICIT_SOURCE ${SLANG_AST_GENERATED_SOURCE}
+    EXPORT_TYPE_AS ${SLANG_LIB_TYPE}
+    LINK_WITH_PRIVATE core slang-ast-defs
+    EXCLUDE_FROM_ALL
+    FOLDER generated
+)
+
+
+
+
+#
 # generate capability files
 #
 glob_append(SLANG_CAPABILITY_SOURCE "*.capdef")
@@ -236,6 +291,7 @@ set(slang_link_args
     slang-reflect-headers
     slang-lookup-tables
     SPIRV-Headers
+    slang-ast-defs
 )
 set(slang_interface_args INCLUDE_DIRECTORIES_PUBLIC ${slang_SOURCE_DIR}/include)
 set(slang_public_lib_args

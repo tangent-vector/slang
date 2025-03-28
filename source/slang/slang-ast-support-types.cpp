@@ -1,8 +1,6 @@
 #include "slang-ast-support-types.h"
 
-#include "slang-ast-base.h"
-#include "slang-ast-expr.h"
-#include "slang-ast-type.h"
+#include "slang-ast-all.h"
 #include "slang-check-impl.h"
 
 namespace Slang

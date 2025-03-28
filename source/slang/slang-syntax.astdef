@@ -1,0 +1,2791 @@
+
+//
+// Lexemes
+//
+
+// slang-token-defs.h
+
+hidden syntax_class Token;
+syntax_class Trivia : Token;
+
+//syntax_class Lexeme;
+//syntax_class Token : Lexeme;
+//syntax_class Trivia : Lexeme;
+
+//
+// Trivia
+//
+
+// whitespace
+syntax_class WhiteSpace : Trivia;
+
+// end of line
+syntax_class NewLine : Trivia;
+
+// line comment
+syntax_class LineComment : Trivia;
+
+// block comment
+syntax_class BlockComment : Trivia;
+
+
+//
+// Tokens
+//
+
+// <unknown>
+syntax_class Unknown : Token;
+
+// end of file
+syntax_class EndOfFile : Token;
+
+// invalid character
+syntax_class Invalid : Token;
+
+// identifier
+syntax_class Identifier : Token;
+
+// integer literal
+syntax_class IntegerLiteral : Token;
+
+// floating-point literal
+syntax_class FloatingPointLiteral : Token;
+
+// string literal
+syntax_class StringLiteral : Token;
+
+// character literal
+syntax_class CharLiteral : Token;
+
+syntax_class Punctuation : Token;
+
+syntax_class Semicolon : Punctuation { pattern ";" }
+
+syntax_class Comma : Punctuation { pattern "," }
+syntax_class Dot : Punctuation { pattern "." }
+syntax_class DotDot : Punctuation { pattern ".." }
+syntax_class Ellipsis : Punctuation { pattern "..." }
+syntax_class LBrace : Punctuation { pattern "{" }
+syntax_class RBrace : Punctuation { pattern "}" }
+syntax_class LBracket : Punctuation { pattern "[" }
+syntax_class RBracket : Punctuation { pattern "]" }
+syntax_class LParent : Punctuation { pattern "(" }
+syntax_class RParent : Punctuation { pattern ")" }
+syntax_class OpAssign : Punctuation { pattern "=" }
+syntax_class OpAdd : Punctuation { pattern "+" }
+syntax_class OpSub : Punctuation { pattern "-" }
+syntax_class OpMul : Punctuation { pattern "*" }
+syntax_class OpDiv : Punctuation { pattern "/" }
+syntax_class OpMod : Punctuation { pattern "%" }
+syntax_class OpNot : Punctuation { pattern "!" }
+syntax_class OpBitNot : Punctuation { pattern "~" }
+syntax_class OpLsh : Punctuation { pattern "<<" }
+syntax_class OpRsh : Punctuation { pattern ">>" }
+syntax_class OpEql : Punctuation { pattern "==" }
+syntax_class OpNeq : Punctuation { pattern "!=" }
+syntax_class OpGreater : Punctuation { pattern ">" }
+syntax_class OpLess : Punctuation { pattern "<" }
+syntax_class OpGeq : Punctuation { pattern ">=" }
+syntax_class OpLeq : Punctuation { pattern "<=" }
+syntax_class OpAnd : Punctuation { pattern "&&" }
+syntax_class OpOr : Punctuation { pattern "||" }
+syntax_class OpBitAnd : Punctuation { pattern "&" }
+syntax_class OpBitOr : Punctuation { pattern "|" }
+syntax_class OpBitXor : Punctuation { pattern "^" }
+syntax_class OpInc : Punctuation { pattern "++" }
+syntax_class OpDec : Punctuation { pattern "--" }
+syntax_class OpAddAssign : Punctuation { pattern "+=" }
+syntax_class OpSubAssign : Punctuation { pattern "-=" }
+syntax_class OpMulAssign : Punctuation { pattern "*=" }
+syntax_class OpDivAssign : Punctuation { pattern "/=" }
+syntax_class OpModAssign : Punctuation { pattern "%=" }
+syntax_class OpShlAssign : Punctuation { pattern "<<=" }
+syntax_class OpShrAssign : Punctuation { pattern ">>=" }
+syntax_class OpAndAssign : Punctuation { pattern "&=" }
+syntax_class OpOrAssign : Punctuation { pattern "|=" }
+syntax_class OpXorAssign : Punctuation { pattern "^=" }
+syntax_class QuestionMark : Punctuation { pattern "?" }
+syntax_class Colon : Punctuation { pattern ":" }
+syntax_class RightArrow : Punctuation { pattern "->" }
+syntax_class At : Punctuation { pattern "@" }
+syntax_class Dollar : Punctuation { pattern "$" }
+syntax_class DollarDollar : Punctuation { pattern "$$" }
+syntax_class Pound : Punctuation { pattern "#" }
+syntax_class PoundPound : Punctuation { pattern "##" }
+syntax_class ColonColon : Punctuation { pattern "::" }
+syntax_class CompletionRequest : Punctuation { pattern "#?" }
+
+//
+// Abstract Syntax
+//
+
+// slang-ast-base.h
+
+hidden abstract syntax_class NodeBase;
+hidden syntax_class Scope : NodeBase;
+hidden abstract syntax_class SyntaxNodeBase : NodeBase;
+hidden abstract syntax_class Val : NodeBase;
+hidden abstract syntax_class Type : Val;
+
+hidden abstract syntax_class DeclRefBase : Val;
+
+hidden abstract syntax_class SyntaxNode : SyntaxNodeBase;
+hidden abstract syntax_class Modifier : SyntaxNode;
+
+hidden abstract syntax_class ModifiableSyntaxNode : SyntaxNode;
+hidden abstract syntax_class DeclBase : ModifiableSyntaxNode;
+hidden abstract syntax_class Decl : DeclBase;
+
+hidden abstract syntax_class Expr : SyntaxNode;
+hidden abstract syntax_class Stmt : ModifiableSyntaxNode;
+
+
+// slang-ast-val.h
+
+syntax_class DirectDeclRef : DeclRefBase;
+
+syntax_class MemberDeclRef : DeclRefBase
+{ FIELDS parent:DeclRefBase }
+
+syntax_class LookupDeclRef : DeclRefBase
+{ FIELDS lookupSource:Type witness:SubtypeWitness }
+
+syntax_class GenericAppDeclRef : DeclRefBase
+{ FIELDS genericDeclRef:DeclRefBase args:Val* }
+
+abstract syntax_class IntVal : Val
+{ FIELDS Type }
+
+syntax_class ConstantIntVal : IntVal;
+
+syntax_class GenericParamIntVal : IntVal
+{ FIELDS DeclRefBase }
+
+syntax_class TypeCastIntVal : IntVal
+{ FIELDS base:Val }
+
+syntax_class FuncCallIntVal : IntVal
+{ FIELDS funcDeclRef:DeclRefBase funcType:Type args:IntVal* }
+
+syntax_class CountOfIntVal : IntVal
+{ FIELDS typeArg:Type }
+
+syntax_class WitnessLookupIntval : IntVal
+{ FIELDS witness:SubtypeWitness key:Decl }
+
+syntax_class PolynomialIntValFactor : Val
+{ FIELDS param:IntVal power:IntegerLiteralValue }
+
+syntax_class PolynomialIntValTerm : Val
+{ FIELDS constFactor:IntegerLiteralValue paramFactors:PolynomialIntValFactor* }
+
+syntax_class PolynomialIntVal : IntVal
+{ FIELDS constantTerm:IntegerLiteralValue terms:PolynomialIntValTerm* }
+
+syntax_class ErrorIntVal : IntVal
+{}
+
+abstract syntax_class Witness : Val;
+
+abstract syntax_class SubtypeWitness : Witness
+{ FIELDS sub:Type sup:Type }
+
+syntax_class TypePackSubtypeWitness : SubtypeWitness
+{ FIELDS witnesses:SubtypeWitness* }
+
+syntax_class EachSubtypeWitness : SubtypeWitness
+{ FIELDS patternWitness:SubtypeWitness }
+
+syntax_class ExpandSubtypeWitness : SubtypeWitness
+{ FIELDS patternWitness:SubtypeWitness }
+
+syntax_class TypeEqualityWitness : SubtypeWitness
+{}
+
+syntax_class TypeCoercionWitness : Witness
+{ FIELDS fromType:Type toType:Type }
+
+syntax_class DeclaredSubtypeWitness : SubtypeWitness
+{ FIELDS DeclRefBase }
+
+syntax_class TransitiveSubtypeWitness : SubtypeWitness
+{ FIELDS subToMid:SubtypeWitness midToSup:SubtypeWitness }
+
+syntax_class ExtractExistentialSubtypeWitness : SubtypeWitness
+{ FIELDS DeclRefBase }
+
+syntax_class DynamicSubtypeWitness : SubtypeWitness
+{}
+
+syntax_class ConjunctionSubtypeWitness : SubtypeWitness
+{ FIELDS left:SubtypeWitness right:SubtypeWitness }
+
+syntax_class ExtractFromConjunctionSubtypeWitness : SubtypeWitness
+{ FIELDS witness:SubtypeWitness index:Int }
+
+syntax_class ModifierVal : Val;
+
+syntax_class TypeModifierVal : ModifierVal;
+
+syntax_class ResourceFormatModifierVal : TypeModifierVal;
+syntax_class UNormModifierVal : ResourceFormatModifierVal;
+syntax_class SNormModifierVal : ResourceFormatModifierVal;
+syntax_class NoDiffModifierVal : TypeModifierVal;
+
+syntax_class DifferentiateVal : Val;
+syntax_class ForwardDifferentiateVal : DifferentiateVal;
+syntax_class BackwardDifferentiateVal : DifferentiateVal;
+syntax_class BackwardDifferentiateIntermediateTypeVal : DifferentiateVal;
+syntax_class BackwardDifferentiatePrimalVal : DifferentiateVal;
+syntax_class BackwardDifferentiatePropagateVal : DifferentiateVal;
+
+
+///
+////
+///
+
+syntax_class OverloadGroupType : Type;
+syntax_class InitializerListType : Type;
+syntax_class ErrorType : Type;
+syntax_class BottomType : Type;
+
+syntax_class DeclRefType : Type
+{ FIELDS DeclRefBase }
+
+abstract syntax_class ArithmeticExpressionType : DeclRefType;
+syntax_class BasicExpressionType : ArithmeticExpressionType;
+
+abstract syntax_class BuiltinType : DeclRefType;
+abstract syntax_class DataLayoutType: DeclRefType;
+
+
+
+
+
+
+
+
+syntax_class IBufferDataLayoutType : BuiltinType
+{}
+
+syntax_class DefaultDataLayoutType : DataLayoutType
+{}
+
+syntax_class Std430DataLayoutType : DataLayoutType
+{}
+
+syntax_class Std140DataLayoutType : DataLayoutType
+{}
+
+syntax_class ScalarDataLayoutType : DataLayoutType
+{}
+
+syntax_class FeedbackType : BuiltinType
+{}
+
+abstract syntax_class TextureShapeType : BuiltinType
+{}
+
+syntax_class TextureShape1DType : TextureShapeType
+{}
+syntax_class TextureShape2DType : TextureShapeType
+{}
+syntax_class TextureShape3DType : TextureShapeType
+{}
+syntax_class TextureShapeCubeType : TextureShapeType
+{}
+syntax_class TextureShapeBufferType : TextureShapeType
+{}
+abstract syntax_class ResourceType : BuiltinType
+{}
+abstract syntax_class TextureTypeBase : ResourceType
+{}
+syntax_class TextureType : TextureTypeBase
+{}
+syntax_class GLSLImageType : TextureTypeBase
+{}
+syntax_class SubpassInputType : BuiltinType
+{}
+syntax_class SamplerStateType : BuiltinType
+{}
+syntax_class BuiltinGenericType : BuiltinType
+{}
+
+syntax_class PointerLikeType : BuiltinGenericType
+{}
+
+syntax_class DynamicResourceType : BuiltinType
+{}
+
+syntax_class HLSLStructuredBufferTypeBase : BuiltinGenericType
+{}
+
+syntax_class HLSLStructuredBufferType : HLSLStructuredBufferTypeBase
+{}
+
+syntax_class HLSLRWStructuredBufferType : HLSLStructuredBufferTypeBase
+{}
+
+syntax_class HLSLRasterizerOrderedStructuredBufferType : HLSLStructuredBufferTypeBase
+{}
+
+
+syntax_class UntypedBufferResourceType : BuiltinType
+{}
+
+syntax_class HLSLByteAddressBufferType : UntypedBufferResourceType
+{}
+
+syntax_class HLSLRWByteAddressBufferType : UntypedBufferResourceType
+{}
+
+syntax_class HLSLRasterizerOrderedByteAddressBufferType : UntypedBufferResourceType
+{}
+
+syntax_class RaytracingAccelerationStructureType : UntypedBufferResourceType
+{}
+
+
+syntax_class HLSLAppendStructuredBufferType : HLSLStructuredBufferTypeBase
+{}
+
+syntax_class HLSLConsumeStructuredBufferType : HLSLStructuredBufferTypeBase
+{}
+
+syntax_class GLSLAtomicUintType : BuiltinType
+{}
+
+syntax_class HLSLPatchType : BuiltinType
+{}
+
+syntax_class HLSLInputPatchType : HLSLPatchType
+{}
+
+syntax_class HLSLOutputPatchType : HLSLPatchType
+{}
+
+syntax_class HLSLStreamOutputType : BuiltinGenericType
+{}
+
+syntax_class HLSLPointStreamType : HLSLStreamOutputType
+{}
+
+syntax_class HLSLLineStreamType : HLSLStreamOutputType
+{}
+
+syntax_class HLSLTriangleStreamType : HLSLStreamOutputType
+{}
+
+syntax_class MeshOutputType : BuiltinGenericType
+{}
+
+syntax_class VerticesType : MeshOutputType
+{}
+
+syntax_class IndicesType : MeshOutputType
+{}
+
+syntax_class PrimitivesType : MeshOutputType
+{}
+
+syntax_class GLSLInputAttachmentType : BuiltinType
+{}
+
+
+syntax_class DescriptorHandleType : PointerLikeType
+{}
+
+syntax_class ParameterGroupType : PointerLikeType
+{}
+
+syntax_class UniformParameterGroupType : ParameterGroupType
+{}
+
+syntax_class VaryingParameterGroupType : ParameterGroupType
+{}
+
+syntax_class ConstantBufferType : UniformParameterGroupType
+{}
+
+syntax_class TextureBufferType : UniformParameterGroupType
+{}
+
+syntax_class GLSLInputParameterGroupType : VaryingParameterGroupType
+{}
+
+syntax_class GLSLOutputParameterGroupType : VaryingParameterGroupType
+{}
+
+syntax_class GLSLShaderStorageBufferType : PointerLikeType
+{}
+
+syntax_class ParameterBlockType : UniformParameterGroupType
+{}
+
+syntax_class ArrayExpressionType : DeclRefType
+{}
+
+syntax_class AtomicType : DeclRefType
+{}
+
+syntax_class CoopVectorExpressionType : ArithmeticExpressionType
+{}
+
+syntax_class TypeType : Type
+{}
+
+syntax_class DifferentialPairType : ArithmeticExpressionType
+{}
+
+syntax_class DifferentialPtrPairType : ArithmeticExpressionType
+{}
+
+syntax_class DifferentiableType : BuiltinType
+{}
+
+syntax_class DifferentiablePtrType : BuiltinType
+{}
+
+syntax_class DefaultInitializableType : BuiltinType
+{}
+
+syntax_class VectorExpressionType : ArithmeticExpressionType
+{}
+
+syntax_class MatrixExpressionType : ArithmeticExpressionType
+{}
+
+syntax_class TensorViewType : BuiltinType
+{}
+
+// Base syntax_class for built in string types
+syntax_class StringTypeBase : BuiltinType
+{}
+
+// The regular built-in `String` type
+syntax_class StringType : StringTypeBase
+{}
+
+// The string type native to the target
+syntax_class NativeStringType : StringTypeBase
+{}
+
+// The built-in `__Dynamic` type
+syntax_class DynamicType : BuiltinType
+{}
+
+// Type built-in `__EnumType` type
+syntax_class EnumTypeType : BuiltinType
+{}
+
+// Base syntax_class for types that map down to
+// simple pointers as part of code generation.
+syntax_class PtrTypeBase : BuiltinType
+{}
+
+syntax_class NoneType : BuiltinType
+{}
+
+syntax_class NullPtrType : BuiltinType
+{}
+
+// A true (user-visible) pointer type, e.g., `T*`
+syntax_class PtrType : PtrTypeBase
+{}
+
+/// A pointer-like type used to represent a parameter "direction"
+syntax_class ParamDirectionType : PtrTypeBase
+{}
+
+syntax_class OutTypeBase : ParamDirectionType
+{}
+
+// The type for an `out` parameter, e.g., `out T`
+syntax_class OutType : OutTypeBase
+{}
+
+// The type for an `in out` parameter, e.g., `in out T`
+syntax_class InOutType : OutTypeBase
+{}
+
+syntax_class RefTypeBase : ParamDirectionType
+{}
+
+// The type for an `ref` parameter, e.g., `ref T`
+syntax_class RefType : RefTypeBase
+{}
+
+// The type for an `constref` parameter, e.g., `constref T`
+syntax_class ConstRefType : RefTypeBase
+{}
+
+syntax_class OptionalType : BuiltinType
+{}
+
+// A raw-pointer reference to an managed value.
+syntax_class NativeRefType : BuiltinType
+{}
+
+// A type alias of some kind (e.g., via `typedef`)
+syntax_class NamedExpressionType : Type
+{}
+
+// A function type is defined by its parameter types
+// and its result type.
+syntax_class FuncType : Type
+{}
+
+// A tuple is a product of its member types
+syntax_class TupleType : DeclRefType
+{}
+
+syntax_class EachType : Type
+{}
+
+syntax_class ExpandType : Type
+{}
+
+// A concrete pack of types.
+syntax_class ConcreteTypePack : Type
+{}
+
+// The "type" of an expression that names a generic declaration.
+syntax_class GenericDeclRefType : Type
+{}
+
+// The "type" of a reference to a module or namespace
+syntax_class NamespaceType : Type
+{}
+
+// The concrete type for a value wrapped in an existential, accessible
+// when the existential is "opened" in some context.
+syntax_class ExtractExistentialType : Type
+{}
+
+syntax_class ExistentialSpecializedType : Type
+{}
+
+/// The type of `this` within a polymorphic declaration
+syntax_class ThisType : DeclRefType
+{}
+
+/// The type of `A & B` where `A` and `B` are types
+///
+/// A value `v` is of type `A & B` if it is both of type `A` and of type `B`.
+syntax_class AndType : Type
+{}
+
+syntax_class ModifiedType : Type
+{}
+
+//
+// Statements
+//
+
+// slang-ast-stmt.h
+
+// slang-ast-stmt.h
+
+abstract syntax_class ScopeStmt : Stmt
+{}
+
+// A sequence of statements, treated as a single statement
+syntax_class SeqStmt : Stmt
+{ FIELDS Stmt* }
+
+// A statement with a label.
+syntax_class LabelStmt : Stmt
+{
+	pattern { $label:Identifier ":" $innerStmt:Stmt }
+}
+
+// The simplest kind of scope statement: just a `{...}` block
+syntax_class BlockStmt : ScopeStmt
+{
+	pattern
+	{
+		{ $body:Stmt }
+	}
+}
+
+// A statement that we aren't going to parse or check, because
+// we want to let a downstream compiler handle any issues
+syntax_class UnparsedStmt : Stmt
+{}
+
+syntax_class EmptyStmt : Stmt
+{}
+
+syntax_class DiscardStmt : Stmt
+{
+	pattern { "discard" ";" }
+}
+
+syntax_class DeclStmt : Stmt
+{
+	pattern { $decl:DeclBase }
+}
+
+syntax_class IfStmt : Stmt
+{
+	pattern { "if" "(" $predicate:Expr ")" $positiveStatement:Stmt $ElseClause? }
+}
+
+syntax_class ElseClause
+{
+	pattern { "else" $negativeStatement:Stmt }
+}
+
+// A statement that can be escaped with a `break`
+abstract syntax_class BreakableStmt : ScopeStmt
+{}
+
+syntax_class SwitchStmt : BreakableStmt
+{
+	pattern {"switch" "(" $condition:Expr ")" $SwitchBody}
+}
+
+syntax_class SwitchBody;
+
+syntax_class TargetCaseStmt : Stmt
+{} // TODO: check the syntax
+
+syntax_class TargetSwitchStmt : Stmt
+{ FIELDS targetCases:TargetCaseStmt* }
+
+syntax_class StageSwitchStmt : TargetSwitchStmt
+{}
+
+syntax_class IntrinsicAsmStmt : Stmt
+{} // TODO: check the syntax
+
+// A statement that is expected to appear lexically nested inside
+// some other construct, and thus needs to keep track of the
+// outer statement that it is associated with...
+abstract syntax_class ChildStmt : Stmt
+{}
+
+// a `case` or `default` statement inside a `switch`
+//
+// Note(tfoley): A correct AST for a C-like language would treat
+// these as a labelled statement, and so they would contain a
+// sub-statement. I'm leaving that out for now for simplicity.
+abstract syntax_class CaseStmtBase : ChildStmt
+{}
+
+// a `case` statement inside a `switch`
+syntax_class CaseStmt : CaseStmtBase
+{
+	pattern { "case" Expr ":" }
+}
+
+// a `default` statement inside a `switch`
+syntax_class DefaultStmt : CaseStmtBase
+{
+	pattern { "default" ":" }
+}
+
+syntax_class GpuForeachStmt : ScopeStmt
+{} // TODO: check syntax
+
+// A statement that represents a loop, and can thus be escaped with a `continue`
+abstract syntax_class LoopStmt : BreakableStmt
+{}
+
+// A `for` statement
+syntax_class ForStmt : LoopStmt
+{
+	pattern
+	{
+		"for" "("
+			$initialStmt:Stmt? $firstSemi:";"
+			$predicateExpression:Expr? $secondSemi:";"
+			$sideEffectExpression:Expr? ")"
+		$statement:Stmt
+	}
+}
+
+// A `for` statement in a language that doesn't restrict the scope
+// of the loop variable to the body.
+syntax_class UnscopedForStmt : ForStmt
+{}
+
+syntax_class WhileStmt : LoopStmt
+{
+	pattern { "while" "(" $predicate:Expr ")" $statement:Stmt }
+}
+
+syntax_class DoWhileStmt : LoopStmt
+{
+	pattern
+	{
+		"do" $statement:Stmt "while" "(" $predicate:Expr ")"
+	}
+}
+
+// A compile-time, range-based `for` loop, which will not appear in the output code
+syntax_class CompileTimeForStmt : ScopeStmt
+{} // TODO: check syntax
+
+// The case of child statements that do control flow relative
+// to their parent statement.
+abstract syntax_class JumpStmt : ChildStmt
+{}
+
+syntax_class BreakStmt : JumpStmt
+{
+	pattern { "break" $targetLabel:Identifier? ";" }
+}
+
+syntax_class ContinueStmt : JumpStmt
+{
+	pattern { "continue" $targetLabel:Identifier? ";" }
+}
+
+syntax_class ReturnStmt : Stmt
+{
+	pattern { "return" $expression:Expr? ";" }
+}
+
+syntax_class ExpressionStmt : Stmt
+{
+	pattern { $expression:Expr ";" }
+}
+
+//
+// Expressions
+//
+
+// slang-ast-expr.h
+
+
+// A placeholder for where an Expr is expected but is missing from source.
+syntax_class IncompleteExpr : Expr
+{} // TODO: check syntax
+
+// Base syntax_class for expressions that will reference declarations
+abstract syntax_class DeclRefExpr : Expr
+{ FIELDS DeclRefBase } // TODO: other pieces...
+
+syntax_class VarExpr : DeclRefExpr
+{}
+
+syntax_class DefaultConstructExpr : Expr
+{}
+
+// An expression that references an overloaded set of declarations
+// having the same name.
+syntax_class OverloadedExpr : Expr
+{} // TODO: this case is tricky...
+
+// An expression that references an overloaded set of declarations
+// having the same name.
+syntax_class OverloadedExpr2 : Expr
+{} // TODO: tricky case
+
+abstract syntax_class LiteralExpr : Expr
+{} // TODO: tricky
+
+syntax_class IntegerLiteralExpr : LiteralExpr
+{}
+
+syntax_class FloatingPointLiteralExpr : LiteralExpr
+{}
+
+syntax_class BoolLiteralExpr : LiteralExpr
+{}
+
+syntax_class NullPtrLiteralExpr : LiteralExpr
+{}
+
+syntax_class NoneLiteralExpr : LiteralExpr
+{}
+
+syntax_class StringLiteralExpr : LiteralExpr
+{
+	pattern { $StringLiteral* }
+}
+
+// An initializer list, e.g. `{ 1, 2, 3 }`
+syntax_class InitializerListExpr : Expr
+{
+	pattern
+	{
+		"{" $args:Expr* "}"
+	}
+}
+
+syntax_class GetArrayLengthExpr : Expr
+{} // TODO:
+
+syntax_class ExpandExpr : Expr
+{
+	pattern { "expand" $baseExpr:Expr }
+}
+
+syntax_class EachExpr : Expr
+{
+	pattern { "each" $baseExpr:Expr }
+}
+
+// A base syntax_class for expressions with arguments
+abstract syntax_class ExprWithArgsBase : Expr
+{ FIELDS arguments:Expr* }
+
+// An aggregate type constructor
+syntax_class AggTypeCtorExpr : ExprWithArgsBase
+{ FIELDS base:TypeExp }
+
+// A base expression being applied to arguments: covers
+// both ordinary `()` function calls and `<>` generic application
+abstract syntax_class AppExprBase : ExprWithArgsBase
+{ FIELDS functionExpr:Expr }
+
+syntax_class InvokeExpr : AppExprBase
+{}
+
+syntax_class ExplicitCtorInvokeExpr : InvokeExpr
+{}
+
+syntax_class TryExpr : Expr
+{
+	pattern { "try" $base:Expr }
+}
+
+syntax_class NewExpr : InvokeExpr
+{}
+
+syntax_class OperatorExpr : InvokeExpr
+{}
+
+syntax_class InfixExpr : OperatorExpr
+{}
+syntax_class PrefixExpr : OperatorExpr
+{}
+syntax_class PostfixExpr : OperatorExpr
+{}
+
+syntax_class IndexExpr : Expr
+{
+	pattern
+	{
+		$baseExpression:Expr "[" $indexExprs:Expr* "]"
+	}
+}
+
+syntax_class MemberExpr : DeclRefExpr
+{
+	pattern { $baseExpression:Expr "." $memberName:Identifier }
+}
+
+// Member expression that is dereferenced, e.g. `a->b`.
+syntax_class DerefMemberExpr : MemberExpr
+{}
+
+// Member looked up on a type, rather than a value
+syntax_class StaticMemberExpr : DeclRefExpr
+{}
+
+syntax_class MatrixSwizzleExpr : Expr
+{ FIELDS base:Expr elementCoords }
+
+syntax_class SwizzleExpr : Expr
+{ FIELDS base:Expr elementIndices:Int* }
+
+// An operation to convert an l-value to a reference type.
+syntax_class MakeRefExpr : Expr
+{
+	pattern { "&" $base:Expr }
+}
+
+// A dereference of a pointer or pointer-like type
+syntax_class DerefExpr : Expr
+{
+	pattern { "*" $base:Expr }
+}
+
+// Any operation that performs type-casting
+syntax_class TypeCastExpr : InvokeExpr
+{
+	pattern { "(" $targetType:TypeExp ")" $expression:Expr }
+}
+
+// An explicit type-cast that appear in the user's code with `(type) expr` syntax
+syntax_class ExplicitCastExpr : TypeCastExpr
+{}
+
+// An implicit type-cast inserted during semantic checking
+syntax_class ImplicitCastExpr : TypeCastExpr
+{}
+
+// A builtin cast expr generated during semantic checking, where there is
+// no associated conversion function decl.
+syntax_class BuiltinCastExpr : Expr
+{}
+
+syntax_class LValueImplicitCastExpr : TypeCastExpr
+{}
+
+// To work around situations like int += uint
+// where we want to allow an LValue to work with an implicit cast.
+// The argument being cast *must* be an LValue.
+syntax_class OutImplicitCastExpr : LValueImplicitCastExpr
+{}
+
+syntax_class InOutImplicitCastExpr : LValueImplicitCastExpr
+{}
+
+/// A cast of a value to a super-type of its type.
+///
+/// The type being cast to is stored as this expression's `type`.
+///
+syntax_class CastToSuperTypeExpr : Expr
+{ FIELDS valueArg:Expr witnessArg:Val }
+
+/// A `value is Type` expression that evaluates to `true` if type of `value` is a sub-type of
+/// `Type`.
+syntax_class IsTypeExpr : Expr
+{
+	pattern { $value:Expr "is" $typeExpr:TypeExp }
+}
+
+/// A `value as Type` expression that casts `value` to `Type` within type hierarchy.
+/// The result is undefined if `value` is not `Type`.
+syntax_class AsTypeExpr : Expr
+{
+	pattern { $value:Expr as $typeExpr:Expr }
+}
+
+syntax_class SizeOfLikeExpr : Expr
+{ FIELDS value:Expr }
+
+syntax_class SizeOfExpr : SizeOfLikeExpr
+{
+	pattern { "sizeof" "(" $value:Expr ")" }
+}
+
+syntax_class AlignOfExpr : SizeOfLikeExpr
+{
+	pattern { "alignof" "(" $value:Expr ")" }
+}
+
+syntax_class CountOfExpr : SizeOfLikeExpr
+{
+	pattern { "countof" "(" $value:Expr ")" }
+}
+
+syntax_class MakeOptionalExpr : Expr
+{ FIELDS value:Expr }
+
+/// A cast of a value to the same type, with different modifiers.
+///
+/// The type being cast to is stored as this expression's `type`.
+///
+syntax_class ModifierCastExpr : Expr
+{ FIELDS valueArg:Expr }
+
+syntax_class SelectExpr : OperatorExpr
+{}
+
+syntax_class LogicOperatorShortCircuitExpr : OperatorExpr
+{}
+
+
+syntax_class GenericAppExpr : AppExprBase
+{}
+
+// An expression representing re-use of the syntax for a type in more
+// than once conceptually-distinct declaration
+syntax_class SharedTypeExpr : Expr
+{}
+
+syntax_class AssignExpr : Expr
+{
+	pattern { $left:Expr "=" $right:Expr }
+}
+
+// Just an expression inside parentheses `(exp)`
+//
+// We keep this around explicitly to be sure we don't lose any structure
+// when we do rewriter stuff.
+syntax_class ParenExpr : Expr
+{
+	pattern { "(" $base:Expr  ")" }
+}
+
+// An object-oriented `this` expression, used to
+// refer to the current instance of an enclosing type.
+syntax_class ThisExpr : Expr
+{
+	pattern { "this" }
+}
+
+// Represent a reference to the virtual __return_val object holding the return value of
+// functions whose result type is non-copyable.
+syntax_class ReturnValExpr : Expr
+{}
+
+// An expression that binds a temporary variable in a local expression context
+syntax_class LetExpr : Expr
+{}
+
+syntax_class ExtractExistentialValueExpr : Expr
+{ FIELDS DeclRefBase originalExpr:Expr }
+
+syntax_class OpenRefExpr : Expr
+{ FIELDS innerExpr:Expr }
+
+syntax_class DetachExpr : Expr
+{ FIELDS inner:Expr }
+
+/// Base syntax_class for higher-order function application
+/// Eg: foo(fn) where fn is a function expression.
+///
+abstract syntax_class HigherOrderInvokeExpr : Expr
+{ FIELDS baseFunction:Expr newParameterNames:Name* }
+
+syntax_class PrimalSubstituteExpr : HigherOrderInvokeExpr
+{}
+
+abstract syntax_class DifferentiateExpr : HigherOrderInvokeExpr
+{}
+
+/// An expression of the form `__fwd_diff(fn)` to access the
+/// forward-mode derivative version of the function `fn`
+///
+syntax_class ForwardDifferentiateExpr : DifferentiateExpr
+{}
+
+/// An expression of the form `__bwd_diff(fn)` to access the
+/// forward-mode derivative version of the function `fn`
+///
+syntax_class BackwardDifferentiateExpr : DifferentiateExpr
+{}
+
+/// An expression of the form `__dispatch_kernel(fn, threadGroupSize, dispatchSize)` to
+/// dispatch a compute kernel from host.
+///
+syntax_class DispatchKernelExpr : HigherOrderInvokeExpr
+{ FIELDS threadGroupSize:Expr dispatchSize:Expr }
+
+/// An express to mark its inner expression as an intended non-differential call.
+syntax_class TreatAsDifferentiableExpr : Expr
+{ FIELDS innerExpr:Expr }
+
+/// A type expression of the form `This`
+///
+/// Refers to the type of `this` in the current context.
+///
+syntax_class ThisTypeExpr : Expr
+{ pattern "This" }
+
+/// A type expression of the form `Left & Right`.
+syntax_class AndTypeExpr : Expr
+{
+	pattern { $left:TypeExp "&" $right:TypeExp }
+}
+
+/// A type exprssion that applies one or more modifiers to another type
+syntax_class ModifiedTypeExpr : Expr
+{
+	pattern { $Modifiers $base:TypeExp }
+}
+
+/// A type expression that rrepresents a pointer type, e.g. T*
+syntax_class PointerTypeExpr : Expr
+{
+	pattern { $base:TypeExp "*" }
+}
+
+/// A type expression that represents a function type, e.g. (bool, int) -> float
+syntax_class FuncTypeExpr : Expr
+{ FIELDS parameters:TypeExp* result:TypeExp }
+
+syntax_class TupleTypeExpr : Expr
+{ FIELDS members:TypeExp* }
+
+/// An expression that applies a generic to arguments for some,
+/// but not all, of its explicit parameters.
+///
+syntax_class PartiallyAppliedGenericExpr : Expr
+{ FIELDS baseGenericDeclRef:DeclRefBase knownGenericArgs:Val* }
+
+/// An expression that holds a set of argument exprs that got matched to a pack parameter
+/// during overload resolution.
+///
+syntax_class PackExpr : Expr
+{ FIELDS args:Expr* }
+
+syntax_class SPIRVAsmOperand
+{}
+
+syntax_class SPIRVAsmInst
+{}
+
+syntax_class SPIRVAsmExpr : Expr
+{}
+
+//
+// Declarations
+//
+
+// slang-ast-decl.h
+
+syntax_class DeclGroup : DeclBase
+{ FIELDS Decl* }
+
+syntax_class UnresolvedDecl : Decl
+{}
+
+// A "container" decl is a parent to other declarations
+abstract syntax_class ContainerDecl : Decl
+{
+	FIELDS members:Decl*;
+
+	RAW {
+		void addMember(Decl* member);
+	}
+}
+
+// Base syntax_class for all variable declarations
+abstract syntax_class VarDeclBase : Decl
+{ FIELDS type:TypeExp initExpr:Expr? }
+
+// Ordinary potentially-mutable variables (locals, globals, and member variables)
+syntax_class VarDecl : VarDeclBase
+{}
+
+// A variable declaration that is always immutable (whether local, global, or member variable)
+syntax_class LetDecl : VarDecl
+{}
+
+// An `AggTypeDeclBase` captures the shared functionality
+// between true aggregate type declarations and extension
+// declarations:
+//
+// - Both can contain members (they are `ContainerDecl`s)
+// - Both can have declared bases
+// - Both expose a `this` variable in their body
+//
+abstract syntax_class AggTypeDeclBase : ContainerDecl
+{}
+
+// An extension to apply to an existing type
+syntax_class ExtensionDecl : AggTypeDeclBase
+{ FIELDS targetType:TypeExp }
+
+// Declaration of a type that represents some sort of aggregate
+syntax_class AggTypeDecl : AggTypeDeclBase
+{}
+
+abstract syntax_class StructDecl : AggTypeDecl
+{}
+
+syntax_class ClassDecl : AggTypeDecl
+{}
+
+syntax_class GLSLInterfaceBlockDecl : AggTypeDecl
+{}
+
+// TODO: Is it appropriate to treat an `enum` as an aggregate type?
+// Most code that looks for, e.g., conformances assumes user-defined
+// types are all `AggTypeDecl`, so this is the right choice for now
+// if we want `enum` types to be able to implement interfaces, etc.
+//
+syntax_class EnumDecl : AggTypeDecl
+{ FIELDS cases:EnumCaseDecl,* }
+
+// A single case in an enum.
+//
+// E.g., in a declaration like:
+//
+//      enum Color { Red = 0, Green, Blue }
+//
+// The `Red = 0` is the declaration of the `Red`
+// case, with `0` as an explicit expression for its
+// _tag value_.
+//
+syntax_class EnumCaseDecl : Decl
+{ FIELDS name:Identifier InitialValueClause? }
+
+// A member of InterfaceDecl representing the abstract ThisType.
+syntax_class ThisTypeDecl : AggTypeDecl
+{}
+
+// An interface which other types can conform to
+syntax_class InterfaceDecl : AggTypeDecl
+{}
+
+abstract syntax_class TypeConstraintDecl : Decl
+{}
+
+syntax_class ThisTypeConstraintDecl : TypeConstraintDecl
+{}
+
+// A kind of pseudo-member that represents an explicit
+// or implicit inheritance relationship.
+//
+syntax_class InheritanceDecl : TypeConstraintDecl
+{ FIELDS base:TypeExp }
+
+// A declaration that represents a simple (non-aggregate) type
+//
+// TODO: probably all types will be aggregate decls eventually,
+// so that we can easily store conformances/constraints on type variables
+abstract syntax_class SimpleTypeDecl : Decl
+{}
+
+// A `typedef` declaration
+syntax_class TypeDefDecl : SimpleTypeDecl
+{
+	pattern { "typedef" $Declarator }
+}
+
+syntax_class Declarator;
+
+syntax_class TypeAliasDecl : TypeDefDecl
+{
+	pattern { "typealias" $name:Identifier "=" $TypeExp }
+}
+
+// An 'assoctype' declaration, it is a container of inheritance clauses
+syntax_class AssocTypeDecl : AggTypeDecl
+{
+	pattern { "associatedtype" $name:Identifier } // TODO: constraints...
+}
+
+// A 'type_param' declaration, which defines a generic
+// entry-point parameter. Is a container of GenericTypeConstraintDecl
+syntax_class GlobalGenericParamDecl : AggTypeDecl
+{
+	pattern { "type_param" $name:Identifier }
+}
+
+// A `__generic_value_param` declaration, which defines an existential
+// value parameter (not a type parameter.
+syntax_class GlobalGenericValueParamDecl : VarDeclBase
+{
+	pattern { "__generic_value_param" $name:Identifier ":" $TypeExp }
+}
+
+// A scope for local declarations (e.g., as part of a statement)
+syntax_class ScopeDecl : ContainerDecl
+{}
+
+// A function/initializer/subscript parameter (potentially mutable)
+syntax_class ParamDecl : VarDeclBase
+{} // TODO: details
+
+// A parameter of a function declared in "modern" types (immutable unless explicitly `out` or
+// `inout`)
+syntax_class ModernParamDecl : ParamDecl
+{
+	pattern { $name:Identifier $TypeAscriptionClause $DefaultValueClause? }
+}
+
+syntax_class TypeAscriptionClause
+{
+	pattern { : $TypeExp }
+}
+
+syntax_class DefaultValueClause
+{
+	pattern { = $Expr }
+}
+
+// Base syntax_class for things that have parameter lists and can thus be applied to arguments ("called")
+abstract syntax_class CallableDecl : ContainerDecl
+{} // TODO: details
+
+// Base syntax_class for callable things that may also have a body that is evaluated to produce their
+// result
+abstract syntax_class FunctionDeclBase : CallableDecl
+{}
+
+// A constructor/initializer to create instances of a type
+syntax_class ConstructorDecl : FunctionDeclBase
+{
+	pattern { "init" $GenericParametersClause? $ParametersClause $WhereClause? $StatementBody? }
+}
+
+syntax_class GenericParametersClause;
+syntax_class ParametersClause;
+syntax_class WhereClause;
+syntax_class StatementBody;
+syntax_class DeclBody;
+syntax_class FilePath;
+syntax_class ConstraintClause;
+syntax_class InitialValueClause;
+
+// A subscript operation used to index instances of a type
+syntax_class SubscriptDecl : CallableDecl
+{}
+
+/// A property declaration that abstracts over storage with a getter/setter/etc.
+syntax_class PropertyDecl : ContainerDecl
+{
+	pattern { "property" $name:Identifier $TypeAscriptionClause $AccessorBody }
+}
+
+// An "accessor" for a subscript or property
+syntax_class AccessorDecl : FunctionDeclBase
+{}
+
+syntax_class AccessorBody;
+
+syntax_class GetterDecl : AccessorDecl
+{
+	pattern { "get" AccessorBody }
+}
+
+syntax_class SetterDecl : AccessorDecl
+{
+	pattern { "set" AccessorBody }
+}
+
+syntax_class RefAccessorDecl : AccessorDecl
+{
+	pattern { "ref" AccessorBody }
+}
+
+syntax_class FuncDecl : FunctionDeclBase
+{} // TODO: details
+
+syntax_class NamespaceDeclBase : ContainerDecl
+{}
+
+// A `namespace` declaration inside some module, that provides
+// a named scope for declarations inside it.
+//
+// Note: Multiple `namespace` declarations with the same name
+// in a given module/file will be collapsed into a single
+// `NamespaceDecl` during parsing, so this declaration does
+// not directly represent what is present in the input syntax.
+//
+syntax_class NamespaceDecl : NamespaceDeclBase
+{
+	pattern { "namespace" $name:Identifier $DeclBody }
+}
+
+// A "module" of code (essentially, a single translation unit)
+// that provides a scope for some number of declarations.
+syntax_class ModuleDecl : NamespaceDeclBase
+{}
+
+// Represents a transparent scope of declarations that are defined in a single source file.
+syntax_class FileDecl : ContainerDecl
+{}
+
+/// A declaration that brings members of another declaration or namespace into scope
+syntax_class UsingDecl : Decl
+{
+	pattern { "using" $arg:Expr ";" }
+}
+
+syntax_class FileReferenceDeclBase : Decl
+{}
+
+syntax_class ImportDecl : FileReferenceDeclBase
+{
+	pattern { "import" $FilePath ";" }
+}
+
+syntax_class IncludeDeclBase : FileReferenceDeclBase
+{}
+
+syntax_class IncludeDecl : IncludeDeclBase
+{
+	pattern { "include" $FilePath ";" }
+}
+
+syntax_class ImplementingDecl : IncludeDeclBase
+{
+	pattern { "implementing" $FilePath ";" }
+}
+
+syntax_class ModuleDeclarationDecl : Decl
+{
+	pattern { "module" $name:Identifier ";" }
+}
+
+syntax_class RequireCapabilityDecl : Decl
+{} // TODO: details
+
+// A generic declaration, parameterized on types/values
+syntax_class GenericDecl : ContainerDecl
+{}
+
+syntax_class GenericTypeParamDeclBase : SimpleTypeDecl
+{}
+
+syntax_class GenericTypeParamDecl : GenericTypeParamDeclBase
+{
+	pattern { $name:Identifier $ConstraintClause? $InitialValueClause? }
+}
+
+syntax_class GenericTypePackParamDecl : GenericTypeParamDeclBase
+{} // TODO
+
+// A constraint placed as part of a generic declaration
+syntax_class GenericTypeConstraintDecl : TypeConstraintDecl
+{
+	pattern { $sub:TypeExp ":" $sup:TypeExp } // TODO: details, such as equality...
+}
+
+syntax_class TypeCoercionConstraintDecl : Decl
+{
+	pattern { $toType:TypeExp "(" $fromType ")" }
+}
+
+syntax_class GenericValueParamDecl : VarDeclBase
+{}
+
+// An empty declaration (which might still have modifiers attached).
+//
+// An empty declaration is uncommon in HLSL, but
+// in GLSL it is often used at the global scope
+// to declare metadata that logically belongs
+// to the entry point, e.g.:
+//
+//     layout(local_size_x = 16) in;
+//
+syntax_class EmptyDecl : Decl
+{ pattern ";" }
+
+// A declaration used by the implementation to put syntax keywords
+// into the current scope.
+//
+syntax_class SyntaxDecl : Decl
+{
+	pattern { "syntax" $name:Identifier ":" $TypeExp }
+}
+
+// A declaration of an attribute to be used with `[name(...)]` syntax.
+//
+syntax_class AttributeDecl : ContainerDecl
+{
+	pattern { "attrribute" "[" $name:Identifier $ParametersClause? "]" ":" $TypeExp }
+}
+
+// A synthesized decl used as a placeholder for a differentiable function requirement. This decl
+// will be a child of interface decl. This allows us to form an interface requirement key for the
+// derivative of an interface function. The synthesized `DerivativeRequirementDecl` will be a child
+// of the original function requirement decl after an interface type is checked.
+syntax_class DerivativeRequirementDecl : FunctionDeclBase
+{}
+
+// A reference to a synthesized decl representing a differentiable function requirement, this decl
+// will be a child in the orignal function.
+syntax_class DerivativeRequirementReferenceDecl : FunctionDeclBase
+{}
+
+syntax_class ForwardDerivativeRequirementDecl : DerivativeRequirementDecl
+{}
+
+syntax_class BackwardDerivativeRequirementDecl : DerivativeRequirementDecl
+{}
+
+//
+// Modifiers
+//
+
+// slang-ast-modifier.h
+
+syntax_class InModifier : Modifier
+{ pattern "in" }
+
+syntax_class OutModifier : Modifier
+{ pattern "out" }
+
+syntax_class ConstModifier : Modifier
+{ pattern "const" }
+
+syntax_class BuiltinModifier : Modifier
+{ pattern "__builtin" }
+
+syntax_class InlineModifier : Modifier
+{ pattern "inline" }
+
+syntax_class VisibilityModifier : Modifier
+{}
+
+syntax_class PublicModifier : VisibilityModifier
+{ pattern "public" }
+
+syntax_class PrivateModifier : VisibilityModifier
+{ pattern "private" }
+
+syntax_class InternalModifier : VisibilityModifier
+{ pattern "internal" }
+
+syntax_class RequireModifier : Modifier
+{ pattern "require" }
+
+syntax_class ParamModifier : Modifier
+{ pattern "param" }
+
+syntax_class ExternModifier : Modifier
+{ pattern "extern" }
+
+syntax_class HLSLExportModifier : Modifier
+{ pattern "export" }
+
+syntax_class TransparentModifier : Modifier
+{ pattern "__transparent" }
+
+syntax_class FromCoreModuleModifier : Modifier
+{ pattern "__fromCoreModule" }
+
+syntax_class PrefixModifier : Modifier
+{ pattern "prefix" }
+
+syntax_class PostfixModifier : Modifier
+{ pattern "postfix" }
+
+syntax_class ExportedModifier : Modifier
+{ pattern "exported" }
+
+syntax_class ConstExprModifier : Modifier
+{ pattern "constexpr" }
+
+syntax_class ExternCppModifier : Modifier
+{ pattern "__externCpp" }
+
+syntax_class GLSLPrecisionModifier : Modifier
+{}
+
+syntax_class GLSLModuleModifier : Modifier
+{}
+
+// Marks that the definition of a decl is not yet synthesized.
+syntax_class ToBeSynthesizedModifier : Modifier
+{ pattern "__toBeSynthesized" }
+
+// Marks that the definition of a decl is synthesized.
+syntax_class SynthesizedModifier : Modifier
+{ pattern "__synthesized" }
+
+// Marks a synthesized variable as local temporary variable.
+syntax_class LocalTempVarModifier : Modifier
+{ pattern "__localTempVar" }
+
+// An `extern` variable in an extension is used to introduce additional attributes on an existing
+// field.
+syntax_class ExtensionExternVarModifier : Modifier
+{ pattern "extern" }
+
+// An 'ActualGlobal' is a global that is output as a normal global in CPU code.
+// Globals in HLSL/Slang are constant state passed into kernel execution
+syntax_class ActualGlobalModifier : Modifier
+{ pattern "__actualGlobal" }
+
+/// A modifier that indicates an `InheritanceDecl` should be ignored during name lookup (and related
+/// checks).
+syntax_class IgnoreForLookupModifier : Modifier
+{ pattern "__ignoreForLookup" }
+
+// A modifier that marks something as an operation that
+// has a one-to-one translation to the IR, and thus
+// has no direct definition in the high-level language.
+//
+syntax_class IntrinsicOpModifier : Modifier
+{ pattern "__intrinsicOp" }
+
+// A modifier that marks something as an intrinsic function,
+// for some subset of targets.
+syntax_class TargetIntrinsicModifier : Modifier
+{ pattern "__targetIntrinsic" }
+
+// A modifier that marks a declaration as representing a
+// specialization that should be preferred on a particular
+// target.
+syntax_class SpecializedForTargetModifier : Modifier
+{ pattern "__specializedForTarget" }
+
+// A modifier to tag something as an intrinsic that requires
+// a certain GLSL extension to be enabled when used
+syntax_class RequiredGLSLExtensionModifier : Modifier
+{ pattern "__requireGLSLExtension" }
+
+// A modifier to tag something as an intrinsic that requires
+// a certain GLSL version to be enabled when used
+syntax_class RequiredGLSLVersionModifier : Modifier
+{ pattern "__requireGLSLVersion" }
+
+
+// A modifier to tag something as an intrinsic that requires
+// a certain SPIRV version to be enabled when used. Specified as "major.minor"
+syntax_class RequiredSPIRVVersionModifier : Modifier
+{ pattern "__requireSPIRVVersion" }
+
+// A modifier to tag something as an intrinsic that requires
+// a certain WGSL extension to be enabled when used
+syntax_class RequiredWGSLExtensionModifier : Modifier
+{ pattern "__requireWGSLExtension" }
+
+// A modifier to tag something as an intrinsic that requires
+// a certain CUDA SM version to be enabled when used. Specified as "major.minor"
+syntax_class RequiredCUDASMVersionModifier : Modifier
+{ pattern "__requireCUDASMVersion" }
+
+syntax_class InOutModifier : OutModifier
+{ pattern "inout" }
+
+
+// `__ref` modifier for by-reference parameter passing
+syntax_class RefModifier : Modifier
+{ pattern "__ref" }
+
+// `__ref` modifier for by-reference parameter passing
+syntax_class ConstRefModifier : Modifier
+{ pattern "__constref" }
+
+// This is a special sentinel modifier that gets added
+// to the list when we have multiple variable declarations
+// all sharing the same modifiers:
+//
+//     static uniform int a : FOO, *b : register(x0);
+//
+// In this case both `a` and `b` share the syntax
+// for part of their modifier list, but then have
+// their own modifiers as well:
+//
+//     a: SemanticModifier("FOO") --> SharedModifiers --> StaticModifier --> UniformModifier
+//                                 /
+//     b: RegisterModifier("x0")  /
+//
+syntax_class SharedModifiers : Modifier
+{ pattern "__sharedModifiers" }
+
+// AST nodes to represent the begin/end of a `layout` modifier group
+abstract syntax_class GLSLLayoutModifierGroupMarker : Modifier
+{}
+
+syntax_class GLSLLayoutModifierGroupBegin : GLSLLayoutModifierGroupMarker
+{ pattern "__layoutModifierGroupBegin" }
+
+syntax_class GLSLLayoutModifierGroupEnd : GLSLLayoutModifierGroupMarker
+{ pattern "__layoutModifierGroupEnd" }
+
+syntax_class GLSLUnparsedLayoutModifier : Modifier
+{ pattern "__unparsedLayoutModifier" }
+
+syntax_class GLSLBufferDataLayoutModifier : Modifier
+{}
+
+syntax_class GLSLStd140Modifier : GLSLBufferDataLayoutModifier
+{ pattern "std140" }
+
+syntax_class GLSLStd430Modifier : GLSLBufferDataLayoutModifier
+{ pattern "std430" }
+
+syntax_class GLSLScalarModifier : GLSLBufferDataLayoutModifier
+{ pattern "scalar" }
+
+
+// A catch-all for single-keyword modifiers
+syntax_class SimpleModifier : Modifier
+{}
+
+
+// Indicates that this is a variable declaration that corresponds to
+// a parameter block declaration in the source program.
+syntax_class ImplicitParameterGroupVariableModifier : Modifier
+{ pattern "__implicitParameterGroupVariable" }
+
+
+// Indicates that this is a type that corresponds to the element
+// type of a parameter block declaration in the source program.
+syntax_class ImplicitParameterGroupElementTypeModifier : Modifier
+{ pattern "__implicitParameterGroupElementType" }
+
+
+// An HLSL semantic
+abstract syntax_class HLSLSemantic : Modifier
+{ FIELDS name:Identifier }
+
+// An HLSL semantic that affects layout
+syntax_class HLSLLayoutSemantic : HLSLSemantic
+{}
+
+// An HLSL `register` semantic
+syntax_class HLSLRegisterSemantic : HLSLLayoutSemantic
+{
+	pattern { "register" "(" $registerName:Identifier "." $componentMask:Identifier "," $spaceName:Identifier ")" }
+}
+
+// TODO(tfoley): `packoffset`
+syntax_class HLSLPackOffsetSemantic : HLSLLayoutSemantic
+{
+	pattern { "packoffset" "(" $registerName:Identifier "." $componentMask:Identifier "," $spaceName:Identifier ")" }
+}
+
+// An HLSL semantic that just associated a declaration with a semantic name
+syntax_class HLSLSimpleSemantic : HLSLSemantic
+{}
+
+// A semantic applied to a field of a ray-payload type, to control access
+syntax_class RayPayloadAccessSemantic : HLSLSemantic
+{ FIELDS stageNames:Identifier* }
+
+syntax_class RayPayloadReadSemantic : RayPayloadAccessSemantic
+{ pattern "read" }
+
+syntax_class RayPayloadWriteSemantic : RayPayloadAccessSemantic
+{ pattern "write" }
+
+
+// GLSL
+
+// Directives that came in via the preprocessor, but
+// that we need to keep around for later steps
+syntax_class GLSLPreprocessorDirective : Modifier
+{}
+
+
+// A GLSL `#version` directive
+syntax_class GLSLVersionDirective : GLSLPreprocessorDirective
+{
+	pattern { "#" "version" $versionNumber:IntegerLiteral $profile:Identifier? }
+}
+
+// A GLSL `#extension` directive
+syntax_class GLSLExtensionDirective : GLSLPreprocessorDirective
+{
+	pattern { "#" "extension" $extensionName:Identifier $disposition:Identifier? }
+}
+
+syntax_class ParameterGroupReflectionName : Modifier
+{}
+
+// A modifier that indicates a built-in base type (e.g., `float`)
+syntax_class BuiltinTypeModifier : Modifier
+{ pattern "__builtinType" }
+
+// A modifier that indicates a built-in type that isn't a base type (e.g., `vector`)
+//
+// TODO(tfoley): This deserves a better name than "magic"
+syntax_class MagicTypeModifier : Modifier
+{
+	pattern { "__magicType" $name $tag }
+}
+
+// A modifier that indicates a built-in associated type requirement (e.g., `Differential`)
+syntax_class BuiltinRequirementModifier : Modifier
+{
+	pattern { "__builtinRequirement" $kind }
+}
+
+// A modifier applied to declarations of builtin types to indicate how they
+// should be lowered to the IR.
+//
+// TODO: This should really subsume `BuiltinTypeModifier` and
+// `MagicTypeModifier` so that we don't have to apply all of them.
+syntax_class IntrinsicTypeModifier : Modifier
+{
+	pattern { "__intrinsicTypeModifier" $irOp $irOperand* }
+}
+
+// Modifiers that affect the storage layout for matrices
+syntax_class MatrixLayoutModifier : Modifier
+{}
+
+
+// Modifiers that specify row- and column-major layout, respectively
+syntax_class RowMajorLayoutModifier : MatrixLayoutModifier
+{}
+
+syntax_class ColumnMajorLayoutModifier : MatrixLayoutModifier
+{}
+
+// The HLSL flavor of those modifiers
+syntax_class HLSLRowMajorLayoutModifier : RowMajorLayoutModifier
+{ pattern "row_major" }
+
+syntax_class HLSLColumnMajorLayoutModifier : ColumnMajorLayoutModifier
+{ pattern "column_major" }
+
+
+// The GLSL flavor of those modifiers
+//
+// Note(tfoley): The GLSL versions of these modifiers are "backwards"
+// in the sense that when a GLSL programmer requests row-major layout,
+// we actually interpret that as requesting column-major. This makes
+// sense because we interpret matrix conventions backwards from how
+// GLSL specifies them.
+syntax_class GLSLRowMajorLayoutModifier : ColumnMajorLayoutModifier
+{} // TODO:
+
+syntax_class GLSLColumnMajorLayoutModifier : RowMajorLayoutModifier
+{} // TODO:
+
+
+// More HLSL Keyword
+
+abstract syntax_class InterpolationModeModifier : Modifier
+{}
+
+// HLSL `nointerpolation` modifier
+syntax_class HLSLNoInterpolationModifier : InterpolationModeModifier
+{ pattern "nointerpolation" }
+
+
+// HLSL `noperspective` modifier
+syntax_class HLSLNoPerspectiveModifier : InterpolationModeModifier
+{ pattern "noperspective" }
+
+
+// HLSL `linear` modifier
+syntax_class HLSLLinearModifier : InterpolationModeModifier
+{ pattern "linear" }
+
+
+// HLSL `sample` modifier
+syntax_class HLSLSampleModifier : InterpolationModeModifier
+{ pattern "sample" }
+
+
+// HLSL `centroid` modifier
+syntax_class HLSLCentroidModifier : InterpolationModeModifier
+{ pattern "centroid" }
+
+/// Slang-defined `pervertex` modifier
+syntax_class PerVertexModifier : InterpolationModeModifier
+{ pattern "pervertex" }
+
+
+// HLSL `precise` modifier
+syntax_class PreciseModifier : Modifier
+{ pattern "precise" }
+
+
+// HLSL `shared` modifier (which is used by the effect system,
+// and shouldn't be confused with `groupshared`)
+syntax_class HLSLEffectSharedModifier : Modifier
+{ pattern "shared" }
+
+
+// HLSL `groupshared` modifier
+syntax_class HLSLGroupSharedModifier : Modifier
+{ pattern "groupshared" }
+
+
+// HLSL `static` modifier (probably doesn't need to be
+// treated as HLSL-specific)
+syntax_class HLSLStaticModifier : Modifier
+{ pattern "static" }
+
+
+// HLSL `uniform` modifier (distinct meaning from GLSL
+// use of the keyword)
+syntax_class HLSLUniformModifier : Modifier
+{ pattern "uniform" }
+
+
+// HLSL `volatile` modifier (ignored)
+syntax_class HLSLVolatileModifier : Modifier
+{ pattern "volatile" }
+
+
+syntax_class AttributeTargetModifier : Modifier
+{ pattern "__attributeTarget" }
+
+
+// Base syntax_class for checked and unchecked `[name(arg0, ...)]` style attribute.
+syntax_class AttributeBase : Modifier
+{
+	pattern { "[" $name:Identifier $ArgumentsClause? "]" }
+}
+
+// A `[name(...)]` attribute that hasn't undergone any semantic analysis.
+// After analysis, this will be transformed into a more specific case.
+syntax_class UncheckedAttribute : AttributeBase
+{}
+
+// A GLSL layout qualifier whose value has not yet been resolved or validated.
+syntax_class UncheckedGLSLLayoutAttribute : AttributeBase
+{}
+
+// GLSL `binding` layout qualifier, does not include `set`.
+syntax_class UncheckedGLSLBindingLayoutAttribute : UncheckedGLSLLayoutAttribute
+{}
+
+// GLSL `set` layout qualifier, does not include `binding`.
+syntax_class UncheckedGLSLSetLayoutAttribute : UncheckedGLSLLayoutAttribute
+{}
+
+// GLSL `offset` layout qualifier.
+syntax_class UncheckedGLSLOffsetLayoutAttribute : UncheckedGLSLLayoutAttribute
+{}
+
+syntax_class UncheckedGLSLInputAttachmentIndexLayoutAttribute : UncheckedGLSLLayoutAttribute
+{}
+
+syntax_class UncheckedGLSLLocationLayoutAttribute : UncheckedGLSLLayoutAttribute
+{}
+
+syntax_class UncheckedGLSLIndexLayoutAttribute : UncheckedGLSLLayoutAttribute
+{}
+
+syntax_class UncheckedGLSLConstantIdAttribute : UncheckedGLSLLayoutAttribute
+{}
+
+syntax_class UncheckedGLSLRayPayloadAttribute : UncheckedGLSLLayoutAttribute
+{}
+
+syntax_class UncheckedGLSLRayPayloadInAttribute : UncheckedGLSLLayoutAttribute
+{}
+
+
+syntax_class UncheckedGLSLHitObjectAttributesAttribute : UncheckedGLSLLayoutAttribute
+{}
+
+syntax_class UncheckedGLSLCallablePayloadAttribute : UncheckedGLSLLayoutAttribute
+{}
+
+syntax_class UncheckedGLSLCallablePayloadInAttribute : UncheckedGLSLLayoutAttribute
+{}
+
+// A `[name(arg0, ...)]` style attribute that has been validated.
+syntax_class Attribute : AttributeBase
+{}
+
+syntax_class UserDefinedAttribute : Attribute
+{}
+
+syntax_class AttributeUsageAttribute : Attribute
+{
+//    SyntaxClass<NodeBase> targetSyntaxClass;
+}
+
+syntax_class NonDynamicUniformAttribute : Attribute
+{}
+
+syntax_class RequireCapabilityAttribute : Attribute
+{
+//    CapabilitySet capabilitySet;
+}
+
+
+// An `[unroll]` or `[unroll(count)]` attribute
+syntax_class UnrollAttribute : Attribute
+{}
+
+// An `[unroll]` or `[unroll(count)]` attribute
+syntax_class ForceUnrollAttribute : Attribute
+{}
+
+// An `[maxiters(count)]`
+syntax_class MaxItersAttribute : Attribute
+{}
+
+// An inferred max iteration count on a loop.
+syntax_class InferredMaxItersAttribute : Attribute
+{}
+
+// `[loop]`
+syntax_class LoopAttribute : Attribute
+{}
+
+// `[fastopt]`
+syntax_class FastOptAttribute : Attribute
+{}
+
+// `[allow_uav_condition]`
+syntax_class AllowUAVConditionAttribute : Attribute
+{}
+
+// `[branch]`
+syntax_class BranchAttribute : Attribute
+{}
+
+// `[flatten]`
+syntax_class FlattenAttribute : Attribute
+{}
+
+// `[forcecase]`
+syntax_class ForceCaseAttribute : Attribute
+{}
+
+// `[call]`
+syntax_class CallAttribute : Attribute
+{}
+
+syntax_class UnscopedEnumAttribute : Attribute
+{}
+
+// Marks a enum to have `flags` semantics, where each enum case is a bitfield.
+syntax_class FlagsAttribute : Attribute
+{}
+
+// [[vk_push_constant]] [[push_constant]]
+syntax_class PushConstantAttribute : Attribute
+{}
+
+// [[vk_specialization_constant]] [[specialization_constant]]
+syntax_class SpecializationConstantAttribute : Attribute
+{}
+
+// [[vk_constant_id]]
+syntax_class VkConstantIdAttribute : Attribute
+{}
+
+// [[vk_shader_record]] [[shader_record]]
+syntax_class ShaderRecordAttribute : Attribute
+{}
+
+
+// [[vk_binding]]
+syntax_class GLSLBindingAttribute : Attribute
+{}
+
+syntax_class VkAliasedPointerAttribute : Attribute
+{}
+
+syntax_class VkRestrictPointerAttribute : Attribute
+{}
+
+syntax_class GLSLOffsetLayoutAttribute : Attribute
+{}
+
+// Implicitly added offset qualifier when no offset is specified.
+syntax_class GLSLImplicitOffsetLayoutAttribute : AttributeBase
+{}
+
+syntax_class GLSLSimpleIntegerLayoutAttribute : Attribute
+{}
+
+/// [[vk_input_attachment_index]]
+syntax_class GLSLInputAttachmentIndexLayoutAttribute : Attribute
+{}
+
+// [[vk_location]]
+syntax_class GLSLLocationAttribute : GLSLSimpleIntegerLayoutAttribute
+{}
+
+
+// [[vk_index]]
+syntax_class GLSLIndexAttribute : GLSLSimpleIntegerLayoutAttribute
+{}
+
+// [[vk_spirv_instruction]]
+syntax_class SPIRVInstructionOpAttribute : Attribute
+{}
+
+// [[spv_target_env_1_3]]
+syntax_class SPIRVTargetEnv13Attribute : Attribute
+{}
+
+// [[disable_array_flattening]]
+syntax_class DisableArrayFlatteningAttribute : Attribute
+{}
+
+// A GLSL layout(local_size_x = 64, ... attribute)
+syntax_class GLSLLayoutLocalSizeAttribute : Attribute
+{}
+
+syntax_class GLSLLayoutDerivativeGroupQuadAttribute : Attribute
+{}
+
+syntax_class GLSLLayoutDerivativeGroupLinearAttribute : Attribute
+{}
+
+// TODO: for attributes that take arguments, the syntax node
+// classes should provide accessors for the values of those arguments.
+
+syntax_class MaxTessFactorAttribute : Attribute
+{}
+
+syntax_class OutputControlPointsAttribute : Attribute
+{}
+
+syntax_class OutputTopologyAttribute : Attribute
+{}
+
+syntax_class PartitioningAttribute : Attribute
+{}
+
+syntax_class PatchConstantFuncAttribute : Attribute
+{}
+syntax_class DomainAttribute : Attribute
+{}
+
+// `[earlydepthstencil]`
+syntax_class EarlyDepthStencilAttribute : Attribute
+{}
+
+// An HLSL `[numthreads(x,y,z)]` attribute
+syntax_class NumThreadsAttribute : Attribute
+{}
+
+syntax_class WaveSizeAttribute : Attribute
+{}
+
+syntax_class MaxVertexCountAttribute : Attribute
+{}
+
+syntax_class InstanceAttribute : Attribute
+{}
+
+// A `[shader("stageName")]`/`[shader("capability")]` attribute which
+// marks an entry point for compiling. This attribute also specifies
+// the 'capabilities' implicitly supported by an entry point
+syntax_class EntryPointAttribute : Attribute
+{}
+
+// A `[__vulkanRayPayload(location)]` attribute, which is used in the
+// core module implementation to indicate that a variable
+// actually represents the input/output interface for a Vulkan
+// ray tracing shader to pass per-ray payload information.
+syntax_class VulkanRayPayloadAttribute : Attribute
+{}
+syntax_class VulkanRayPayloadInAttribute : Attribute
+{}
+
+// A `[__vulkanCallablePayload(location)]` attribute, which is used in the
+// core module implementation to indicate that a variable
+// actually represents the input/output interface for a Vulkan
+// ray tracing shader to pass payload information to/from a callee.
+syntax_class VulkanCallablePayloadAttribute : Attribute
+{}
+syntax_class VulkanCallablePayloadInAttribute : Attribute
+{}
+
+// A `[__vulkanHitAttributes]` attribute, which is used in the
+// core module implementation to indicate that a variable
+// actually represents the output interface for a Vulkan
+// intersection shader to pass hit attribute information.
+syntax_class VulkanHitAttributesAttribute : Attribute
+{}
+
+// A `[__vulkanHitObjectAttributes(location)]` attribute, which is used in the
+// core module implementation to indicate that a variable
+// actually represents the attributes on a HitObject as part of
+// Shader ExecutionReordering
+syntax_class VulkanHitObjectAttributesAttribute : Attribute
+{}
+
+// A `[mutating]` attribute, which indicates that a member
+// function is allowed to modify things through its `this`
+// argument.
+//
+syntax_class MutatingAttribute : Attribute
+{}
+
+// A `[nonmutating]` attribute, which indicates that a
+// `set` accessor does not need to modify anything through
+// its `this` parameter.
+//
+syntax_class NonmutatingAttribute : Attribute
+{}
+
+// A `[constref]` attribute, which indicates that the `this` parameter of
+// a member function should be passed by const reference.
+//
+syntax_class ConstRefAttribute : Attribute
+{}
+
+// A `[ref]` attribute, which indicates that the `this` parameter of
+// a member function should be passed by reference.
+//
+syntax_class RefAttribute : Attribute
+{}
+
+// A `[__readNone]` attribute, which indicates that a function
+// computes its results strictly based on argument values, without
+// reading or writing through any pointer arguments, or any other
+// state that could be observed by a caller.
+//
+syntax_class ReadNoneAttribute : Attribute
+{}
+
+
+// A `[__GLSLRequireShaderInputParameter]` attribute to annotate
+// functions that require a shader input as parameter
+//
+syntax_class GLSLRequireShaderInputParameterAttribute : Attribute
+{}
+
+// HLSL modifiers for geometry shader input topology
+syntax_class HLSLGeometryShaderInputPrimitiveTypeModifier : Modifier
+{}
+
+syntax_class HLSLPointModifier : HLSLGeometryShaderInputPrimitiveTypeModifier
+{}
+
+syntax_class HLSLLineModifier : HLSLGeometryShaderInputPrimitiveTypeModifier
+{}
+
+syntax_class HLSLTriangleModifier : HLSLGeometryShaderInputPrimitiveTypeModifier
+{}
+
+syntax_class HLSLLineAdjModifier : HLSLGeometryShaderInputPrimitiveTypeModifier
+{}
+
+syntax_class HLSLTriangleAdjModifier : HLSLGeometryShaderInputPrimitiveTypeModifier
+{}
+
+// Mesh shader paramters
+
+syntax_class HLSLMeshShaderOutputModifier : Modifier
+{}
+
+syntax_class HLSLVerticesModifier : HLSLMeshShaderOutputModifier
+{}
+
+syntax_class HLSLIndicesModifier : HLSLMeshShaderOutputModifier
+{}
+
+syntax_class HLSLPrimitivesModifier : HLSLMeshShaderOutputModifier
+{}
+
+syntax_class HLSLPayloadModifier : Modifier
+{}
+
+// A modifier to indicate that a constructor/initializer can be used
+// to perform implicit type conversion, and to specify the cost of
+// the conversion, if applied.
+syntax_class ImplicitConversionModifier : Modifier
+{}
+
+syntax_class FormatAttribute : Attribute
+{}
+
+syntax_class AllowAttribute : Attribute
+{}
+
+
+// A `[__extern]` attribute, which indicates that a function/type is defined externally
+//
+syntax_class ExternAttribute : Attribute
+{}
+
+
+// An `[__unsafeForceInlineExternal]` attribute indicates that the callee should be inlined
+// into call sites after initial IR generation (that is, as early as possible).
+//
+syntax_class UnsafeForceInlineEarlyAttribute : Attribute
+{}
+
+// A `[ForceInline]` attribute indicates that the callee should be inlined
+// by the Slang compiler.
+//
+syntax_class ForceInlineAttribute : Attribute
+{}
+
+
+/// An attribute that marks a type declaration as either allowing or
+/// disallowing the type to be inherited from in other modules.
+syntax_class InheritanceControlAttribute : Attribute
+{}
+
+/// An attribute that marks a type declaration as allowing the type to be inherited from in other
+/// modules.
+syntax_class OpenAttribute : InheritanceControlAttribute
+{}
+
+/// An attribute that marks a type declaration as disallowing the type to be inherited from in other
+/// modules.
+syntax_class SealedAttribute : InheritanceControlAttribute
+{}
+
+/// An attribute that marks a decl as a compiler built-in object.
+syntax_class BuiltinAttribute : Attribute
+{}
+
+/// An attribute that marks a decl as a compiler built-in object for the autodiff system.
+syntax_class AutoDiffBuiltinAttribute : Attribute
+{}
+
+/// An attribute that defines the size of `AnyValue` type to represent a polymoprhic value that
+/// conforms to the decorated interface type.
+syntax_class AnyValueSizeAttribute : Attribute
+{}
+
+/// This is a stop-gap solution to break overload ambiguity in the core module.
+/// When there is a function overload ambiguity, the compiler will pick the one with higher rank
+/// specified by this attribute. An overload without this attribute will have a rank of 0.
+/// In the future, we should enhance our type system to take into account the "specialized"-ness
+/// of an overload, such that `T overload1<T:IDerived>()` is more specialized than `T
+/// overload2<T:IBase>()` and preferred during overload resolution.
+syntax_class OverloadRankAttribute : Attribute
+{}
+
+/// An attribute that marks an interface for specialization use only. Any operation that triggers
+/// dynamic dispatch through the interface is a compile-time error.
+syntax_class SpecializeAttribute : Attribute
+{}
+
+/// An attribute that marks a type, function or variable as differentiable.
+syntax_class DifferentiableAttribute : Attribute
+{}
+
+syntax_class DllImportAttribute : Attribute
+{}
+
+syntax_class DllExportAttribute : Attribute
+{}
+
+syntax_class TorchEntryPointAttribute : Attribute
+{}
+
+syntax_class CudaDeviceExportAttribute : Attribute
+{}
+
+syntax_class CudaKernelAttribute : Attribute
+{}
+
+syntax_class CudaHostAttribute : Attribute
+{}
+
+syntax_class AutoPyBindCudaAttribute : Attribute
+{}
+
+syntax_class PyExportAttribute : Attribute
+{}
+
+syntax_class PreferRecomputeAttribute : Attribute
+{}
+
+syntax_class PreferCheckpointAttribute : Attribute
+{}
+
+syntax_class DerivativeMemberAttribute : Attribute
+{}
+
+/// An attribute that marks an interface type as a COM interface declaration.
+syntax_class ComInterfaceAttribute : Attribute
+{}
+
+/// A `[__requiresNVAPI]` attribute indicates that the declaration being modifed
+/// requires NVAPI operations for its implementation on D3D.
+syntax_class RequiresNVAPIAttribute : Attribute
+{}
+
+/// A `[RequirePrelude(target, "string")]` attribute indicates that the declaration being modifed
+/// requires a textual prelude to be injected in the resulting target code.
+syntax_class RequirePreludeAttribute : Attribute
+{}
+
+/// A `[__AlwaysFoldIntoUseSite]` attribute indicates that the calls into the modified
+/// function should always be folded into use sites during source emit.
+syntax_class AlwaysFoldIntoUseSiteAttribute : Attribute
+{}
+
+// A `[TreatAsDifferentiableAttribute]` attribute indicates that a function or an interface
+// should be treated as differentiable in IR validation step.
+//
+syntax_class TreatAsDifferentiableAttribute : DifferentiableAttribute
+{}
+
+/// The `[ForwardDifferentiable]` attribute indicates that a function can be forward-differentiated.
+syntax_class ForwardDifferentiableAttribute : DifferentiableAttribute
+{}
+
+syntax_class UserDefinedDerivativeAttribute : DifferentiableAttribute
+{}
+
+/// The `[ForwardDerivative(function)]` attribute specifies a custom function that should
+/// be used as the derivative for the decorated function.
+syntax_class ForwardDerivativeAttribute : UserDefinedDerivativeAttribute
+{}
+
+syntax_class DerivativeOfAttribute : DifferentiableAttribute
+{}
+
+/// The `[ForwardDerivativeOf(primalFunction)]` attribute marks the decorated function as custom
+/// derivative implementation for `primalFunction`.
+/// ForwardDerivativeOfAttribute inherits from DifferentiableAttribute because a derivative
+/// function itself is considered differentiable.
+syntax_class ForwardDerivativeOfAttribute : DerivativeOfAttribute
+{}
+
+/// The `[BackwardDifferentiable]` attribute indicates that a function can be
+/// backward-differentiated.
+syntax_class BackwardDifferentiableAttribute : DifferentiableAttribute
+{}
+
+/// The `[BackwardDerivative(function)]` attribute specifies a custom function that should
+/// be used as the backward-derivative for the decorated function.
+syntax_class BackwardDerivativeAttribute : UserDefinedDerivativeAttribute
+{}
+
+/// The `[BackwardDerivativeOf(primalFunction)]` attribute marks the decorated function as custom
+/// backward-derivative implementation for `primalFunction`.
+syntax_class BackwardDerivativeOfAttribute : DerivativeOfAttribute
+{}
+
+/// The `[PrimalSubstitute(function)]` attribute specifies a custom function that should
+/// be used as the primal function substitute when differentiating code that calls the primal
+/// function.
+syntax_class PrimalSubstituteAttribute : Attribute
+{}
+
+/// The `[PrimalSubstituteOf(primalFunction)]` attribute marks the decorated function as
+/// the substitute primal function in a forward or backward derivative function.
+syntax_class PrimalSubstituteOfAttribute : Attribute
+{}
+
+/// The `[NoDiffThis]` attribute is used to specify that the `this` parameter should not be
+/// included for differentiation.
+syntax_class NoDiffThisAttribute : Attribute
+{}
+
+/// Indicates that the modified declaration is one of the "magic" declarations
+/// that NVAPI uses to communicate extended operations. When NVAPI is being included
+/// via the prelude for downstream compilation, declarations with this modifier
+/// will not be emitted, instead allowing the versions from the prelude to be used.
+syntax_class NVAPIMagicModifier : Modifier
+{}
+
+/// A modifier that attaches to a `ModuleDecl` to indicate the register/space binding
+/// that NVAPI wants to use, as indicated by, e.g., the `NV_SHADER_EXTN_SLOT` and
+/// `NV_SHADER_EXTN_REGISTER_SPACE` preprocessor definitions.
+syntax_class NVAPISlotModifier : Modifier
+{}
+
+/// A `[noinline]` attribute represents a request by the application that,
+/// to the extent possible, a function should not be inlined into call sites.
+///
+/// Note that due to various limitations of different targets, it is entirely
+/// possible for such functions to be inlined or specialized to call sites.
+///
+syntax_class NoInlineAttribute : Attribute
+{}
+
+/// A `[noRefInline]` attribute represents a request to not force inline a
+/// function specifically due to a refType parameter.
+syntax_class NoRefInlineAttribute : Attribute
+{}
+
+syntax_class DerivativeGroupQuadAttribute : Attribute
+{}
+
+syntax_class DerivativeGroupLinearAttribute : Attribute
+{}
+
+syntax_class MaximallyReconvergesAttribute : Attribute
+{}
+
+syntax_class QuadDerivativesAttribute : Attribute
+{}
+
+syntax_class RequireFullQuadsAttribute : Attribute
+{}
+
+/// A `[payload]` attribute indicates that a `struct` type will be used as
+/// a ray payload for `TraceRay()` calls, and thus also as input/output
+/// for shaders in the ray tracing pipeline that might be invoked for
+/// such a ray.
+///
+syntax_class PayloadAttribute : Attribute
+{}
+
+/// A `[deprecated("message")]` attribute indicates the target is
+/// deprecated.
+/// A compiler warning including the message will be raised if the
+/// deprecated value is used.
+///
+syntax_class DeprecatedAttribute : Attribute
+{}
+
+syntax_class NonCopyableTypeAttribute : Attribute
+{}
+
+syntax_class NoSideEffectAttribute : Attribute
+{}
+
+/// A `[KnownBuiltin("name")]` attribute allows the compiler to
+/// identify this declaration during compilation, despite obfuscation or
+/// linkage removing optimizations
+///
+syntax_class KnownBuiltinAttribute : Attribute
+{}
+
+/// A modifier that applies to types rather than declarations.
+///
+/// In most cases, the Slang compiler assumes that a modifier should
+/// inhere to a declaration. Given input like:
+///
+/// mod1 mod2 int myVar = ...;
+///
+/// The default assumption is that `mod1` and `mod2` apply to `myVar`
+/// and *not* to the `int` type.
+///
+/// In order to allow modifiers to inhere to the type instead, we introduce
+/// a base syntax_class for modifiers that really don't want to belong to the declaration,
+/// and instead want to belong to the type (or rather the type *specifier*
+/// from a parsing standpoint).
+///
+syntax_class TypeModifier : Modifier
+{}
+
+/// A kind of syntax element which appears as a modifier in the syntax, but
+/// we represent as a function over type expressions
+syntax_class WrappingTypeModifier : TypeModifier
+{}
+
+/// A modifier that applies to a type and implies information about the
+/// underlying format of a resource that uses that type as its element type.
+///
+syntax_class ResourceElementFormatModifier : TypeModifier
+{}
+
+/// HLSL `unorm` modifier
+syntax_class UNormModifier : ResourceElementFormatModifier
+{}
+
+/// HLSL `snorm` modifier
+syntax_class SNormModifier : ResourceElementFormatModifier
+{}
+
+syntax_class NoDiffModifier : TypeModifier
+{}
+
+syntax_class GloballyCoherentModifier : SimpleModifier
+{}
+
+// Some GLSL-specific modifiers
+syntax_class GLSLBufferModifier : WrappingTypeModifier
+{}
+
+syntax_class GLSLWriteOnlyModifier : SimpleModifier
+{}
+
+syntax_class GLSLReadOnlyModifier : SimpleModifier
+{}
+
+syntax_class GLSLVolatileModifier : SimpleModifier
+{}
+
+syntax_class GLSLRestrictModifier : SimpleModifier
+{}
+
+syntax_class GLSLPatchModifier : SimpleModifier
+{}
+
+//
+syntax_class BitFieldModifier : Modifier
+{}
+
+syntax_class DynamicUniformModifier : Modifier
+{}
+
+syntax_class MemoryQualifierSetModifier : Modifier
+{}
+
+/*
+The following are the cases of syntax nodes that the parser
+implementation in slang-parser.cpp directly allocates:
+
+AlignOfExpr
+AndTypeExpr
+AssignExpr
+AssocTypeDecl
+AsTypeExpr
+AttributeDecl
+AttributeTargetModifier
+BackwardDifferentiateExpr
+BitFieldModifier
+BoolLiteralExpr
+BuiltinRequirementModifier
+BuiltinTypeModifier
+CaseStmt
+CompileTimeForStmt
+ConstructorDecl
+CountOfExpr
+DefaultStmt
+DerefMemberExpr
+DispatchKernelExpr
+EachExpr
+EmptyDecl
+EmptyDecl
+EmptyDecl
+EmptyDecl
+EmptyDecl
+EnumCaseDecl
+EnumDecl
+ExpandExpr
+ExplicitCastExpr
+ExplicitCastExpr
+ExtensionDecl
+ExternCppModifier
+ExternModifier
+FileDecl
+FloatingPointLiteralExpr
+FloatingPointLiteralExpr
+FormatAttribute
+ForwardDifferentiateExpr
+FuncDecl
+FuncDecl
+FuncTypeExpr
+GenericAppExpr
+GenericAppExpr
+GenericDecl
+GenericDecl
+GenericTypeConstraintDecl
+GenericTypeConstraintDecl
+GenericTypeConstraintDecl
+GenericTypeConstraintDecl
+GenericTypePackParamDecl
+GenericTypeParamDecl
+GenericValueParamDecl
+GenericValueParamDecl
+GetterDecl
+GlobalGenericParamDecl
+GlobalGenericValueParamDecl
+GloballyCoherentModifier
+GLSLImplicitOffsetLayoutAttribute
+GLSLLayoutDerivativeGroupLinearAttribute
+GLSLLayoutDerivativeGroupQuadAttribute
+GLSLLayoutLocalSizeAttribute
+GLSLLayoutModifierGroupBegin
+GLSLLayoutModifierGroupEnd
+GLSLReadOnlyModifier
+GLSLRestrictModifier
+GLSLScalarModifier
+GLSLStd140Modifier
+GLSLStd430Modifier
+GLSLUnparsedLayoutModifier
+GLSLVolatileModifier
+GLSLWriteOnlyModifier
+GpuForeachStmt
+HLSLEffectSharedModifier
+HLSLGroupSharedModifier
+HLSLNoInterpolationModifier
+HLSLPackOffsetSemantic
+HLSLRegisterSemantic
+HLSLSimpleSemantic
+HLSLSimpleSemantic
+HLSLVolatileModifier
+ImplementingDecl
+ImplicitConversionModifier
+ImplicitConversionModifier
+ImplicitParameterGroupElementTypeModifier
+ImplicitParameterGroupVariableModifier
+ImportDecl
+IncludeDecl
+IncompleteExpr
+IncompleteExpr
+IncompleteExpr
+IncompleteExpr
+IndexExpr
+IndexExpr
+IndexExpr
+InfixExpr
+InheritanceDecl
+InitializerListExpr
+IntegerLiteralExpr
+IntegerLiteralExpr
+IntegerLiteralExpr
+IntrinsicAsmStmt
+IntrinsicOpModifier
+IntrinsicTypeModifier
+InvokeExpr
+IsTypeExpr
+LetDecl
+MagicTypeModifier
+MemberExpr
+MemberExpr
+MemberExpr
+ModernParamDecl
+ModifiedTypeExpr
+ModuleDeclarationDecl
+NamespaceDecl
+NewExpr
+NoDiffModifier
+NoneLiteralExpr
+NullPtrLiteralExpr
+ParamDecl
+ParamDecl
+ParameterGroupReflectionName
+ParenExpr
+PointerTypeExpr
+PostfixExpr
+PrefixExpr
+PrefixExpr
+PropertyDecl
+PushConstantAttribute
+RayPayloadReadSemantic
+RayPayloadWriteSemantic
+RefAccessorDecl
+RequireCapabilityDecl
+RequiredCUDASMVersionModifier
+RequiredGLSLExtensionModifier
+RequiredGLSLVersionModifier
+RequiredSPIRVVersionModifier
+RequiredWGSLExtensionModifier
+ResultType
+ReturnValExpr
+ScopeDecl
+ScopeDecl
+ScopeDecl
+SelectExpr
+SeqStmt
+SetterDecl
+ShaderRecordAttribute
+ShaderRecordAttribute
+SharedModifiers
+SharedTypeExpr
+SharedTypeExpr
+SharedTypeExpr
+SizeOfExpr
+SpecializedForTargetModifier
+SPIRVAsmExpr
+StageSwitchStmt
+StaticMemberExpr
+StaticMemberExpr
+StringLiteralExpr
+StructDecl
+SubscriptDecl
+SwitchStmt
+SyntaxDecl
+TargetCaseStmt
+TargetIntrinsicModifier
+TargetSwitchStmt
+ThisExpr
+TransparentModifier
+TransparentModifier
+TreatAsDifferentiableExpr
+TryExpr
+TupleTypeExpr
+type
+type
+TypeAliasDecl
+TypeCoercionConstraintDecl
+TypeDefDecl
+UncheckedAttribute
+UncheckedGLSLCallablePayloadAttribute
+UncheckedGLSLCallablePayloadAttribute
+UncheckedGLSLHitObjectAttributesAttribute
+UncheckedGLSLLayoutAttribute
+UncheckedGLSLRayPayloadAttribute
+UncheckedGLSLRayPayloadAttribute
+UncheckedGLSLRayPayloadInAttribute
+UncheckedGLSLRayPayloadInAttribute
+UnparsedStmt
+UnscopedEnumAttribute
+UsingDecl
+VarDecl
+VulkanHitAttributesAttribute
+
+*/
+
+
+// TODO: need these:
+
+hidden struct IntegerLiteralValue;
+hidden struct Int;
+hidden struct TypeExp;
+hidden struct Modifiers;
+
+syntax_class elementCoords;
+hidden syntax_class Name;
+syntax_class fromType;
+syntax_class name;
+syntax_class tag;
+syntax_class kind;
+syntax_class irOp;
+syntax_class irOperand;
+syntax_class ArgumentsClause;
+
