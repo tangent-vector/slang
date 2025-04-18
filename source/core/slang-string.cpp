@@ -222,6 +222,20 @@ UnownedStringSlice UnownedStringSlice::trim(char c) const
     return UnownedStringSlice(start, end);
 }
 
+int lexicographicCompare(UnownedStringSlice const& left, UnownedStringSlice const& right)
+{
+    auto leftSize = left.getLength();
+    auto rightSize = right.getLength();
+
+    auto prefixSize = std::min(leftSize, rightSize);
+
+    int prefixCompareResult = memcmp(left.begin(), right.begin(), prefixSize);
+    if (prefixCompareResult != 0)
+        return prefixCompareResult;
+
+    return int(leftSize - rightSize);
+}
+
 // StringSlice
 
 StringSlice::StringSlice()

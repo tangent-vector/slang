@@ -527,9 +527,9 @@ HumaneSourceLoc getModuleLoc(SourceManager* manager, ContainerDecl* moduleDecl)
 {
     if (moduleDecl)
     {
-        if (moduleDecl->members.getCount() && moduleDecl->members[0])
+        if (moduleDecl->getDirectMemberDeclCount() && moduleDecl->getDirectMemberDecl(0))
         {
-            auto loc = moduleDecl->members[0]->loc;
+            auto loc = moduleDecl->getDirectMemberDecl(0)->loc;
             if (loc.isValid())
             {
                 auto location = manager->getHumaneLoc(loc, SourceLocType::Actual);
@@ -747,9 +747,7 @@ LanguageServerResult<LanguageServerProtocol::Hover> LanguageServerCore::hover(
         {
             if (expr->type)
             {
-                sb << "```\n"
-                   << expr->type->toString() << " this"
-                   << "\n```\n";
+                sb << "```\n" << expr->type->toString() << " this" << "\n```\n";
             }
             fillLoc(expr->loc);
         }

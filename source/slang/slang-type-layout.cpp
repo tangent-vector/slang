@@ -5753,7 +5753,7 @@ void TypeLayoutContext::buildExternTypeMap()
 
         if (auto scopeDecl = as<ScopeDecl>(decl))
         {
-            for (auto member : scopeDecl->members)
+            for (auto member : scopeDecl->getMembers())
             {
                 go(go, member);
             }
@@ -5763,7 +5763,7 @@ void TypeLayoutContext::buildExternTypeMap()
     for (const auto& m : linkage->loadedModulesList)
     {
         const auto& ast = m->getModuleDecl();
-        for (auto member : ast->members)
+        for (auto member : ast->getMembers())
         {
             processDecl(processDecl, member);
         }

@@ -218,6 +218,8 @@ protected:
     char const* m_end;
 };
 
+int lexicographicCompare(UnownedStringSlice const& left, UnownedStringSlice const& right);
+
 // A more convenient way to make slices from *string literals*
 template<size_t SIZE>
 SLANG_FORCE_INLINE UnownedStringSlice toSlice(const char (&in)[SIZE])

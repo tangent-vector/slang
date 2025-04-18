@@ -149,23 +149,23 @@ struct ByteReader
     const void* data,
     size_t numEntries,
     size_t typeSize,
-    RiffContainer* container)
+    RiffBuilder& cursor)
 {
     typedef RiffContainer::Chunk Chunk;
-    typedef RiffContainer::ScopeChunk ScopeChunk;
+    typedef RiffBuilder::ScopeChunk ScopeChunk;
 
     if (numEntries == 0)
     {
         return SLANG_OK;
     }
 
-    ScopeChunk scope(container, Chunk::Kind::Data, chunkId);
+    ScopeChunk scope(cursor, Chunk::Kind::Data, chunkId);
 
     SerialBinary::ArrayHeader header;
     header.numEntries = uint32_t(numEntries);
 
-    container->write(&header, sizeof(header));
-    container->write(data, typeSize * numEntries);
+    cursor.addData(&header, sizeof(header));
+    cursor.addData(data, typeSize * numEntries);
     return SLANG_OK;
 }
 

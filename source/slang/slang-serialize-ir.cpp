@@ -334,51 +334,46 @@ Result IRSerialWriter::write(
 Result _writeInstArrayChunk(
     FourCC chunkId,
     const List<IRSerialData::Inst>& array,
-    RiffContainer* container)
+    RiffBuilder& cursor)
 {
-    typedef RiffContainer::Chunk Chunk;
-    typedef RiffContainer::ScopeChunk ScopeChunk;
-
     if (array.getCount() == 0)
     {
         return SLANG_OK;
     }
 
-    return SerialRiffUtil::writeArrayChunk(chunkId, array, container);
+    return SerialRiffUtil::writeArrayChunk(chunkId, array, cursor);
 }
 
-/* static */ Result IRSerialWriter::writeContainer(
-    const IRSerialData& data,
-    RiffContainer* container)
+/* static */ Result IRSerialWriter::writeContainer(const IRSerialData& data, RiffBuilder& cursor)
 {
     typedef RiffContainer::Chunk Chunk;
-    typedef RiffContainer::ScopeChunk ScopeChunk;
+    typedef RiffBuilder::ScopeChunk ScopeChunk;
 
-    ScopeChunk scopeModule(container, Chunk::Kind::List, Bin::kIRModuleFourCc);
+    ScopeChunk scopeModule(cursor, Chunk::Kind::List, Bin::kIRModuleFourCc);
 
-    SLANG_RETURN_ON_FAIL(_writeInstArrayChunk(Bin::kInstFourCc, data.m_insts, container));
+    SLANG_RETURN_ON_FAIL(_writeInstArrayChunk(Bin::kInstFourCc, data.m_insts, cursor));
     SLANG_RETURN_ON_FAIL(
-        SerialRiffUtil::writeArrayChunk(Bin::kChildRunFourCc, data.m_childRuns, container));
+        SerialRiffUtil::writeArrayChunk(Bin::kChildRunFourCc, data.m_childRuns, cursor));
     SLANG_RETURN_ON_FAIL(SerialRiffUtil::writeArrayChunk(
         Bin::kExternalOperandsFourCc,
         data.m_externalOperands,
-        container));
+        cursor));
     SLANG_RETURN_ON_FAIL(SerialRiffUtil::writeArrayChunk(
         SerialBinary::kStringTableFourCc,
         data.m_stringTable,
-        container));
+        cursor));
 
     SLANG_RETURN_ON_FAIL(SerialRiffUtil::writeArrayChunk(
         Bin::kUInt32RawSourceLocFourCc,
         data.m_rawSourceLocs,
-        container));
+        cursor));
 
     if (data.m_debugSourceLocRuns.getCount())
     {
         SerialRiffUtil::writeArrayChunk(
             Bin::kDebugSourceLocRunFourCc,
             data.m_debugSourceLocRuns,
-            container);
+            cursor);
     }
 
     return SLANG_OK;
@@ -425,15 +420,13 @@ static Result _readInstArrayChunk(
     return SerialRiffUtil::readArrayChunk(chunk, resizer);
 }
 
-/* static */ Result IRSerialReader::readContainer(
-    RiffContainer::ListChunk* module,
-    IRSerialData* outData)
+/* static */ Result IRSerialReader::readContainer(IRModuleChunkRef irChunk, IRSerialData* outData)
 {
     typedef IRSerialBinary Bin;
 
     outData->clear();
 
-    for (RiffContainer::Chunk* chunk = module->m_containedChunks; chunk; chunk = chunk->m_next)
+    for (auto chunk : irChunk)
     {
         RiffContainer::DataChunk* dataChunk = as<RiffContainer::DataChunk>(chunk);
         if (!dataChunk)
@@ -441,7 +434,7 @@ static Result _readInstArrayChunk(
             continue;
         }
 
-        switch (dataChunk->m_fourCC)
+        switch (dataChunk->getType())
         {
         case Bin::kInstFourCc:
             {

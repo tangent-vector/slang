@@ -2771,7 +2771,7 @@ void Module::_discoverEntryPointsImpl(
     DiagnosticSink* sink,
     const List<RefPtr<TargetRequest>>& targets)
 {
-    for (auto globalDecl : containerDecl->members)
+    for (auto globalDecl : containerDecl->getMembers())
     {
         auto maybeFuncDecl = globalDecl;
         if (auto genericDecl = as<GenericDecl>(maybeFuncDecl))

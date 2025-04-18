@@ -12,6 +12,15 @@
 namespace Slang
 {
 
+struct DebugChunkRef : RiffListChunkRef
+{
+public:
+    DebugChunkRef(
+        RiffContainer::ListChunk* chunk)
+        : RiffListChunkRef(chunk)
+    {}
+};
+
 class SerialSourceLocData
 {
 public:
@@ -135,8 +144,8 @@ public:
 
     bool operator==(const ThisType& rhs) const;
 
-    Result writeContainer(RiffContainer* container);
-    Result readContainer(RiffContainer::ListChunk* listChunk);
+    Result writeContainer(RiffBuilder& cursor);
+    Result readContainer(DebugChunkRef const& chunk);
 
     List<char> m_stringTable;                   ///< String table for debug use only
     List<LineInfo> m_lineInfos;                 ///< Line information

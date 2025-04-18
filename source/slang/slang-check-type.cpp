@@ -294,7 +294,7 @@ bool SemanticsVisitor::CoerceToProperTypeImpl(
         ensureDecl(genericDeclRef, DeclCheckState::CanSpecializeGeneric);
         List<Val*> args;
         List<Val*> witnessArgs;
-        for (Decl* member : genericDeclRef.getDecl()->members)
+        for (Decl* member : genericDeclRef.getDecl()->getMembers())
         {
             if (auto typeParam = as<GenericTypeParamDecl>(member))
             {

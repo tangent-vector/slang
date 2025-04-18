@@ -37,9 +37,6 @@ enum
     kRiffPadMask = kRiffPadSize - 1,
 };
 
-// Uses it's own version of a hash
-typedef int RiffHashCode;
-
 struct RiffHeader
 {
     FourCC type;   ///< The FourCC code that identifies this chunk
@@ -182,10 +179,6 @@ protected:
 
 With the data held in memory allows for adding or removing chunks at will.
 
-A future implementation does not necessarily have to be backed by memory when construction,
-as data could be written to stream, and the chunk sizes written by seeking back over the file and
-setting the value.
-
 In normal usage the chunk sizes are calculated during construction. If the structure is changed, the
 sizes may need to be recalculated, before serialization.
 */
@@ -206,7 +199,9 @@ public:
         Owned,         ///< It's owned, but wasn't allocated on the arena
     };
 
-    struct Data
+    /// A contiguous block of memory providing some of the backing storage for the RIFF.
+    ///
+    struct DataBlock
     {
         /// Get the payload
         void* getPayload() { return m_payload; }
@@ -228,16 +223,13 @@ public:
         Ownership m_ownership; ///< Stores the ownership of the payload
         size_t m_size;         ///< The size of the payload
         void* m_payload;       ///< The payload
-        Data* m_next;          ///< The next Data block in the list
+        DataBlock* m_next;          ///< The next Data block in the list
     };
 
     struct Chunk;
     struct ListChunk;
     struct DataChunk;
 
-    typedef SlangResult (*VisitorCallback)(Chunk* chunk, void* data);
-
-    class Visitor;
     struct Chunk
     {
         enum class Kind
@@ -247,34 +239,128 @@ public:
             Data,
         };
 
-        void init(Kind kind, FourCC fourCC)
+        void init(Kind kind, FourCC type)
         {
             m_kind = kind;
-            m_fourCC = fourCC;
-            m_payloadSize = 0;
+            m_type = type;
+            m_cachedTotalSize = 0;
             m_next = nullptr;
             m_parent = nullptr;
         }
 
-        SlangResult visit(Visitor* visitor);
-        SlangResult visitPostOrder(VisitorCallback callback, void* data);
-        SlangResult visitPreOrder(VisitorCallback callback, void* data);
+        /// Get the kind of this chunk (list or data)
+        Kind getKind() const { return m_kind; }
 
-        /// Returns a single data chunk
-        Data* getSingleData() const;
+        /// Get the type of this chunk as a `FourCC`
+        ///
+        /// * For a data chunk this is the "chunk type"
+        /// `FourCC` that would be stored directly in
+        /// the chunk header.
+        ///
+        /// * For a list chunk this is the "sub-type"
+        /// `FourCC` that would be stored in the list
+        /// header, after the payload size.
+        ///
+        FourCC getType() const { return m_type; }
 
-        /// Calculate the payload size
-        size_t calcPayloadSize();
+        /// Get the total size of this chunk, including its header.
+        ///
+        size_t getTotalSize() const;
 
-        Kind m_kind;          ///< Kind of chunk
-        FourCC m_fourCC;      ///< The chunk type for data, or the sub type for a List (riff/list)
-        size_t m_payloadSize; ///< The payload size (ie does NOT include RiffChunk header).
-        Chunk* m_next;        ///< Next chunk in this list
-        ListChunk* m_parent;  ///< The chunk this belongs to
+        /// Get the payload size (that is, not including the `RiffHeader`).
+        ///
+        /// Note that for a list chunk, the payload size *does* include
+        /// the additional FourCC in the `RiffListHeader`
+        ///
+        /// This value is what would be written to the payload size
+        /// field of a RIFF chunk header.
+        ///
+        size_t getPayloadSize() const
+        {
+            return getTotalSize() - sizeof(RiffHeader);
+        }
+
+        // Note: Everything after this point should be
+        // treated as implementation details.
+
+        Kind m_kind;                ///< Kind of chunk
+        FourCC m_type;              ///< The chunk type for data, or the sub type for a List (riff/list)
+        mutable size_t m_cachedTotalSize;   ///< If nonzero, stores the total size of this chunk (including header)
+
+        Chunk* m_next;              ///< Next chunk in this list
+        ListChunk* m_parent;        ///< The chunk this belongs to
+
+        /// Validate the cached size
+        void _validateCachedSize() const;
+
+        /// Invalidate the cached size, for this chunk and all its ancestors.
+        void _invalidateCachedSize() const;
     };
 
     struct ListChunk : public Chunk
     {
+        /// Find the first direct child chunk (of any kind) that has the given `type`.
+        ///
+        Chunk* findChunk(FourCC type) const;
+
+        /// Find the first direct child list chunk that has the given `type`.
+        ///
+        ListChunk* findListChunk(FourCC type) const;
+
+        /// Find the first direct child data chunk that has the given `type`.
+        ///
+        DataChunk* findDataChunk(FourCC type) const;
+
+        /// Find the first direct child data chunk that has the given `type`,
+        /// and return a pointer into its payload.
+        ///
+        /// If no matching data chunk is not found, returns null.
+        ///
+        /// If a data chunk is found, but its payload size is less
+        /// then `minSize`, returns null.
+        ///
+        /// Note: if the first data chunk found fails the `minSize`
+        /// check, will not continue searching for other chunks.
+        ///
+        void* findData(FourCC type, size_t minSize) const;
+
+        /// Find the first direct child data chunk that has the given `type`,
+        /// and return a pointer into its payload, assumed to be of type `T`.
+        ///
+        /// This is a wrapper around the `findData(type, minSize)` method,
+        /// with `minSize` set to `sizeof(T)`.
+        ///
+        template<typename T>
+        T* findData(FourCC type) const
+        {
+            return (T*)findData(type, sizeof(T));
+        }
+
+        void* _findDataArray(FourCC type, size_t elementSize, Count& outCount) const;
+
+        template<typename T>
+        ArrayView<T> findDataArray(FourCC type) const
+        {
+            Count count = 0;
+            auto data = (T*) _findDataArray(type, sizeof(T), count);
+            return ArrayView<T>(data, count);
+        }
+
+        /// Find the list (including self) that matches subtype recursively
+        ListChunk* findListChunkRec(FourCC subType);
+
+        // Note: everything after this point should be treated as
+        // implementation details:
+
+        /// Finds the contained data. NOTE! Assumes that there is only as single data block, and
+        /// will return nullptr if there is not
+        DataBlock* _findDataBlock(FourCC type) const;
+
+        /// A singly linked list of contained chunks directly contained in this chunk
+        Chunk* getFirstContainedChunk() const { return m_firstChild; }
+
+        void _addChunk(Chunk* chunk);
+
         typedef Chunk Super;
         SLANG_FORCE_INLINE static bool isType(const Chunk* chunk)
         {
@@ -284,72 +370,62 @@ public:
         void init(FourCC subType)
         {
             Super::init(Kind::List, subType);
-            m_containedChunks = nullptr;
-            m_endChunk = nullptr;
+            m_firstChild = nullptr;
+            m_lastChild = nullptr;
 
-            m_payloadSize = uint32_t(sizeof(RiffListHeader) - sizeof(RiffHeader));
+            //            m_payloadSize = uint32_t(sizeof(RiffListHeader) - sizeof(RiffHeader));
         }
 
-        /// Finds chunk (list or data) that matches type. For List/Riff, type is the subtype
-        Chunk* findContained(FourCC type) const;
+        Chunk* m_firstChild;    ///< The contained chunks
+        Chunk* m_lastChild;     ///< The last chunk (only set when pushed, and used when popped)
 
-        void* findContainedData(FourCC type, size_t minSize) const;
-
-        ListChunk* findContainedList(FourCC type);
-
-        /// Finds the contained data. NOTE! Assumes that there is only as single data block, and
-        /// will return nullptr if there is not
-        Data* findContainedData(FourCC type) const;
-
-        template<typename T>
-        T* findContainedData(FourCC type) const
-        {
-            return (T*)findContainedData(type, sizeof(T));
-        }
-
-        /// Find all contained that match the type
-        void findContained(FourCC type, List<ListChunk*>& out);
-
-        /// Find all contained that match the type
-        void findContained(FourCC type, List<DataChunk*>& out);
-
-        /// Find the list (including self) that matches subtype recursively
-        ListChunk* findListRec(FourCC subType);
-
-        /// NOTE! Assumes all contained chunks have correct payload sizes
-        size_t calcPayloadSize();
-
-        /// Get the sub type
-        FourCC getSubType() const { return m_fourCC; }
-
-        /// A singly linked list of contained chunks directly contained in this chunk
-        Chunk* getFirstContainedChunk() const { return m_containedChunks; }
-
-        Chunk* m_containedChunks; ///< The contained chunks
-        Chunk* m_endChunk;        ///< The last chunk (only set when pushed, and used when popped)
+        /// Calculate total size, based on children.
+        size_t _calcTotalSize() const;
     };
 
     struct DataChunk : public Chunk
     {
+        /// Read the payload data of this chunk into `outData`.
+        ///
+        /// If the payload is larger than `size` bytes, then
+        /// only the first `size` bytes are read.
+        ///
+        /// If the payload is smaller than `size` bytes, throws.
+        ///
+        void getPayload(void* outData, size_t size) const;
+
+        // Note: everything after this point should be
+        // treated as implementation details.
+
+        /// Hash the payload data of this chunk into `hasher`.
+        ///
+        /// Note: this routine uses a 32-bit FNV1a hash, which
+        /// is not intended for crpytographic applications or
+        /// other contexts where hash quality is paramount.
+        ///
+        /// The intention of this routine is to provide a fast
+        /// "checksum"-like operation that gives guaranteed
+        /// consistent results across runs/builds/etc.
+        ///
+        void hashInto(FNV1a32::Hasher& hasher) const;
+
         typedef Chunk Super;
         SLANG_FORCE_INLINE static bool isType(const Chunk* chunk)
         {
             return chunk->m_kind == Kind::Data;
         }
 
-        /// Calculate a hash (not necessarily very fast)
-        RiffHashCode calcHash() const;
-        /// Calculate the payload size
-        size_t calcPayloadSize() const;
+        /// Returns a representation of this chunk as a single
+        /// contiguous block of data.
+        ///
+        DataBlock* getSingleData() const;
+
+
 
         /// Copy the payload to dst. Dst must be at least the payload size.
-        void getPayload(void* dst) const;
 
         /// True if payloads contents is equal to data
         bool isEqual(const void* data, size_t count) const;
-
-        /// Get single data payload.
-        Data* getSingleData() const;
 
         /// Return as read helper
         RiffReadHelper asReadHelper() const;
@@ -357,28 +433,18 @@ public:
         void init(FourCC fourCC)
         {
             Super::init(Kind::Data, fourCC);
-            m_dataList = nullptr;
-            m_endData = nullptr;
+            m_firstDataBlock = nullptr;
+            m_lastDataBlock = nullptr;
         }
 
-        Data* m_dataList; ///< List of 0 or more data items
-        Data* m_endData;  ///< The last data point
+        DataBlock* m_firstDataBlock; ///< List of 0 or more data items
+        DataBlock* m_lastDataBlock;  ///< The last data point
+
+        /// Calculate total size, based on data blocks.
+        size_t _calcTotalSize() const;
     };
 
-    class ScopeChunk
-    {
-    public:
-        ScopeChunk(RiffContainer* container, Chunk::Kind kind, FourCC fourCC)
-            : m_container(container)
-        {
-            container->startChunk(kind, fourCC);
-        }
-        ~ScopeChunk() { m_container->endChunk(); }
-
-    private:
-        RiffContainer* m_container;
-    };
-
+#if 0
     class Visitor
     {
     public:
@@ -386,52 +452,85 @@ public:
         virtual SlangResult handleData(DataChunk* data) = 0;
         virtual SlangResult leaveList(ListChunk* list) = 0;
     };
+#endif
+
+    /// Initialize an empty RIFF container.
+    ///
+    RiffContainer();
+
+    // SlangResult initFrom(Stream* stream);
+
+    // SlangResult writeTo(Stream* stream);
 
 
-    /// Add a complete data chunk
-    void addDataChunk(FourCC dataFourCC, const void* data, size_t dataSizeInBytes);
+    /// Get the root chunk of this RIFF.
+    ///
+    ListChunk* getRootChunk() const { return m_rootList; }
 
-    /// Start a chunk
-    void startChunk(Chunk::Kind kind, FourCC type);
+    /// Add a root chunk to this RIFF.
+    ///
+    ListChunk* addRootChunk(FourCC type);
 
-    /// Write data into a chunk (can only be inside a Kind::Data)
-    void write(const void* data, size_t size);
+    /// Add a new list chunk of the given `type` as a child of the given `parentChunk`.
+    ///
+    /// If `parentChunk` already has children, the new chunk will be added
+    /// after the existing children.
+    ///
+    ListChunk* addListChunk(ListChunk* parentChunk, FourCC type);
 
-    /// Adds an empty data block
-    Data* addData();
-    /// Set the payload on a data. Payload can be passed as nullptr, if it is no memory will be
-    /// copied.
-    void setPayload(Data* data, const void* payload, size_t size);
+    /// Add a new data chunk of the given `type` as a child of the given `parentChunk`.
+    ///
+    /// If `parentChunk` already has children, the new chunk will be added
+    /// after the existing children.
+    ///
+    DataChunk* addDataChunk(ListChunk* parentChunk, FourCC type);
 
+    /// Get the payload of the given `dataChunk`, as a contiguous buffer.
+    ///
+    void* getPayload(DataChunk* dataChunk);
+
+    /// Get the payload of the given `chunk`, as a contiguous buffer.
+    ///
+    /// If the payload is smaller than `minSize`, returns null.
+    ///
+    void* getPayload(DataChunk* dataChunk, size_t minSize);
+
+    /// Add data to the given `dataChunk`.
+    ///
+    /// Data will be appended after existing data, if there is any.
+    ///
+    void addData(DataChunk* dataChunk, const void* data, size_t size);
+
+    // Note: everything after this point is effectively
+    // an implementation detail...
+
+
+    RiffContainer::DataBlock* addDataBlock(DataChunk* dataChunk);
+
+    /// Initialize a data chunk with a certain size and contents.
+    ///
+    void setPayload(DataChunk* dataChunk, DataBlock* dataBlock, const void* payload, size_t size);
+
+#if 0
     /// Move ownership to.
     /// NOTE! The payload *must* be deallocatable via 'free'
     void moveOwned(Data* data, void* payload, size_t size);
-    /// Move unowned. The payload scope must last longer than the RiffContainer
-    void setUnowned(Data* data, void* payload, size_t size);
+#endif
 
-    /// End a chunk
-    void endChunk();
-
-    /// Get the root
-    ListChunk* getRoot() const { return m_rootList; }
-
-    /// Get the current chunk
-    Chunk* getCurrentChunk()
-    {
-        return m_dataChunk ? static_cast<Chunk*>(m_dataChunk) : static_cast<Chunk*>(m_listChunk);
-    }
 
     /// Reset the container
     void reset();
 
+#if 0
     /// true if has a root container, and nothing remains open
     bool isFullyConstructed()
     {
         return m_rootList && m_listChunk == nullptr && m_dataChunk == nullptr;
     }
+#endif
 
     /// Makes a data chunk contain a single contiguous data block
-    Data* makeSingleData(DataChunk* dataChunk);
+    DataBlock* makeSingleDataBlock(DataChunk* dataChunk);
 
     /// Get the memory arena that is backing the storage of data
     MemoryArena& getMemoryArena() { return m_arena; }
@@ -440,24 +539,291 @@ public:
     static bool isChunkOk(Chunk* chunk);
 
     /// Traverses over chunk hierarchy and sets the sizes
-    static void calcAndSetSize(Chunk* chunk);
+    //static void calcAndSetSize(Chunk* chunk);
 
-    /// Ctor
-    RiffContainer();
 
-    void setCurrentChunk(Chunk* chunk);
 
 protected:
-    void _addChunk(Chunk* chunk);
     ListChunk* _newListChunk(FourCC subType);
     DataChunk* _newDataChunk(FourCC type);
 
     ListChunk* m_rootList; ///< Root list
 
-    ListChunk* m_listChunk;
-    DataChunk* m_dataChunk;
+//    ListChunk* m_listChunk;
+//    DataChunk* m_dataChunk;
 
     MemoryArena m_arena; ///< Can be used to use other owned blocks
+};
+
+class RiffContainerObject : public RefObject, public RiffContainer
+{};
+
+struct RiffChunkRef
+{
+public:
+    RiffChunkRef()
+    {}
+
+    RiffChunkRef(RiffContainer::Chunk* chunk)
+        : _chunk(chunk)
+    {}
+
+    RiffContainer::Chunk::Kind getKind() const { return ptr()->getKind(); }
+    FourCC getType() const { return ptr()->getType(); }
+
+    RiffContainer::Chunk* ptr() const { return _chunk; }
+    operator RiffContainer::Chunk*() const { return ptr(); }
+    explicit operator bool() { return _chunk != nullptr; }
+
+    void _init(RiffContainer::Chunk* chunk)
+    {
+        _chunk = chunk;
+    }
+
+protected:
+    RiffContainer::Chunk* _chunk = nullptr;
+};
+
+inline bool operator!(RiffChunkRef chunk)
+{
+    return !chunk.ptr();
+}
+
+template<typename T>
+struct RiffChunkArray : RiffChunkRef
+{
+public:
+    RiffChunkArray()
+    {}
+
+    RiffChunkArray(RiffContainer::ListChunk* chunk)
+        : RiffChunkRef(chunk)
+    {}
+
+    T getFirst() const { return *begin(); }
+
+    RiffContainer::ListChunk* ptr() const { return static_cast<RiffContainer::ListChunk*>(_chunk); }
+    operator RiffContainer::ListChunk* () const { return ptr(); }
+
+    struct Iterator
+    {
+    public:
+        Iterator()
+        {}
+
+        Iterator(RiffContainer::Chunk* chunk)
+            : _chunk(chunk)
+        {}
+
+        void operator++()
+        {
+            _chunk = _chunk ? _chunk->m_next : nullptr;
+        }
+
+        bool operator!=(Iterator const& that) const
+        {
+            return _chunk != that._chunk;
+        }
+
+        T operator*() const
+        {
+            T result;
+            result._init(_chunk);
+            return result;
+        }
+
+    private:
+        RiffContainer::Chunk* _chunk = nullptr;
+    };
+
+    Iterator begin() const { return Iterator(ptr() ? ptr()->m_firstChild : nullptr); }
+    Iterator end() const { return Iterator(nullptr); }
+};
+
+struct RiffListChunkRef : RiffChunkArray<RiffChunkRef>
+{
+    using Super = RiffChunkArray<RiffChunkRef>;
+
+public:
+    RiffListChunkRef()
+    {}
+
+    RiffListChunkRef(RiffContainer::ListChunk* chunk)
+        : Super(chunk)
+    {}
+};
+
+struct RiffDataChunkRef : RiffChunkRef
+{
+    RiffContainer::DataChunk* ptr() const { return static_cast<RiffContainer::DataChunk*>(_chunk); }
+    operator RiffContainer::DataChunk*() const { return ptr(); }
+};
+
+struct RiffChunkBuilder
+{
+public:
+};
+
+struct RiffDataChunkBuilder : RiffChunkBuilder
+{
+    using DataBlock = RiffContainer::DataBlock;
+
+public:
+    RiffDataChunkBuilder(
+        RiffContainer* container,
+        RiffContainer::DataChunk* chunk)
+        : _container(container)
+        , _chunk(chunk)
+    {}
+
+    /// Write data into the chunk.
+    ///
+    /// Data will be appended after existing data, if there is any.
+    ///
+    void writeData(const void* data, size_t size);
+
+#if 0
+    /// Move unowned. The payload scope must last longer than the RiffContainer
+    void setUnowned(DataBlock* data, void* payload, size_t size);
+
+    /// Adds an empty data block
+    DataBlock* addDataBlock();
+
+    /// Set the payload on a data. Payload can be passed as nullptr, if it is no memory will be
+    /// copied.
+    void setPayload(DataBlock* data, const void* payload, size_t size);
+#endif
+
+private:
+    RiffContainer* _container = nullptr;
+    RiffContainer::DataChunk* _chunk = nullptr;
+};
+
+struct RiffListChunkBuilder : RiffChunkBuilder
+{
+public:
+    /// Add a complete data chunk
+    void addDataChunk(FourCC chunkType, const void* payloadData, size_t payloadSize);
+};
+
+/// Stateful builder for RIFF chunks.
+///
+struct RiffBuilder
+{
+    using DataBlock = RiffContainer::DataBlock;
+
+    using Chunk = RiffContainer::Chunk;
+    using DataChunk = RiffContainer::DataChunk;
+    using ListChunk = RiffContainer::ListChunk;
+
+public:
+    explicit RiffBuilder(
+        RiffContainer* container)
+        : _container(container)
+    {}
+
+    explicit RiffBuilder(
+        RiffContainer& container)
+        : _container(&container)
+    {}
+
+    RiffBuilder(
+        RiffContainer* container,
+        Chunk* chunk)
+        : _container(container)
+        , _currentChunk(chunk)
+    {}
+
+    /// Get the current chunk being built.
+    ///
+    Chunk* getCurrentChunk()
+    {
+        return _currentChunk;
+    }
+
+    /// Set the current chunk being built.
+    ///
+    /// Note: using this operation may cause confusion
+    /// in code that is otherwise using paired begin/end
+    /// operations. Caution is advised.
+    ///
+    void setCurrentChunk(Chunk* chunk);
+
+
+    /// Begin a chunk of the given `kind` and `type`
+    ///
+    void beginChunk(Chunk::Kind kind, FourCC type);
+
+    /// End building the current chunk.
+    ///
+    /// The new current chunk of the builder will
+    /// be the parent of the chunk that was ended.
+    ///
+    void endChunk();
+
+    /// Begin a list chunk of the given `type`.
+    ///
+    void beginListChunk(FourCC type);
+
+    /// Begin a data chunk of the given `type`.
+    ///
+    void beginDataChunk(FourCC type);
+
+    /// Add data to the current chunk.
+    ///
+    /// The current chunk must be a data chunk.
+    ///
+    void addData(const void* data, size_t size);
+
+    /// Add a complete data chunk.
+    ///
+    void addDataChunk(FourCC data, const void* payloadData, size_t payloadSize);
+
+    /// RAII type to help ensure correct pairing of `beginChunk` and `endChunk`.
+    ///
+    class ScopeChunk
+    {
+    public:
+        ScopeChunk(RiffBuilder& builder, Chunk::Kind kind, FourCC type)
+            : _builder(builder)
+        {
+            builder.beginChunk(kind, type);
+        }
+        ~ScopeChunk() { _builder.endChunk(); }
+
+    private:
+        RiffBuilder& _builder;
+    };
+
+    // Note: everything after this point should be
+    // considered and implementation detail.
+
+    /// Move unowned. The payload scope must last longer than the RiffContainer
+    ///
+    void setUnowned(DataBlock* data, void* payload, size_t size);
+
+    /// Adds an empty data block
+    DataBlock* addDataBlock();
+
+    /// Set the payload on a data. Payload can be passed as nullptr, if it is no memory will be
+    /// copied.
+    void setPayload(DataBlock* data, const void* payload, size_t size);
+
+protected:
+    void _addChunk(Chunk* chunk);
+
+    RiffContainer* _container = nullptr;
+    Chunk* _currentChunk = nullptr;
+};
+
+/// Stateful builder for an entire `RiffContainer`.
+///
+struct RiffContainerBuilder : RiffContainer, RiffBuilder
+{
+public:
+    RiffContainerBuilder()
+        : RiffBuilder(this)
+    {}
 };
 
 // -----------------------------------------------------------------------------
@@ -513,7 +879,7 @@ struct RiffUtil
     static void dump(Chunk* chunk, WriterHelper writer);
 
     /// Get the size taking into account padding
-    static size_t getPadSize(size_t in) { return (in + kRiffPadMask) & ~size_t(kRiffPadMask); }
+    static size_t getPaddedSize(size_t in) { return (in + kRiffPadMask) & ~size_t(kRiffPadMask); }
 
     /// Write a chunk list and contents to a stream
     static SlangResult write(ListChunk* listChunk, bool isRoot, Stream* stream);

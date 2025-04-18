@@ -221,6 +221,39 @@ public:
 private:
     HashCode m_hashCode = 0;
 };
+
+
+// We include an implementation of FNV hashing as an alternative for
+// when a well-defined and stable non-crypotgraphic hash is needed.
+//
+// In particular, this is an appropriate choice for hashses that will
+// be exposed as part of the binary interface of the Slang compiler
+// (e.g., in the contents of serialized modules).
+//
+namespace FNV1a32
+{
+    using HashCode = Slang::HashCode32;
+
+    HashCode hash(void const* data, size_t size);
+
+    struct Hasher
+    {
+    public:
+        using HashCode = FNV1a32::HashCode;
+
+        Hasher();
+
+        void operator()(void const* data, size_t size);
+
+        HashCode getResult() const { return _state; }
+
+    private:
+        FNV1a32::HashCode _state;
+    };
+}
+
+
+
 } // namespace Slang
 
 #endif

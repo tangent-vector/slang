@@ -687,7 +687,7 @@ SlangResult Session::_readBuiltinModule(
     StringBuilder moduleFilename;
     moduleFilename << moduleName << ".slang-module";
 
-    RiffContainer riffContainer;
+    auto riffContainer = RefPtr(new RiffContainerObject);
     {
         // Load it
         ComPtr<ISlangBlob> blob;
@@ -697,14 +697,14 @@ SlangResult Session::_readBuiltinModule(
         MemoryStreamBase stream(FileAccess::Read, blob->getBufferPointer(), blob->getBufferSize());
 
         // Load the riff container
-        SLANG_RETURN_ON_FAIL(RiffUtil::read(&stream, riffContainer));
+        SLANG_RETURN_ON_FAIL(RiffUtil::read(&stream, *riffContainer));
     }
 
     Linkage* linkage = getBuiltinLinkage();
     SourceManager* sourceManager = getBuiltinSourceManager();
     NamePool* sessionNamePool = &namePool;
 
-    auto moduleChunk = ModuleChunkRef::find(&riffContainer);
+    auto moduleChunk = ModuleChunkRef::find(riffContainer);
     if (!moduleChunk)
         return SLANG_FAIL;
 
@@ -748,6 +748,7 @@ SlangResult Session::_readBuiltinModule(
         linkage,
         astBuilder,
         nullptr, // no sink
+        riffContainer,
         astChunk,
         sourceLocReader,
         SourceLoc());
@@ -758,10 +759,18 @@ SlangResult Session::_readBuiltinModule(
     moduleDecl->module = module;
     module->setModuleDecl(moduleDecl);
 
+#if 0
     if (isFromCoreModule(moduleDecl))
     {
+        // TODO(tfoley): Okay, so here is a place where we would naively
+        // enumerate *all* declarations in the core libraries, so we
+        // need the serialization logic for the core module to build
+        // this list for us.
+        //
+
         registerBuiltinDecls(this, moduleDecl);
     }
+#endif
 
     // After the AST module has been read in, we next look
     // to deserialize the IR module.
@@ -2942,7 +2951,7 @@ static void collectExportedConstantInContainer(
     ASTBuilder* builder,
     ContainerDecl* containerDecl)
 {
-    for (auto m : containerDecl->members)
+    for (auto m : containerDecl->getMembers())
     {
         auto varMember = as<VarDeclBase>(m);
         if (!varMember)
@@ -2973,7 +2982,7 @@ static void collectExportedConstantInContainer(
         }
     }
 
-    for (auto member : containerDecl->members)
+    for (auto member : containerDecl->getMembers())
     {
         if (as<NamespaceDecl>(member) || as<FileDecl>(member))
         {
@@ -4129,6 +4138,7 @@ void Linkage::loadParsedModule(
 }
 
 RefPtr<Module> Linkage::findOrLoadSerializedModuleForModuleLibrary(
+    RefPtr<RiffContainerObject> riff,
     ModuleChunkRef moduleChunk,
     DiagnosticSink* sink)
 {
@@ -4171,12 +4181,13 @@ RefPtr<Module> Linkage::findOrLoadSerializedModuleForModuleLibrary(
     // will go ahead and load the module from the serialized form.
     //
     PathInfo filePathInfo;
-    return loadSerializedModule(moduleName, modulePathInfo, moduleChunk, SourceLoc(), sink);
+    return loadSerializedModule(moduleName, modulePathInfo, riff, moduleChunk, SourceLoc(), sink);
 }
 
 RefPtr<Module> Linkage::loadSerializedModule(
     Name* moduleName,
     const PathInfo& moduleFilePathInfo,
+    RefPtr<RiffContainerObject> riff,
     ModuleChunkRef moduleChunk,
     SourceLoc const& requestingLoc,
     DiagnosticSink* sink)
@@ -4207,7 +4218,7 @@ RefPtr<Module> Linkage::loadSerializedModule(
     try
     {
         if (SLANG_FAILED(
-                loadSerializedModuleContents(module, moduleFilePathInfo, moduleChunk, sink)))
+                loadSerializedModuleContents(module, moduleFilePathInfo, riff, moduleChunk, sink)))
         {
             mapPathToLoadedModule.remove(mostUniqueIdentity);
             mapNameToLoadedModules.remove(moduleName);
@@ -4239,19 +4250,25 @@ RefPtr<Module> Linkage::loadBinaryModuleImpl(
     // an in-memory RIFF container.
     //
     // TODO(tfoley): this is an unnecessary copy step, since
-    // we can simply use the contents of the blob directly
+    // we could simply use the contents of the blob directly
     // and navigate it in-memory.
     //
-    RiffContainer riffContainer;
+    // We are allocating a reference-counted object for the
+    // RIFF container, rather than keeping it on the stack
+    // only, because we need to retain its allocations to
+    // support on-demand deserialization of some of the
+    // content of the module.
+    //
+    auto riffContainer = RefPtr(new RiffContainerObject);
     {
         MemoryStreamBase readStream(
             FileAccess::Read,
             moduleFileContents->getBufferPointer(),
             moduleFileContents->getBufferSize());
-        SLANG_RETURN_NULL_ON_FAIL(RiffUtil::read(&readStream, riffContainer));
+        SLANG_RETURN_NULL_ON_FAIL(RiffUtil::read(&readStream, *riffContainer));
     }
 
-    auto moduleChunkRef = ModuleChunkRef::find(&riffContainer);
+    auto moduleChunkRef = ModuleChunkRef::find(riffContainer);
     if (!moduleChunkRef)
     {
         return nullptr;
@@ -4275,8 +4292,13 @@ RefPtr<Module> Linkage::loadBinaryModuleImpl(
     // If everything seems reasonable, then we will go ahead and load
     // the module more completely from that serialized representation.
     //
-    RefPtr<Module> module =
-        loadSerializedModule(moduleName, moduleFilePathInfo, moduleChunkRef, requestingLoc, sink);
+    RefPtr<Module> module = loadSerializedModule(
+        moduleName,
+        moduleFilePathInfo,
+        riffContainer,
+        moduleChunkRef,
+        requestingLoc,
+        sink);
 
     return module;
 }
@@ -4739,9 +4761,9 @@ SourceFile* Linkage::loadSourceFile(String pathFrom, String path)
 }
 
 // Check if a serialized module is up-to-date with current compiler options and source files.
-bool Linkage::isBinaryModuleUpToDate(String fromPath, RiffContainer* riffContainer)
+bool Linkage::isBinaryModuleUpToDate(String fromPath, RiffContainer* riff)
 {
-    auto moduleChunk = ModuleChunkRef::find(riffContainer);
+    auto moduleChunk = ModuleChunkRef::find(riff);
     if (!moduleChunk)
         return false;
 
@@ -4925,7 +4947,7 @@ Linkage::IncludeResult Linkage::findAndIncludeFile(
         outerScope,
         fileDecl);
 
-    module->getModuleDecl()->addMember(fileDecl);
+    module->getModuleDecl()->addDirectMemberDecl(fileDecl);
 
     result.fileDecl = fileDecl;
     result.isNew = true;
@@ -5173,7 +5195,7 @@ void Module::_processFindDeclsExportSymbolsRec(Decl* decl)
     // If it's a container process it's children
     if (auto containerDecl = as<ContainerDecl>(decl))
     {
-        for (auto child : containerDecl->members)
+        for (auto child : containerDecl->getMembers())
         {
             _processFindDeclsExportSymbolsRec(child);
         }
@@ -5186,7 +5208,29 @@ void Module::_processFindDeclsExportSymbolsRec(Decl* decl)
     }
 }
 
-NodeBase* Module::findExportFromMangledName(const UnownedStringSlice& slice)
+Decl* Module::findExportFromMangledName(const UnownedStringSlice& slice)
+{
+    // TODO(tfoley): If this is a module that is being on-demand
+    // deserialized, then we need the mangled name mapping stuff
+    // to be baked into the serialized file, rather than attempt
+    // to enumerate all of the declarations in the module here.
+    //
+    if (this->m_moduleDecl->_members.isDoingOnDemandDecode())
+    {
+        return m_moduleDecl->_members.findExportedDeclByMangledNameInBinaryModule(slice);
+    }
+
+    ensureExportLookupAcceleratorBuilt();
+
+
+    const Index index = m_mangledExportPool.findIndex(slice);
+    return (index >= 0) ? m_mangledExportSymbols[index] : nullptr;
+}
+
+/// Ensure that the any accelerator(s) used for `findExportFromMangledName`
+/// have already been built.
+///
+void Module::ensureExportLookupAcceleratorBuilt()
 {
     // Will be non zero if has been previously attempted
     if (m_mangledExportSymbols.getCount() == 0)
@@ -5201,10 +5245,27 @@ NodeBase* Module::findExportFromMangledName(const UnownedStringSlice& slice)
             m_mangledExportSymbols.add(nullptr);
         }
     }
-
-    const Index index = m_mangledExportPool.findIndex(slice);
-    return (index >= 0) ? m_mangledExportSymbols[index] : nullptr;
 }
+
+Count Module::getExportedDeclCount()
+{
+    ensureExportLookupAcceleratorBuilt();
+
+    return m_mangledExportPool.getSlicesCount();
+}
+
+Decl* Module::getExportedDecl(Index index)
+{
+    ensureExportLookupAcceleratorBuilt();
+    return m_mangledExportSymbols[index];
+}
+
+UnownedStringSlice Module::getExportedDeclMangledName(Index index)
+{
+    ensureExportLookupAcceleratorBuilt();
+    return m_mangledExportPool.getSlices()[index];
+}
+
 
 // ComponentType
 
@@ -6527,6 +6588,7 @@ void Linkage::setFileSystem(ISlangFileSystem* inFileSystem)
 SlangResult Linkage::loadSerializedModuleContents(
     Module* module,
     const PathInfo& moduleFilePathInfo,
+    RefPtr<RiffContainerObject> riff,
     ModuleChunkRef moduleChunk,
     DiagnosticSink* sink)
 {
@@ -6592,6 +6654,7 @@ SlangResult Linkage::loadSerializedModuleContents(
         this,
         astBuilder,
         sink,
+        riff,
         astChunk,
         sourceLocReader,
         serializedModuleLoc);
@@ -6644,12 +6707,9 @@ SlangResult Linkage::loadSerializedModuleContents(
     module->_discoverEntryPoints(sink, targets);
 
     // Hook up fileDecl's scope to module's scope.
-    for (auto globalDecl : moduleDecl->members)
+    for (auto fileDecl : moduleDecl->getMembersOfType<FileDecl>())
     {
-        if (auto fileDecl = as<FileDecl>(globalDecl))
-        {
-            addSiblingScopeForContainerDecl(m_astBuilder, moduleDecl->ownedScope, fileDecl);
-        }
+        addSiblingScopeForContainerDecl(m_astBuilder, moduleDecl->ownedScope, fileDecl);
     }
 
     return SLANG_OK;

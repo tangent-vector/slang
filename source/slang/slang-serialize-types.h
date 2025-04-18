@@ -185,6 +185,18 @@ struct SerialBinary
     static const FourCC kProfileFourCC = SLANG_FOUR_CC('p', 'r', 'o', 'f');
 
 
+    static const FourCC kASTDeclListFourCC = SLANG_FOUR_CC('d', 'e', 'c', 'l');
+    static const FourCC kASTImportedDeclListFourCC = SLANG_FOUR_CC('i', 'm', 'p', 'r');
+    static const FourCC kASTValListFourCC = SLANG_FOUR_CC('v', 'a', 'l', 's');
+    static const FourCC kASTBuiltinDeclListFourCC = SLANG_FOUR_CC('b', 'l', 't', 'n');
+
+    static const FourCC kASTDirectMembersChunkFourCC = SLANG_FOUR_CC('m', 'b', 'r', 's');
+    static const FourCC kASTDirectMemberIDsFourCC = SLANG_FOUR_CC('i', 'd', 's', ' ');
+
+    static const FourCC kASTExportsFourCC = SLANG_FOUR_CC('x', 'p', 'r', 't');
+    static const FourCC kHashTableBucketsFourCC = SLANG_FOUR_CC('b', 'k', 't', 's');
+    static const FourCC kExportTableItemsFourCC = SLANG_FOUR_CC('i', 't', 'm', 's');
+
     struct ArrayHeader
     {
         uint32_t numEntries;
@@ -233,17 +245,18 @@ struct SerialRiffUtil
         const void* data,
         size_t numEntries,
         size_t typeSize,
-        RiffContainer* container);
+        RiffBuilder& cursor);
 
     template<typename T>
-    static Result writeArrayChunk(FourCC chunkId, const List<T>& array, RiffContainer* container)
+    static Result writeArrayChunk(FourCC chunkId, const List<T>& array,
+        RiffBuilder& cursor)
     {
         return writeArrayChunk(
             chunkId,
             array.begin(),
             size_t(array.getCount()),
             sizeof(T),
-            container);
+            cursor);
     }
 
     static Result readArrayChunk(RiffContainer::DataChunk* dataChunk, ListResizer& listOut);

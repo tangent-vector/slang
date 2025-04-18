@@ -299,10 +299,10 @@ public:
         auto thisDecl = create<ThisTypeDecl>();
         thisDecl->nameAndLoc.name = getSharedASTBuilder()->getThisTypeName();
         thisDecl->nameAndLoc.loc = loc;
-        interfaceDecl->addMember(thisDecl);
+        interfaceDecl->addDirectMemberDecl(thisDecl);
         auto thisConstraint = create<ThisTypeConstraintDecl>();
         thisConstraint->loc = loc;
-        thisDecl->addMember(thisConstraint);
+        thisDecl->addDirectMemberDecl(thisConstraint);
         return interfaceDecl;
     }
 

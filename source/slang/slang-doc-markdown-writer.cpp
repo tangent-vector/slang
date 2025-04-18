@@ -17,7 +17,7 @@ namespace Slang
 template<typename T>
 static void _getDecls(ContainerDecl* containerDecl, List<T*>& out)
 {
-    for (Decl* decl : containerDecl->members)
+    for (Decl* decl : containerDecl->getMembers())
     {
         if (T* declAsType = as<T>(decl))
         {
@@ -32,7 +32,7 @@ static void _getDeclsOfType(
     ContainerDecl* containerDecl,
     List<Decl*>& out)
 {
-    for (Decl* decl : containerDecl->members)
+    for (Decl* decl : containerDecl->getMembers())
     {
         if (as<T>(decl))
         {
@@ -373,7 +373,7 @@ DocMarkdownWriter::NameAndText DocMarkdownWriter::_getNameAndText(
     else if (auto typeParam = as<GenericTypeParamDeclBase>(decl))
     {
         bool isFirst = true;
-        for (auto member : decl->parentDecl->members)
+        for (auto member : decl->parentDecl->getMembers())
         {
             if (auto constraint = as<TypeConstraintDecl>(member))
             {
@@ -622,7 +622,7 @@ void DocMarkdownWriter::writeProperty(const ASTMarkup::Entry& entry, PropertyDec
     propertyDecl->type->toText(typeSB);
     out << translateToHTMLWithLinks(propertyDecl, typeSB.produceString());
     out << "\n{\n";
-    for (auto member : propertyDecl->members)
+    for (auto member : propertyDecl->getMembers())
     {
         if (as<GetterDecl>(member))
         {
@@ -780,7 +780,7 @@ void DocMarkdownWriter::writeExtensionConditions(
             if (auto targetTypeParentGenericDecl =
                     as<GenericDecl>(targetTypeDeclRef.getDecl()->parentDecl))
             {
-                for (auto member : targetTypeParentGenericDecl->members)
+                for (auto member : targetTypeParentGenericDecl->getMembers())
                 {
                     if (auto typeParamDecl = as<GenericTypeParamDeclBase>(member))
                     {
@@ -815,7 +815,7 @@ void DocMarkdownWriter::writeExtensionConditions(
                 // `T`.
 
                 // Find constraints on the originalParamDecl.
-                for (auto member : genericParamDecl->parentDecl->members)
+                for (auto member : genericParamDecl->parentDecl->getMembers())
                 {
                     if (auto typeConstraint = as<GenericTypeConstraintDecl>(member))
                     {
@@ -970,7 +970,7 @@ void DocMarkdownWriter::writeSignature(CallableDecl* callableDecl)
 
         if (auto genericParent = as<GenericDecl>(parentDecl->parentDecl))
         {
-            for (auto member : genericParent->members)
+            for (auto member : genericParent->getMembers())
             {
                 if (auto typeConstraint = as<GenericTypeConstraintDecl>(member))
                 {
@@ -1228,8 +1228,7 @@ void DocMarkdownWriter::_maybeAppendRequirements(
 
 static Decl* _getSameNameDecl(ContainerDecl* parentDecl, Decl* decl)
 {
-    Decl* result = nullptr;
-    parentDecl->getMemberDictionary().tryGetValue(decl->getName(), result);
+    Decl* result = parentDecl->findFirstDirectMemberOfName(decl->getName());
     return result;
 }
 
@@ -1242,8 +1241,8 @@ static bool _isFirstOverridden(Decl* decl)
     Name* declName = decl->getName();
     if (declName)
     {
-        Decl** firstDeclPtr = parentDecl->getMemberDictionary().tryGetValue(declName);
-        return (firstDeclPtr && *firstDeclPtr == decl) || (firstDeclPtr == nullptr);
+        Decl* firstDecl = parentDecl->findFirstDirectMemberOfName(declName);
+        return (firstDecl == decl) || (firstDecl == nullptr);
     }
 
     return false;
@@ -1631,7 +1630,7 @@ void DocMarkdownWriter::writeCallableOverridable(
                 // associated with this callable.
                 if (genericDecl)
                 {
-                    for (Decl* decl : genericDecl->members)
+                    for (Decl* decl : genericDecl->getMembers())
                     {
                         if (as<GenericTypeParamDeclBase>(decl) || as<GenericValueParamDecl>(decl))
                         {
@@ -1881,7 +1880,7 @@ void DocMarkdownWriter::writeAggType(
         baseTypes = _getAsStringList(inheritanceDecls);
         for (auto entry : page->entries)
         {
-            for (auto member : as<ContainerDecl>(entry->m_node)->members)
+            for (auto member : as<ContainerDecl>(entry->m_node)->getMembers())
             {
                 if (auto inheritanceDecl = as<InheritanceDecl>(member))
                 {
@@ -2004,7 +2003,7 @@ void DocMarkdownWriter::writeAggType(
         out << "## Conditional Conformances\n\n";
         for (auto ext : conditionalConformanceExts)
         {
-            for (auto member : ext->members)
+            for (auto member : ext->getMembers())
             {
                 auto inheritanceDecl = as<InheritanceDecl>(member);
                 if (!inheritanceDecl)
@@ -2344,7 +2343,7 @@ void DeclDocumentation::writeGenericParameters(
 
     // The parameters, in order
     List<Decl*> params;
-    for (Decl* member : genericDecl->members)
+    for (Decl* member : genericDecl->getMembers())
     {
         if (as<GenericTypeParamDeclBase>(member) || as<GenericValueParamDecl>(member))
         {
@@ -2520,7 +2519,7 @@ DocumentPage* DocMarkdownWriter::findPageForToken(
                     continue;
                 if (auto genericParent = as<GenericDecl>(containerDecl->parentDecl))
                 {
-                    for (auto member : genericParent->members)
+                    for (auto member : genericParent->getMembers())
                     {
                         if (getText(member->getName()) == token)
                         {
@@ -2533,7 +2532,7 @@ DocumentPage* DocMarkdownWriter::findPageForToken(
                         }
                     }
                 }
-                for (auto member : containerDecl->members)
+                for (auto member : containerDecl->getMembers())
                 {
                     if (as<ParamDecl>(member) || as<EnumCaseDecl>(member))
                     {
@@ -2852,8 +2851,7 @@ void writeTOCChildren(
     if (page->children.getCount() == 0)
         return;
 
-    sb << R"(<ul class="toc_list">)"
-       << "\n";
+    sb << R"(<ul class="toc_list">)" << "\n";
 
     // Don't sort the root page.
     if (page->path != "index.md")

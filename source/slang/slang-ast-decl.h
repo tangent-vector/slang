@@ -25,24 +25,144 @@ class UnresolvedDecl : public Decl
     FIDDLE(...)
 };
 
+// Abstracted interface for the members of a `ContainerDecl`
+//
+struct ContainerDeclMembers
+{
+    List<Decl*> const& _get() const { return members; }
+
+    void _add(Decl* decl);
+
+    void _initForOnDemandDecode(
+        Count memberCount,
+        UInt32 idForContainerDecl,
+        void const* dataForContainerDeclMembers,
+        RefPtr<RefObject> decodeContext);
+
+    bool isDoingOnDemandDecode();
+
+    void ensureAllDirectMemberDeclsAreLoaded();
+
+    SLANG_UNREFLECTED // We don't want to reflect the following fields
+
+private:
+    Decl* findExportedDeclByMangledNameInBinaryModule(
+        UnownedStringSlice const& mangledName);
+
+    Decl* getDirectMemberDeclByIndexInBinaryModule(
+        Index index);
+
+    Decl* findDirectMemberDeclByNameInBinaryModule(
+        Name* name);
+
+
+
+    friend class ContainerDecl;
+    friend class Module;
+
+    /// The raw list of direct member declarations.
+    ///
+    List<Decl*> members;
+
+    // A list of transparent members, to be used in lookup
+    //
+    // Note: this is only valid if `_areLookupAcceleratorsValid` is true
+    List<TransparentMemberInfo> transparentMembers;
+
+    // Dictionary for looking up members by name.
+    // This is built on demand before performing lookup.
+    //
+    // Note: this is only valid if `_areLookupAcceleratorsValid` is true
+    Dictionary<Name*, Decl*> memberDictionary;
+
+    // Denotes how much of Members has been placed into the dictionary/transparentMembers.
+    // If this value equals the Members.getCount(), the dictionary is completely full and valid.
+    // If it's >= 0, then the Members after dictionaryLastCount are all that need to be added.
+    // If it < 0 it means that the dictionary/transparentMembers is invalid and needs to be
+    // recreated.
+    Index memberCountWhenAcceleratorsLastBuilt = 0;
+
+    RefPtr<RefObject> onDemandDecodeContext;
+    void const* onDemandDecodeData = nullptr;
+    UInt32 onDemandDecodeID = 0;
+};
+
 // A "container" decl is a parent to other declarations
 FIDDLE(abstract)
 class ContainerDecl : public Decl
 {
     FIDDLE(...)
 
-    FIDDLE() List<Decl*> members;
     SourceLoc closingSourceLoc;
 
     // The associated scope owned by this decl.
     Scope* ownedScope = nullptr;
 
+    // A lot of the API of `ContainerDecl` is primarily
+    // concerned with providing access to the *direct members*
+    // of the container declaration.
+
+    /// Get a list of all the direct member declarations of this container declaration.
+    ///
+    List<Decl*> const& getMembers();
+
+    Count getDirectMemberDeclCount();
+    Decl* getDirectMemberDecl(Index index);
+
+    /// Get a list of all the direct member declarations of this container declaration
+    /// that are instances of the specified type.
+    ///
     template<typename T>
     FilteredMemberList<T> getMembersOfType()
     {
-        return FilteredMemberList<T>(members);
+        return FilteredMemberList<T>(getMembers());
     }
 
+    /// Get a list of all the direct member declarations of this container declaration
+    /// that are considered *transparent*.
+    ///
+    /// Lookup of a name in the container declaration will also consider lookup
+    /// through these member declarations.
+    ///
+    List<TransparentMemberInfo> const& getTransparentMembers();
+
+    /// Find the first direct member declaration of this container declaration
+    /// that has the given `name`.
+    ///
+    Decl* findFirstDirectMemberOfName(Name* name);
+
+    /// Find the next direct member declaration of this container declaration
+    /// that has the same name as the given `memberDecl`.
+    ///
+    Decl* findNextDirectMemberDeclWithSameName(Decl* memberDecl);
+
+    /// Add the given `memberDecl` as a direct member declaration.
+    ///
+    void addDirectMemberDecl(Decl* memberDecl);
+
+    void addMember(Decl* memberDecl)
+    {
+        addDirectMemberDecl(memberDecl);
+    }
+
+
+    // The functions after this point are *technically* part of the public
+    // API of `ContainerDecl`, but they are really not things that code
+    // *should* be using, if they can be avoided.
+
+    void _removeDirectMemberDecl(Decl* memberDecl);
+    void _replaceDirectMemberDeclAtIndex(Index index, Decl* replacementMemberDecl);
+    void _insertDirectMemberDeclAtIndex(Index index, Decl* memberDecl);
+    void _invalidateLookupAcceleratorsBecauseMemberDeclWillBecomeTransparent();
+
+    FIDDLE() ContainerDeclMembers _members;
+
+private:
+    bool _areLookupAcceleratorsValid();
+    void _invalidateLookupAccelerators();
+    void _ensureLookupAcceleratorsAreValid();
+
+#if 0
     void buildMemberDictionary();
 
     bool isMemberDictionaryValid() const { return dictionaryLastCount == members.getCount(); }
@@ -60,33 +180,7 @@ class ContainerDecl : public Decl
         buildMemberDictionary();
         return transparentMembers;
     }
-
-    void addMember(Decl* member)
-    {
-        if (member)
-        {
-            member->parentDecl = this;
-            members.add(member);
-        }
-    }
-
-    SLANG_UNREFLECTED // We don't want to reflect the following fields
-
-        private :
-        // Denotes how much of Members has been placed into the dictionary/transparentMembers.
-        // If this value equals the Members.getCount(), the dictionary is completely full and valid.
-        // If it's >= 0, then the Members after dictionaryLastCount are all that need to be added.
-        // If it < 0 it means that the dictionary/transparentMembers is invalid and needs to be
-        // recreated.
-        Index dictionaryLastCount = 0;
-
-    // Dictionary for looking up members by name.
-    // This is built on demand before performing lookup.
-    Dictionary<Name*, Decl*> memberDictionary;
-
-    // A list of transparent members, to be used in lookup
-    // Note: this is only valid if `memberDictionaryIsValid` is true
-    List<TransparentMemberInfo> transparentMembers;
+#endif
 };
 
 // Base class for all variable declarations

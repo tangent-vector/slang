@@ -53,18 +53,19 @@ SlangResult loadModuleLibrary(
     // Load up the module
     MemoryStreamBase memoryStream(FileAccess::Read, inBytes, bytesCount);
 
-    RiffContainer riffContainer;
-    SLANG_RETURN_ON_FAIL(RiffUtil::read(&memoryStream, riffContainer));
+    auto riffContainer = RefPtr(new RiffContainerObject);
+    SLANG_RETURN_ON_FAIL(RiffUtil::read(&memoryStream, *riffContainer));
 
     auto linkage = req->getLinkage();
     auto sink = req->getSink();
     auto namePool = req->getNamePool();
 
-    auto container = ContainerChunkRef::find(&riffContainer);
+    auto container = ContainerChunkRef::find(riffContainer);
 
     for (auto moduleChunk : container.getModules())
     {
-        auto loadedModule = linkage->findOrLoadSerializedModuleForModuleLibrary(moduleChunk, sink);
+        auto loadedModule =
+            linkage->findOrLoadSerializedModuleForModuleLibrary(riffContainer, moduleChunk, sink);
         if (!loadedModule)
             return SLANG_FAIL;
 

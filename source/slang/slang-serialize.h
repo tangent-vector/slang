@@ -32,14 +32,15 @@ struct Encoder
 public:
     Encoder(Stream* stream)
         : _stream(stream)
+        , _riff(&_riffContainer)
     {
     }
 
-    ~Encoder() { RiffUtil::write(&_riff, _stream); }
+    ~Encoder() { RiffUtil::write(&_riffContainer, _stream); }
 
     void beginArray(FourCC typeCode)
     {
-        _riff.startChunk(RiffContainer::Chunk::Kind::List, typeCode);
+        _riff.beginChunk(RiffContainer::Chunk::Kind::List, typeCode);
     }
 
     void beginArray() { beginArray(SerialBinary::kArrayFourCC); }
@@ -52,7 +53,7 @@ public:
 
     void beginObject(FourCC typeCode)
     {
-        _riff.startChunk(RiffContainer::Chunk::Kind::List, typeCode);
+        _riff.beginChunk(RiffContainer::Chunk::Kind::List, typeCode);
     }
 
     void beginObject() { beginObject(SerialBinary::kObjectFourCC); }
@@ -61,26 +62,36 @@ public:
 
     void beginKeyValuePair()
     {
-        _riff.startChunk(RiffContainer::Chunk::Kind::List, SerialBinary::kPairFourCC);
+        _riff.beginChunk(RiffContainer::Chunk::Kind::List, SerialBinary::kPairFourCC);
     }
 
     void endKeyValuePair() { _riff.endChunk(); }
 
     void beginKeyValuePair(FourCC keyCode)
     {
-        _riff.startChunk(RiffContainer::Chunk::Kind::List, keyCode);
+        _riff.beginChunk(RiffContainer::Chunk::Kind::List, keyCode);
     }
 
     void encodeData(FourCC typeCode, void const* data, size_t size)
     {
-        _riff.startChunk(RiffContainer::Chunk::Kind::Data, typeCode);
-        _riff.write(data, size);
+        _riff.beginChunk(RiffContainer::Chunk::Kind::Data, typeCode);
+        _riff.addData(data, size);
         _riff.endChunk();
     }
 
     void encodeData(void const* data, size_t size)
     {
         encodeData(SerialBinary::kDataFourCC, data, size);
+    }
+
+    RiffDataChunkBuilder addDataChunk(FourCC tag)
+    {
+        auto saved = _riff.getCurrentChunk();
+        _riff.beginChunk(RiffContainer::Chunk::Kind::Data, tag);
+        auto result = as<RiffContainer::DataChunk>(_riff.getCurrentChunk());
+        _riff.setCurrentChunk(saved);
+
+        return RiffDataChunkBuilder(&_riffContainer, result);
     }
 
     void encode(nullptr_t) { encodeData(SerialBinary::kNullFourCC, nullptr, 0); }
@@ -178,10 +189,12 @@ private:
     Stream* _stream = nullptr;
 
     // Implementation details below...
-    RiffContainer _riff;
+    RiffContainer _riffContainer;
+    RiffBuilder _riff;
 
 public:
-    RiffContainer* getRIFF() { return &_riff; }
+    RiffBuilder& getCursor() { return _riff; }
+    RiffContainer* getRIFF() { return &_riffContainer; }
 
     RiffContainer::Chunk* getRIFFChunk() { return _riff.getCurrentChunk(); }
 
@@ -228,11 +241,11 @@ public:
             UNREACHABLE_RETURN("");
         }
 
-        auto size = dataChunk->calcPayloadSize();
+        auto size = dataChunk->getPayloadSize();
 
         String value;
         value.appendRepeatedChar(' ', size);
-        dataChunk->getPayload((char*)value.getBuffer());
+        dataChunk->getPayload((char*)value.getBuffer(), size);
 
         _chunk = _chunk->m_next;
         return value;
@@ -245,12 +258,9 @@ public:
             auto dataChunk = as<RiffContainer::DataChunk>(_chunk);
             if (dataChunk)
             {
-                if (dataChunk->calcPayloadSize() >= dataSize)
-                {
-                    dataChunk->getPayload(outData);
-                    _chunk = _chunk->m_next;
-                    return;
-                }
+                dataChunk->getPayload(outData, dataSize);
+                _chunk = _chunk->m_next;
+                return;
             }
         }
 
@@ -278,7 +288,7 @@ public:
     double decodeFloat64() { return _decodeSimpleValue<double>(SerialBinary::kFloat64FourCC); }
 
 
-    FourCC getTag() { return _chunk ? _chunk->m_fourCC : 0; }
+    FourCC getTag() { return _chunk ? _chunk->getType() : 0; }
 
     Int32 _decodeImpl(Int32*) { return decodeInt32(); }
     UInt32 _decodeImpl(UInt32*) { return decodeUInt32(); }
@@ -309,7 +319,7 @@ public:
             SLANG_UNEXPECTED("invalid format in RIFF");
         }
 
-        if (listChunk->m_fourCC != typeCode)
+        if (listChunk->getType() != typeCode)
         {
             SLANG_UNEXPECTED("invalid format in RIFF");
         }
@@ -325,7 +335,7 @@ public:
             SLANG_UNEXPECTED("invalid format in RIFF");
         }
 
-        if (listChunk->m_fourCC != typeCode)
+        if (listChunk->getType() != typeCode)
         {
             SLANG_UNEXPECTED("invalid format in RIFF");
         }
@@ -341,7 +351,7 @@ public:
             SLANG_UNEXPECTED("invalid format in RIFF");
         }
 
-        if (listChunk->m_fourCC != typeCode)
+        if (listChunk->getType() != typeCode)
         {
             SLANG_UNEXPECTED("invalid format in RIFF");
         }
@@ -357,7 +367,7 @@ public:
             SLANG_UNEXPECTED("invalid format in RIFF");
         }
 
-        auto found = listChunk->findContainedList(propertyCode);
+        auto found = listChunk->findListChunk(propertyCode);
         if (!found)
         {
             SLANG_UNEXPECTED("invalid format in RIFF");
@@ -367,6 +377,14 @@ public:
     }
 
     bool hasElements() { return _chunk != nullptr; }
+
+    void skip()
+    {
+        if (_chunk != nullptr)
+        {
+            _chunk = _chunk->m_next;
+        }
+    }
 
     bool isNull()
     {
