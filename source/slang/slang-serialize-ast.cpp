@@ -1534,7 +1534,10 @@ ModuleDecl* readSerializedModuleAST(
 {
     ASTDecodingContext
         context(linkage, astBuilder, sink, chunk, sourceLocReader, requestingSourceLoc);
-    context.decodeAll();
+
+    // The essence of on-demand deserialization is that we *won't*
+    // decode everything at once...
+//    context.decodeAll();
     auto node = context.getDeclByID(0);
     auto moduleDecl = as<ModuleDecl>(node);
     return moduleDecl;
