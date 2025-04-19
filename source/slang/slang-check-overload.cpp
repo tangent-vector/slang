@@ -71,7 +71,7 @@ SemanticsVisitor::ParamCounts SemanticsVisitor::CountParameters(
 SemanticsVisitor::ParamCounts SemanticsVisitor::CountParameters(DeclRef<GenericDecl> genericRef)
 {
     ParamCounts counts = {0, 0};
-    for (auto m : genericRef.getDecl()->members)
+    for (auto m : genericRef.getDecl()->getMembers())
     {
         if (auto typeParam = as<GenericTypeParamDecl>(m))
         {
@@ -1165,7 +1165,7 @@ Expr* SemanticsVisitor::CompleteOverloadCandidate(
                 if (auto subscriptDeclRef = candidate.item.declRef.as<SubscriptDecl>())
                 {
                     const auto& decl = subscriptDeclRef.getDecl();
-                    for (auto member : decl->members)
+                    for (auto member : decl->getMembers())
                     {
                         if (as<SetterDecl>(member) || as<RefAccessorDecl>(member))
                         {

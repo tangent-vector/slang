@@ -63,7 +63,7 @@ Expr* SemanticsVisitor::moveTemp(Expr* const& expr, F const& func)
     VarDecl* varDecl = m_astBuilder->create<VarDecl>();
     varDecl->parentDecl = nullptr;
     if (m_outerScope && m_outerScope->containerDecl)
-        m_outerScope->containerDecl->addMember(varDecl);
+        m_outerScope->containerDecl->addDirectMemberDecl(varDecl);
     addModifier(varDecl, m_astBuilder->create<LocalTempVarModifier>());
     varDecl->checkState = DeclCheckState::DefinitionChecked;
     varDecl->nameAndLoc.loc = expr->loc;
@@ -456,7 +456,7 @@ DeclRefExpr* SemanticsVisitor::ConstructDeclRefExpr(
                 if (!expr->type.isLeftValue && as<PropertyDecl>(declRef.getDecl()))
                 {
                     bool isLValue = false;
-                    for (auto member : as<ContainerDecl>(declRef.getDecl())->members)
+                    for (auto member : as<ContainerDecl>(declRef.getDecl())->getMembers())
                     {
                         if (as<SetterDecl>(member) || as<RefAccessorDecl>(member))
                         {
@@ -477,7 +477,7 @@ DeclRefExpr* SemanticsVisitor::ConstructDeclRefExpr(
                 if (auto propertyDecl = as<PropertyDecl>(declRef.getDecl()))
                 {
                     bool isLValue = false;
-                    for (auto member : propertyDecl->members)
+                    for (auto member : propertyDecl->getMembers())
                     {
                         if (as<SetterDecl>(member) || as<RefAccessorDecl>(member))
                         {
@@ -664,7 +664,7 @@ Expr* SemanticsVisitor::maybeUseSynthesizedDeclForLookupResult(
                 auto conformanceDecl = m_astBuilder->create<InheritanceDecl>();
                 conformanceDecl->base.type = m_astBuilder->getDiffInterfaceType();
                 conformanceDecl->parentDecl = structDecl;
-                structDecl->members.add(conformanceDecl);
+                structDecl->addDirectMemberDecl(conformanceDecl);
                 structDecl->parentDecl = parent;
 
                 synthesizedDecl = structDecl;
@@ -676,13 +676,12 @@ Expr* SemanticsVisitor::maybeUseSynthesizedDeclForLookupResult(
                     createDefaultSubstitutionsIfNeeded(m_astBuilder, this, makeDeclRef(structDecl));
 
                 typeDef->type.type = DeclRefType::create(m_astBuilder, synthDeclRef);
-                structDecl->members.add(typeDef);
+                structDecl->addDirectMemberDecl(typeDef);
 
                 synthesizedDecl->parentDecl = parent;
                 synthesizedDecl->nameAndLoc.name = item.declRef.getName();
                 synthesizedDecl->loc = parent->loc;
-                parent->members.add(synthesizedDecl);
-                parent->invalidateMemberDictionary();
+                parent->addDirectMemberDecl(synthesizedDecl);
 
                 // Mark the newly synthesized decl as `ToBeSynthesized` so future checking can
                 // differentiate it from user-provided definitions, and proceed to fill in its
@@ -708,8 +707,7 @@ Expr* SemanticsVisitor::maybeUseSynthesizedDeclForLookupResult(
 
                 synthesizedDecl = parent;
 
-                parent->members.add(typeDef);
-                parent->invalidateMemberDictionary();
+                parent->addDirectMemberDecl(typeDef);
 
                 markSelfDifferentialMembersOfType(parent, subType);
             }
@@ -1290,17 +1288,14 @@ bool SemanticsVisitor::canStructBeUsedAsSelfDifferentialType(AggTypeDecl* aggTyp
     // and their differential types are the same as the original types.
     //
     bool canBeUsed = true;
-    for (auto member : aggTypeDecl->members)
+    for (auto varDecl : aggTypeDecl->getMembersOfType<VarDecl>())
     {
-        if (auto varDecl = as<VarDecl>(member))
+        // Try to get the differential type of the member.
+        Type* diffType = tryGetDifferentialType(getASTBuilder(), varDecl->getType());
+        if (!diffType || !diffType->equals(varDecl->getType()))
         {
-            // Try to get the differential type of the member.
-            Type* diffType = tryGetDifferentialType(getASTBuilder(), varDecl->getType());
-            if (!diffType || !diffType->equals(varDecl->getType()))
-            {
-                canBeUsed = false;
-                break;
-            }
+            canBeUsed = false;
+            break;
         }
     }
     return canBeUsed;

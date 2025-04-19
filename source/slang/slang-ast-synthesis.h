@@ -73,7 +73,7 @@ public:
         auto newScope = m_builder->create<Scope>();
         scopeDecl->parentDecl = scope.m_parent;
         if (scope.m_parent)
-            scope.m_parent->members.add(scopeDecl);
+            scope.m_parent->addDirectMemberDecl(scopeDecl);
         newScope->parent = scope.m_scope;
         newScope->containerDecl = scopeDecl;
         scope.m_scope = newScope;

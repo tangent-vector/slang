@@ -1491,7 +1491,7 @@ static void AddMember(ContainerDecl* container, Decl* member)
 {
     if (container)
     {
-        container->addMember(member);
+        container->addDirectMemberDecl(member);
     }
 }
 
@@ -1499,7 +1499,7 @@ static void AddMember(Scope* scope, Decl* member)
 {
     if (scope)
     {
-        scope->containerDecl->addMember(member);
+        scope->containerDecl->addDirectMemberDecl(member);
     }
 }
 
@@ -2643,7 +2643,7 @@ static NodeBase* parseDispatchKernel(Parser* parser, void* /* unused */)
         TupleTypeExpr* expr = parser->astBuilder->create<TupleTypeExpr>();
         while(!AdvanceIfMatch(parser, MatchedTokenType::Parentheses))
         {
-            expr->members.add(parser->ParseTypeExp());
+            expr->addDirectMemberDecl(parser->ParseTypeExp());
             if(AdvanceIf(parser, TokenType::RParent))
                 break;
             parser->ReadToken(TokenType::Comma);
@@ -3774,8 +3774,7 @@ static NodeBase* parseNamespaceDecl(Parser* parser, void* /*userData*/)
             // function `foo` has been defined), and direct member
             // lookup will only give us the first.
             //
-            Decl* firstDecl = nullptr;
-            parentDecl->getMemberDictionary().tryGetValue(nameAndLoc.name, firstDecl);
+            Decl* firstDecl = parentDecl->findFirstDirectMemberOfName(nameAndLoc.name);
             //
             // We will search through the declarations of the name
             // and find the first that is a namespace (if any).
@@ -3786,7 +3785,7 @@ static NodeBase* parseNamespaceDecl(Parser* parser, void* /*userData*/)
             // as possible in the parser, and we'd rather be
             // as permissive as possible right now.
             //
-            for (Decl* d = firstDecl; d; d = d->nextInContainerWithSameName)
+            for (Decl* d = firstDecl; d; d = parentDecl->findNextDirectMemberDeclWithSameName(d))
             {
                 namespaceDecl = as<NamespaceDecl>(d);
                 if (namespaceDecl)

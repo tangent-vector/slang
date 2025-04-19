@@ -201,6 +201,11 @@ struct ASTDumpContext
         m_writer->emit("}");
     }
 
+    void dump(ContainerDeclMembers const& members)
+    {
+        dump(members._get());
+    }
+
     template<typename T, int n>
     void dump(const ShortList<T, n>& list)
     {

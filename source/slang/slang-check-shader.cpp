@@ -156,7 +156,7 @@ void EntryPoint::_collectGenericSpecializationParamsRec(Decl* decl)
     if (!genericDecl)
         return;
 
-    for (auto m : genericDecl->members)
+    for (auto m : genericDecl->getMembers())
     {
         if (auto genericTypeParam = as<GenericTypeParamDecl>(m))
         {
@@ -746,7 +746,7 @@ void Module::_collectShaderParams()
     for (Index i = 0; i < workList.getCount(); i++)
     {
         auto moduleDecl = workList[i];
-        for (auto globalDecl : moduleDecl->members)
+        for (auto globalDecl : moduleDecl->getMembers())
         {
             if (auto globalVar = as<VarDecl>(globalDecl))
             {

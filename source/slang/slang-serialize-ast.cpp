@@ -562,6 +562,16 @@ public:
         }
     }
 
+    void encodeValue(ContainerDeclMembers const& value)
+    {
+        // TODO(tfoley): This is an ideal place to filter
+        // the members down to just the ones that might
+        // actually need to be serialized (e.g., because
+        // they are public).
+        //
+        encode(value._get());
+    }
+
     template<typename T, int N>
     void encodeValue(ShortList<T, N> const& array)
     {
@@ -954,7 +964,7 @@ private:
     void assignGenericParameterIndices(GenericDecl* genericDecl)
     {
         int parameterCounter = 0;
-        for (auto m : genericDecl->members)
+        for (auto m : genericDecl->getMembers())
         {
             if (auto typeParam = as<GenericTypeParamDeclBase>(m))
             {
@@ -1431,6 +1441,20 @@ private:
         }
     }
 
+    void decodeValue(ContainerDeclMembers& members, Decoder& decoder)
+    {
+        // TODO: actually do the on-demand part of this...
+
+        Decoder::WithArray withArray(decoder);
+        while (decoder.hasElements())
+        {
+            Decl* member = nullptr;
+            decode(member, decoder);
+
+            members._add(member);
+        }
+    }
+
     template<typename T, int N>
     void decodeValue(ShortList<T, N>& array, Decoder& decoder)
     {
@@ -1537,7 +1561,7 @@ ModuleDecl* readSerializedModuleAST(
 
     // The essence of on-demand deserialization is that we *won't*
     // decode everything at once...
-//    context.decodeAll();
+    context.decodeAll();
     auto node = context.getDeclByID(0);
     auto moduleDecl = as<ModuleDecl>(node);
     return moduleDecl;

@@ -61,7 +61,7 @@ inline FilteredMemberRefList<Decl> getGenericMembers(
 {
     return FilteredMemberRefList<Decl>(
         astBuilder,
-        genericInnerDecl.getParent().getDecl()->members,
+        genericInnerDecl.getParent().getDecl()->getMembers(),
         genericInnerDecl,
         filterStyle);
 }
@@ -73,7 +73,7 @@ inline FilteredMemberRefList<Decl> getMembers(
 {
     return FilteredMemberRefList<Decl>(
         astBuilder,
-        declRef.getDecl()->members,
+        declRef.getDecl()->getMembers(),
         declRef,
         filterStyle);
 }
@@ -84,7 +84,7 @@ inline FilteredMemberRefList<T> getMembersOfType(
     DeclRef<ContainerDecl> declRef,
     MemberFilterStyle filterStyle = MemberFilterStyle::All)
 {
-    return FilteredMemberRefList<T>(astBuilder, declRef.getDecl()->members, declRef, filterStyle);
+    return FilteredMemberRefList<T>(astBuilder, declRef.getDecl()->getMembers(), declRef, filterStyle);
 }
 
 void _foreachDirectOrExtensionMemberOfType(

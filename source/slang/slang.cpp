@@ -2942,7 +2942,7 @@ static void collectExportedConstantInContainer(
     ASTBuilder* builder,
     ContainerDecl* containerDecl)
 {
-    for (auto m : containerDecl->members)
+    for (auto m : containerDecl->getMembers())
     {
         auto varMember = as<VarDeclBase>(m);
         if (!varMember)
@@ -2973,7 +2973,7 @@ static void collectExportedConstantInContainer(
         }
     }
 
-    for (auto member : containerDecl->members)
+    for (auto member : containerDecl->getMembers())
     {
         if (as<NamespaceDecl>(member) || as<FileDecl>(member))
         {
@@ -4925,7 +4925,7 @@ Linkage::IncludeResult Linkage::findAndIncludeFile(
         outerScope,
         fileDecl);
 
-    module->getModuleDecl()->addMember(fileDecl);
+    module->getModuleDecl()->addDirectMemberDecl(fileDecl);
 
     result.fileDecl = fileDecl;
     result.isNew = true;
@@ -5173,7 +5173,7 @@ void Module::_processFindDeclsExportSymbolsRec(Decl* decl)
     // If it's a container process it's children
     if (auto containerDecl = as<ContainerDecl>(decl))
     {
-        for (auto child : containerDecl->members)
+        for (auto child : containerDecl->getMembers())
         {
             _processFindDeclsExportSymbolsRec(child);
         }
@@ -6644,12 +6644,9 @@ SlangResult Linkage::loadSerializedModuleContents(
     module->_discoverEntryPoints(sink, targets);
 
     // Hook up fileDecl's scope to module's scope.
-    for (auto globalDecl : moduleDecl->members)
+    for (auto fileDecl : moduleDecl->getMembersOfType<FileDecl>())
     {
-        if (auto fileDecl = as<FileDecl>(globalDecl))
-        {
-            addSiblingScopeForContainerDecl(m_astBuilder, moduleDecl->ownedScope, fileDecl);
-        }
+        addSiblingScopeForContainerDecl(m_astBuilder, moduleDecl->ownedScope, fileDecl);
     }
 
     return SLANG_OK;

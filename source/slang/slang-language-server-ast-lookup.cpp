@@ -805,7 +805,7 @@ bool _findAstNodeImpl(ASTLookupContext& context, SyntaxNode* node)
             }
             if (shouldInspectChildren)
             {
-                for (auto member : container->members)
+                for (auto member : container->getMembers())
                 {
                     if (_findAstNodeImpl(context, member))
                         return true;

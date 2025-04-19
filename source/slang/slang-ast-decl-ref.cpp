@@ -255,7 +255,7 @@ void GenericAppDeclRef::_toTextOverride(StringBuilder& out)
 {
     auto genericDecl = as<GenericDecl>(getGenericDeclRef()->getDecl());
     Index paramCount = 0;
-    for (auto member : genericDecl->members)
+    for (auto member : genericDecl->getMembers())
         if (as<GenericTypeParamDeclBase>(member) || as<GenericValueParamDecl>(member))
             paramCount++;
     getGenericDeclRef()->toText(out);
@@ -371,7 +371,7 @@ void DeclRefBase::toText(StringBuilder& out)
                 if (auto genericAppDeclRef = substSet.findGenericAppDeclRef(genericDecl))
                 {
                     Index paramCount = 0;
-                    for (auto member : genericDecl->members)
+                    for (auto member : genericDecl->getMembers())
                         if (as<GenericTypeParamDeclBase>(member) ||
                             as<GenericValueParamDecl>(member))
                             paramCount++;
