@@ -21,6 +21,7 @@ class TranslationUnitRequest;
 bool isGlobalShaderParameter(VarDeclBase* decl);
 bool isFromCoreModule(Decl* decl);
 
+bool isBuiltinDeclThatNeedsRegistration(Decl* decl);
 void registerBuiltinDecls(Session* session, Decl* decl);
 
 Type* unwrapArrayType(Type* type);

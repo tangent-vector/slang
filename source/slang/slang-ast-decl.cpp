@@ -96,6 +96,19 @@ void ContainerDeclMembers::_add(Decl* decl)
     members.add(decl);
 }
 
+void ContainerDeclMembers::_initForOnDemandDecode(
+    Count memberCount,
+    void const* chunk,
+    RefPtr<RefObject> decodeContext)
+{
+    members.reserve(memberCount);
+    for (Index i = 0; i < memberCount; ++i)
+        members.add(nullptr);
+
+    this->onDemandDecodeChunk = chunk;
+    this->onDemandDecodeContext = decodeContext;
+}
+
 
 /// Add the given `memberDecl` as a direct member declaration.
 ///

@@ -26,6 +26,8 @@ private:
     Dictionary<Decl*, DeclID> mapDeclToID;
     List<Decl*> decls;
 
+    List<Decl*> _builtinDeclsToRegister;
+
     struct ImportedDeclInfo
     {
         Int moduleIndex = -1;
@@ -671,7 +673,7 @@ void writeSerializedModuleAST(
     context.flush();
 }
 
-struct ASTDecodingContext
+class ASTDecodingContext : public RefObject
 {
 public:
     ASTDecodingContext(
@@ -695,8 +697,12 @@ public:
     SerialSourceLocReader* _sourceLocReader = nullptr;
     SourceLoc _requestingSourceLoc;
 
-    SlangResult decodeAll()
+    SlangResult init()
     {
+        // We want to do as little as possible at this step,
+        // so that we don't spend too much time...
+        //
+
         auto cursor = _rootChunk->getFirstContainedChunk();
 
         // There are a few different top-level chunks that
@@ -740,7 +746,7 @@ public:
         // declarations, so that other nodes can refer to
         // them.
         //
-        SLANG_RETURN_ON_FAIL(decodeImportedDecls(importedDeclChunk));
+        SLANG_RETURN_ON_FAIL(initImportedDecls(importedDeclChunk));
 
         // Next we process the declarations that are within
         // the module itself, first creating an "empty shell"
@@ -750,7 +756,7 @@ public:
         // references)... so long as nothing here tries to
         // look *inside* the empty shell along the way.
         //
-        SLANG_RETURN_ON_FAIL(createEmptyShells(declChunk));
+        SLANG_RETURN_ON_FAIL(initDecls(declChunk));
 
         // Once all the `Decl`s that might be needed have
         // been allocated, we can process all the `Val`s
@@ -762,8 +768,9 @@ public:
         // sorted the entries so that a `Val` only ever appears
         // *after* its operands.
         //
-        SLANG_RETURN_ON_FAIL(decodeVals(valChunk));
+        SLANG_RETURN_ON_FAIL(initVals(valChunk));
 
+#if 0
         // Once all the back-reference-able objects have been
         // instantiated in memory, we can go back through the
         // `Decl`s in the module and fill in those empty shells.
@@ -778,7 +785,7 @@ public:
         // is (supposed to be) fully cheked.
         //
         SLANG_RETURN_ON_FAIL(cleanUpNodes());
-
+#endif
 
         return SLANG_OK;
     }
@@ -788,11 +795,11 @@ public:
     {
         if (id >= 0)
         {
-            return _decls[id];
+            return _getLocalDeclByIndex(id);
         }
         else
         {
-            return _importedDecls[~id];
+            return _getImportedDeclByIndex(~id);
         }
     }
 
@@ -804,20 +811,69 @@ private:
     ASTBuilder* _astBuilder = nullptr;
     RiffContainer::ListChunk* _rootChunk = nullptr;
 
-    List<Decl*> _decls;
-    List<Decl*> _importedDecls;
-    List<Val*> _vals;
+    struct DeclInfo
+    {
+        Decl* decl = nullptr;
+        RiffContainer::Chunk* chunk = nullptr;
+    };
+
+    struct ValInfo
+    {
+        Val* val = nullptr;
+        RiffContainer::Chunk* chunk = nullptr;
+    };
+
+    List<DeclInfo> _decls;
+    List<DeclInfo> _importedDecls;
+    List<ValInfo> _vals;
 
     typedef Int ValID;
-    Val* getValByID(ValID id) { return _vals[id]; }
 
-    SlangResult decodeImportedDecls(RiffContainer::Chunk* importedDeclChunk)
+    Val* getValByID(ValID id)
+    {
+        auto& info = _vals[id];
+        if (auto val = info.val)
+            return val;
+
+        Decoder decoder(info.chunk);
+
+        // TODO: this can end up going recursive
+        // to a somewhat arbitrary depth. We should
+        // be building up a list of the entries that
+        // need to be processed and *then* decoding
+        // them all.
+
+        Val* val = decodeValNode(decoder);
+        info.val = val;
+
+        return val;
+    }
+
+    SlangResult initImportedDecls(RiffContainer::Chunk* importedDeclChunk)
     {
         Decoder decoder(importedDeclChunk);
 
         Decoder::WithArray withArray(decoder);
         while (decoder.hasElements())
         {
+            auto chunk = decoder.getCursor();
+            decoder.skip();
+
+            DeclInfo info;
+            info.chunk = chunk;
+            _importedDecls.add(info);
+        }
+        return SLANG_OK;
+    }
+
+    Decl* _getImportedDeclByIndex(Index index)
+    {
+        if (auto decl = _importedDecls[index].decl)
+            return decl;
+
+        SLANG_UNEXPECTED("need to actually do stuff!");
+
+#if 0
             Decoder::WithKeyValuePair withPair(decoder);
 
             Int moduleIndex;
@@ -846,6 +902,7 @@ private:
             }
         }
         return SLANG_OK;
+#endif
     }
 
     ModuleDecl* getImportedModule(Name* moduleName)
@@ -859,43 +916,77 @@ private:
         return module->getModuleDecl();
     }
 
-    SlangResult decodeVals(RiffContainer::Chunk* valChunk)
+    SlangResult initVals(RiffContainer::Chunk* valChunk)
     {
         Decoder decoder(valChunk);
 
         Decoder::WithArray withArray(decoder);
         while (decoder.hasElements())
         {
+            auto chunk = decoder.getCursor();
+            decoder.skip();
+
+            ValInfo info;
+            info.chunk = chunk;
+            _vals.add(info);
+#if 0
             Val* val = decodeValNode(decoder);
             _vals.add(val);
+#endif
         }
         return SLANG_OK;
     }
 
-    SlangResult createEmptyShells(RiffContainer::Chunk* declChunk)
+    SlangResult initDecls(RiffContainer::Chunk* declChunk)
     {
         Decoder decoder(declChunk);
 
         Decoder::WithArray withArray(decoder);
         while (decoder.hasElements())
         {
-            ASTNodeType nodeType;
+            auto chunk = decoder.getCursor();
+            decoder.skip();
 
-            // Each of the declarations is expected to take
-            // the form of an object with a first field
-            // that holds the node type.
-            //
-            {
-                Decoder::WithObject withObject(decoder);
-                decode(nodeType, decoder);
-            }
+            DeclInfo info;
+            info.chunk = chunk;
+            _decls.add(info);
+        }
+        return SLANG_OK;
+    }
 
-            auto emptyShell = createEmptyShell(nodeType);
-            auto declEmptyShell = as<Decl>(emptyShell);
-            _decls.add(declEmptyShell);
+    Decl* _getLocalDeclByIndex(Index index)
+    {
+        auto& info = _decls[index];
+        if (auto decl = info.decl)
+            return decl;
+
+        // Each of the declarations is expected to take
+        // the form of an object with a first field
+        // that holds the node type.
+        //
+        ASTNodeType nodeType;
+        {
+            Decoder decoder(info.chunk);
+
+            Decoder::WithObject withObject(decoder);
+            decode(nodeType, decoder);
         }
 
-        return SLANG_OK;
+        auto emptyShell = createEmptyShell(nodeType);
+        auto decl = as<Decl>(emptyShell);
+        SLANG_ASSERT(decl);
+
+        info.decl = decl;
+
+        // TODO: need to avoid recursion in the process
+        // of filling in the shells...
+
+        {
+            Decoder decoder(info.chunk);
+            decodeASTNodeContent(decl, decoder);
+        }
+
+        return decl;
     }
 
     Val* decodeValNode(Decoder& decoder)
@@ -935,6 +1026,7 @@ private:
         return SyntaxClass<NodeBase>(nodeType).createInstance(_astBuilder);
     }
 
+#if 0
     SlangResult fillEmptyShells(RiffContainer::Chunk* declChunk)
     {
         Index declIndex = 0;
@@ -959,6 +1051,7 @@ private:
 
         return SLANG_OK;
     }
+#endif
 
 
     void assignGenericParameterIndices(GenericDecl* genericDecl)
@@ -1443,6 +1536,24 @@ private:
 
     void decodeValue(ContainerDeclMembers& members, Decoder& decoder)
     {
+        // Because we are doing on-demand decoding,
+        // we don't want to actually do anything beyond the bare
+        // minimum here.
+        //
+
+        auto chunk = decoder.getCursor();
+
+        Count count = 0;
+        Decoder::WithArray withArray(decoder);
+        while (decoder.hasElements())
+        {
+            decoder.skip();
+            count++;
+        }
+
+        members._initForOnDemandDecode(count, chunk, this);
+
+#if 0
         // TODO: actually do the on-demand part of this...
 
         Decoder::WithArray withArray(decoder);
@@ -1453,6 +1564,7 @@ private:
 
             members._add(member);
         }
+#endif
     }
 
     template<typename T, int N>
@@ -1556,13 +1668,23 @@ ModuleDecl* readSerializedModuleAST(
     SerialSourceLocReader* sourceLocReader,
     SourceLoc requestingSourceLoc)
 {
+    auto deserializer = RefPtr(new ASTDecodingContext(
+        linkage, astBuilder, sink, chunk, sourceLocReader, requestingSourceLoc));
+
+    deserializer->init();
+
+    auto node = deserializer->getDeclByID(0);
+
+#if 0
+
     ASTDecodingContext
         context(linkage, astBuilder, sink, chunk, sourceLocReader, requestingSourceLoc);
 
     // The essence of on-demand deserialization is that we *won't*
     // decode everything at once...
-    context.decodeAll();
+//    context.decodeAll();
     auto node = context.getDeclByID(0);
+#endif
     auto moduleDecl = as<ModuleDecl>(node);
     return moduleDecl;
 }

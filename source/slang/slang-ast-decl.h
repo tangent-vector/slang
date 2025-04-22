@@ -33,6 +33,11 @@ struct ContainerDeclMembers
 
     void _add(Decl* decl);
 
+    void _initForOnDemandDecode(
+        Count memberCount,
+        void const* chunk,
+        RefPtr<RefObject> decodeContext);
+
     SLANG_UNREFLECTED // We don't want to reflect the following fields
 
 private:
@@ -59,6 +64,9 @@ private:
     // If it < 0 it means that the dictionary/transparentMembers is invalid and needs to be
     // recreated.
     Index memberCountWhenAcceleratorsLastBuilt = 0;
+
+    void const* onDemandDecodeChunk = nullptr;
+    RefPtr<RefObject> onDemandDecodeContext;
 };
 
 // A "container" decl is a parent to other declarations

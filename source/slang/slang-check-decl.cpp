@@ -3192,6 +3192,22 @@ struct SemanticsDeclDifferentialConformanceVisitor
     }
 };
 
+bool isBuiltinDeclThatNeedsRegistration(Decl* decl)
+{
+    if (auto builtinMod = decl->findModifier<BuiltinTypeModifier>())
+    {
+        return true;
+    }
+    if (auto magicMod = decl->findModifier<MagicTypeModifier>())
+    {
+        return true;
+    }
+    if (auto builtinRequirement = decl->findModifier<BuiltinRequirementModifier>())
+    {
+        return true;
+    }
+}
+
 /// Recursively register any builtin declarations that need to be attached to the `session`.
 ///
 /// This function should only be needed for declarations in the core module.

@@ -760,6 +760,12 @@ SlangResult Session::_readBuiltinModule(
 
     if (isFromCoreModule(moduleDecl))
     {
+        // TODO(tfoley): Okay, so here is a place where we would naively
+        // enumerate *all* declarations in the core libraries, so we
+        // need the serialization logic for the core module to build
+        // this list for us.
+        //
+
         registerBuiltinDecls(this, moduleDecl);
     }
 

@@ -368,6 +368,14 @@ public:
 
     bool hasElements() { return _chunk != nullptr; }
 
+    void skip()
+    {
+        if (_chunk != nullptr)
+        {
+            _chunk = _chunk->m_next;
+        }
+    }
+
     bool isNull()
     {
         if (_chunk == nullptr)
