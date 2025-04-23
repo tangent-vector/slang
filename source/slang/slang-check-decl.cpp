@@ -3206,13 +3206,10 @@ bool isBuiltinDeclThatNeedsRegistration(Decl* decl)
     {
         return true;
     }
+    return false;
 }
 
-/// Recursively register any builtin declarations that need to be attached to the `session`.
-///
-/// This function should only be needed for declarations in the core module.
-///
-static void _registerBuiltinDeclsRec(Session* session, Decl* decl)
+void registerBuiltinDecl(Session* session, Decl* decl)
 {
     SharedASTBuilder* sharedASTBuilder = session->m_sharedASTBuilder;
 
@@ -3228,6 +3225,16 @@ static void _registerBuiltinDeclsRec(Session* session, Decl* decl)
     {
         sharedASTBuilder->registerBuiltinRequirementDecl(decl, builtinRequirement);
     }
+}
+
+/// Recursively register any builtin declarations that need to be attached to the `session`.
+///
+/// This function should only be needed for declarations in the core module.
+///
+static void _registerBuiltinDeclsRec(Session* session, Decl* decl)
+{
+    registerBuiltinDecl(session, decl);
+
     if (auto containerDecl = as<ContainerDecl>(decl))
     {
         for (auto childDecl : containerDecl->getMembers())
@@ -3244,10 +3251,12 @@ static void _registerBuiltinDeclsRec(Session* session, Decl* decl)
     }
 }
 
+#if 0
 void registerBuiltinDecls(Session* session, Decl* decl)
 {
     _registerBuiltinDeclsRec(session, decl);
 }
+#endif
 
 Type* unwrapArrayType(Type* type)
 {

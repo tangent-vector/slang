@@ -758,6 +758,7 @@ SlangResult Session::_readBuiltinModule(
     moduleDecl->module = module;
     module->setModuleDecl(moduleDecl);
 
+#if 0
     if (isFromCoreModule(moduleDecl))
     {
         // TODO(tfoley): Okay, so here is a place where we would naively
@@ -768,6 +769,7 @@ SlangResult Session::_readBuiltinModule(
 
         registerBuiltinDecls(this, moduleDecl);
     }
+#endif
 
     // After the AST module has been read in, we next look
     // to deserialize the IR module.
@@ -4745,9 +4747,9 @@ SourceFile* Linkage::loadSourceFile(String pathFrom, String path)
 }
 
 // Check if a serialized module is up-to-date with current compiler options and source files.
-bool Linkage::isBinaryModuleUpToDate(String fromPath, RiffContainer* riffContainer)
+bool Linkage::isBinaryModuleUpToDate(String fromPath, RiffChunkRef const& chunk)
 {
-    auto moduleChunk = ModuleChunkRef::find(riffContainer);
+    auto moduleChunk = ModuleChunkRef::find(chunk);
     if (!moduleChunk)
         return false;
 
@@ -5192,7 +5194,29 @@ void Module::_processFindDeclsExportSymbolsRec(Decl* decl)
     }
 }
 
-NodeBase* Module::findExportFromMangledName(const UnownedStringSlice& slice)
+Decl* Module::findExportFromMangledName(const UnownedStringSlice& slice)
+{
+    // TODO(tfoley): If this is a module that is being on-demand
+    // deserialized, then we need the mangled name mapping stuff
+    // to be baked into the serialized file, rather than attempt
+    // to enumerate all of the declarations in the module here.
+    //
+    if (this->m_moduleDecl->_members.isDoingOnDemandDecode())
+    {
+        return m_moduleDecl->_members.findDeclByMangledNameInBinaryModule(slice);
+    }
+
+    ensureExportLookupAcceleratorBuilt();
+
+
+    const Index index = m_mangledExportPool.findIndex(slice);
+    return (index >= 0) ? m_mangledExportSymbols[index] : nullptr;
+}
+
+/// Ensure that the any accelerator(s) used for `findExportFromMangledName`
+/// have already been built.
+///
+void Module::ensureExportLookupAcceleratorBuilt()
 {
     // Will be non zero if has been previously attempted
     if (m_mangledExportSymbols.getCount() == 0)
@@ -5207,10 +5231,27 @@ NodeBase* Module::findExportFromMangledName(const UnownedStringSlice& slice)
             m_mangledExportSymbols.add(nullptr);
         }
     }
-
-    const Index index = m_mangledExportPool.findIndex(slice);
-    return (index >= 0) ? m_mangledExportSymbols[index] : nullptr;
 }
+
+Count Module::getExportedDeclCount()
+{
+    ensureExportLookupAcceleratorBuilt();
+
+    return m_mangledExportPool.getSlicesCount();
+}
+
+Decl* Module::getExportedDecl(Index index)
+{
+    ensureExportLookupAcceleratorBuilt();
+    return m_mangledExportSymbols[index];
+}
+
+UnownedStringSlice Module::getExportedDeclMangledName(Index index)
+{
+    ensureExportLookupAcceleratorBuilt();
+    return m_mangledExportPool.getSlices()[index];
+}
+
 
 // ComponentType
 

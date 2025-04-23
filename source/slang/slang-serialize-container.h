@@ -5,6 +5,7 @@
 #include "../core/slang-riff.h"
 #include "slang-ir-insts.h"
 #include "slang-profile.h"
+#include "slang-serialize-ir.h"
 #include "slang-serialize-types.h"
 
 namespace Slang
@@ -56,7 +57,7 @@ struct SerialContainerUtil
     static SlangResult write(Module* module, const WriteOptions& options, Stream* stream);
 };
 
-
+#if 0
 struct ChunkRef
 {
 public:
@@ -149,33 +150,24 @@ public:
 
     operator RiffContainer::ListChunk*() const { return ptr(); }
 };
+#endif
 
-
-struct StringChunkRef : DataChunkRef
+struct StringChunkRef : RiffDataChunkRef
 {
 public:
     String getValue();
 };
 
-struct IRModuleChunkRef : ListChunkRef
-{
-public:
-    explicit IRModuleChunkRef(RiffContainer::ListChunk* chunk)
-        : ListChunkRef(chunk)
-    {
-    }
-};
-
-struct ASTModuleChunkRef : ListChunkRef
+struct ASTModuleChunkRef : RiffListChunkRef
 {
 public:
     explicit ASTModuleChunkRef(RiffContainer::ListChunk* chunk)
-        : ListChunkRef(chunk)
+        : RiffListChunkRef(chunk)
     {
     }
 };
 
-struct ModuleChunkRef : ListChunkRef
+struct ModuleChunkRef : RiffListChunkRef
 {
 public:
     static ModuleChunkRef find(RiffContainer* container);
@@ -184,19 +176,20 @@ public:
 
     IRModuleChunkRef findIR();
     ASTModuleChunkRef findAST();
+    DebugChunkRef findDebugChunk();
 
     SHA1::Digest getDigest();
 
-    ChunkRefList<StringChunkRef> getFileDependencies();
+    RiffChunkArray<StringChunkRef> getFileDependencies();
 
 protected:
-    ModuleChunkRef(RiffContainer::Chunk* chunk)
-        : ListChunkRef(chunk)
+    ModuleChunkRef(RiffContainer::ListChunk* chunk)
+        : RiffListChunkRef(chunk)
     {
     }
 };
 
-struct EntryPointChunkRef : ListChunkRef
+struct EntryPointChunkRef : RiffListChunkRef
 {
 public:
     String getMangledName() const;
@@ -204,24 +197,24 @@ public:
     Profile getProfile() const;
 
 protected:
-    EntryPointChunkRef(RiffContainer::Chunk* chunk)
-        : ListChunkRef(chunk)
+    EntryPointChunkRef(RiffContainer::ListChunk* chunk)
+        : RiffListChunkRef(chunk)
     {
     }
 };
 
-struct ContainerChunkRef : ListChunkRef
+struct ContainerChunkRef : RiffListChunkRef
 {
 public:
     static ContainerChunkRef find(RiffContainer* container);
 
-    ChunkRefList<ModuleChunkRef> getModules();
+    RiffChunkArray<ModuleChunkRef> getModules();
 
-    ChunkRefList<EntryPointChunkRef> getEntryPoints();
+    RiffChunkArray<EntryPointChunkRef> getEntryPoints();
 
 protected:
-    ContainerChunkRef(RiffContainer::Chunk* chunk)
-        : ListChunkRef(chunk)
+    ContainerChunkRef(RiffContainer::ListChunk* chunk)
+        : RiffListChunkRef(chunk)
     {
     }
 };
@@ -232,13 +225,13 @@ protected:
 RiffContainer::ListChunk* findDebugChunk(RiffContainer::Chunk* startingChunk);
 
 SlangResult readSourceLocationsFromDebugChunk(
-    RiffContainer::ListChunk* debugChunk,
+    DebugChunkRef debugChunk,
     SourceManager* sourceManager,
     RefPtr<SerialSourceLocReader>& outReader);
 
 SlangResult decodeModuleIR(
     RefPtr<IRModule>& outIRModule,
-    RiffContainer::Chunk* chunk,
+    IRModuleChunkRef irChunk,
     Session* session,
     SerialSourceLocReader* sourceLocReader);
 

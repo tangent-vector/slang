@@ -128,7 +128,7 @@ public:
 
         SLANG_RETURN_ON_FAIL(
             writer.write(irModule, sourceLocWriter, options.optionFlags, &serialData));
-        SLANG_RETURN_ON_FAIL(IRSerialWriter::writeContainer(serialData, encoder.getRIFF()));
+        SLANG_RETURN_ON_FAIL(IRSerialWriter::writeContainer(serialData, encoder.getCursor()));
 
         return SLANG_OK;
     }
@@ -209,7 +209,7 @@ public:
                 IRSerialWriter writer;
                 SLANG_RETURN_ON_FAIL(
                     writer.write(irModule, sourceLocWriter, options.optionFlags, &serialData));
-                SLANG_RETURN_ON_FAIL(IRSerialWriter::writeContainer(serialData, encoder.getRIFF()));
+                SLANG_RETURN_ON_FAIL(IRSerialWriter::writeContainer(serialData, encoder.getCursor()));
             }
         }
 
@@ -357,7 +357,7 @@ public:
             SerialSourceLocData debugData;
             sourceLocWriter->write(&debugData);
 
-            debugData.writeContainer(encoder.getRIFF());
+            debugData.writeContainer(encoder.getCursor());
         }
 
         // Write the container string table
@@ -426,11 +426,11 @@ String StringChunkRef::getValue()
     return Decoder(ptr()).decodeString();
 }
 
-ChunkRefList<StringChunkRef> ModuleChunkRef::getFileDependencies()
+RiffChunkArray<StringChunkRef> ModuleChunkRef::getFileDependencies()
 {
     Decoder decoder(ptr());
     Decoder::WithProperty withProperty(decoder, PropertyKeys<Module>::FileDependencies);
-    return ChunkRefList<StringChunkRef>(as<RiffContainer::ListChunk>(decoder.getCursor()));
+    return RiffChunkArray<StringChunkRef>(as<RiffContainer::ListChunk>(decoder.getCursor()));
 }
 
 ModuleChunkRef ModuleChunkRef::find(RiffContainer* container)
@@ -488,22 +488,31 @@ ASTModuleChunkRef ModuleChunkRef::findAST()
         static_cast<RiffContainer::ListChunk*>(foundProperty->getFirstContainedChunk()));
 }
 
+DebugChunkRef ModuleChunkRef::findDebugChunk()
+{
+    auto foundProperty = ptr()->findContainedList(SerialSourceLocData::kDebugFourCc);
+    if (!foundProperty)
+        return DebugChunkRef(nullptr);
+    return DebugChunkRef(
+        static_cast<RiffContainer::ListChunk*>(foundProperty->getFirstContainedChunk()));
+}
+
 ContainerChunkRef ContainerChunkRef::find(RiffContainer* container)
 {
     auto found = container->getRoot()->findListRec(SerialBinary::kContainerFourCc);
     return ContainerChunkRef(found);
 }
 
-ChunkRefList<ModuleChunkRef> ContainerChunkRef::getModules()
+RiffChunkArray<ModuleChunkRef> ContainerChunkRef::getModules()
 {
     auto found = ptr()->findContainedList(SerialBinary::kModuleListFourCc);
-    return ChunkRefList<ModuleChunkRef>(found);
+    return RiffChunkArray<ModuleChunkRef>(found);
 }
 
-ChunkRefList<EntryPointChunkRef> ContainerChunkRef::getEntryPoints()
+RiffChunkArray<EntryPointChunkRef> ContainerChunkRef::getEntryPoints()
 {
     auto found = ptr()->findContainedList(SerialBinary::kEntryPointListFourCc);
-    return ChunkRefList<EntryPointChunkRef>(found);
+    return RiffChunkArray<EntryPointChunkRef>(found);
 }
 
 String EntryPointChunkRef::getMangledName() const
@@ -568,7 +577,7 @@ RiffContainer::ListChunk* findDebugChunk(RiffContainer::Chunk* startingChunk)
 }
 
 SlangResult readSourceLocationsFromDebugChunk(
-    RiffContainer::ListChunk* debugChunk,
+    DebugChunkRef debugChunk,
     SourceManager* sourceManager,
     RefPtr<SerialSourceLocReader>& outReader)
 {
@@ -601,7 +610,7 @@ SlangResult readSourceLocationsFromDebugChunk(
 
 SlangResult decodeModuleIR(
     RefPtr<IRModule>& outIRModule,
-    RiffContainer::Chunk* chunk,
+    IRModuleChunkRef irChunk,
     Session* session,
     SerialSourceLocReader* sourceLocReader)
 {
@@ -617,11 +626,13 @@ SlangResult decodeModuleIR(
     // are deserializing IR nodes directly from the format written
     // into the RIFF.
     //
+#if 0
     auto listChunk = as<RiffContainer::ListChunk>(chunk);
     if (!listChunk)
         return SLANG_FAIL;
+#endif
     IRSerialData serialData;
-    SLANG_RETURN_ON_FAIL(IRSerialReader::readContainer(listChunk, &serialData));
+    SLANG_RETURN_ON_FAIL(IRSerialReader::readContainer(irChunk, &serialData));
 
     // Next we read the actual IR representation out from the
     // `serialData`. This is the step that may pull source-location
@@ -649,10 +660,11 @@ SlangResult decodeModuleIR(
 
     {
         RiffContainer riffContainer;
+        RiffWriteCursor riffCursor(&riffContainer);
 
         // Need to put all of this in a container
-        RiffContainer::ScopeChunk containerScope(
-            &riffContainer,
+        RiffWriteCursor::ScopeChunk containerScope(
+            riffCursor,
             RiffContainer::Chunk::Kind::List,
             SerialBinary::kContainerFourCc);
 
@@ -669,7 +681,7 @@ SlangResult decodeModuleIR(
             SLANG_RETURN_ON_FAIL(
                 writer.write(module, sourceLocWriter, options.optionFlags, &irData));
         }
-        SLANG_RETURN_ON_FAIL(IRSerialWriter::writeContainer(irData, &riffContainer));
+        SLANG_RETURN_ON_FAIL(IRSerialWriter::writeContainer(irData, riffCursor));
 
         // Write the debug info Riff container
         if (sourceLocWriter)
@@ -677,7 +689,7 @@ SlangResult decodeModuleIR(
             SerialSourceLocData serialData;
             sourceLocWriter->write(&serialData);
 
-            SLANG_RETURN_ON_FAIL(serialData.writeContainer(&riffContainer));
+            SLANG_RETURN_ON_FAIL(serialData.writeContainer(riffCursor));
         }
 
         SLANG_RETURN_ON_FAIL(RiffUtil::write(&riffContainer, &memoryStream));
@@ -695,30 +707,33 @@ SlangResult decodeModuleIR(
         RiffContainer riffContainer;
         SLANG_RETURN_ON_FAIL(RiffUtil::read(&memoryStream, riffContainer));
 
-        RiffContainer::ListChunk* rootList = riffContainer.getRoot();
+        auto moduleChunk = ModuleChunkRef::find(&riffContainer);
 
         RefPtr<SerialSourceLocReader> sourceLocReader;
 
         // If we have debug info then find and read it
         if (options.optionFlags & SerialOptionFlag::SourceLocation)
         {
+            auto debugChunk = moduleChunk.findDebugChunk();
+
+#if 0
             RiffContainer::ListChunk* debugList =
                 rootList->findContainedList(SerialSourceLocData::kDebugFourCc);
-            if (!debugList)
+#endif
+            if (!debugChunk)
             {
                 return SLANG_FAIL;
             }
             SerialSourceLocData sourceLocData;
-            SLANG_RETURN_ON_FAIL(sourceLocData.readContainer(debugList));
+            SLANG_RETURN_ON_FAIL(sourceLocData.readContainer(debugChunk));
 
             sourceLocReader = new SerialSourceLocReader;
             SLANG_RETURN_ON_FAIL(sourceLocReader->read(&sourceLocData, &workSourceManager));
         }
 
         {
-            RiffContainer::ListChunk* irList =
-                rootList->findContainedList(IRSerialBinary::kIRModuleFourCc);
-            if (!irList)
+            auto irChunk = moduleChunk.findIR();
+            if (!irChunk)
             {
                 return SLANG_FAIL;
             }
@@ -726,7 +741,7 @@ SlangResult decodeModuleIR(
             {
                 IRSerialData irReadData;
                 IRSerialReader reader;
-                SLANG_RETURN_ON_FAIL(reader.readContainer(irList, &irReadData));
+                SLANG_RETURN_ON_FAIL(reader.readContainer(irChunk, &irReadData));
 
                 // Check the stream read data is the same
                 if (irData != irReadData)

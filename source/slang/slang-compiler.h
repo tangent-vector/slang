@@ -1717,7 +1717,16 @@ public:
 
     /// Given a mangled name finds the exported NodeBase associated with this module.
     /// If not found returns nullptr.
-    NodeBase* findExportFromMangledName(const UnownedStringSlice& slice);
+    Decl* findExportFromMangledName(const UnownedStringSlice& slice);
+
+    /// Ensure that the any accelerator(s) used for `findExportFromMangledName`
+    /// have already been built.
+    ///
+    void ensureExportLookupAcceleratorBuilt();
+
+    Count getExportedDeclCount();
+    Decl* getExportedDecl(Index index);
+    UnownedStringSlice getExportedDeclMangledName(Index index);
 
     /// Get the ASTBuilder
     ASTBuilder* getASTBuilder() { return m_astBuilder; }
@@ -1829,7 +1838,7 @@ private:
     // Holds map of exported mangled names to symbols. m_mangledExportPool maps names to indices,
     // and m_mangledExportSymbols holds the NodeBase* values for each index.
     StringSlicePool m_mangledExportPool;
-    List<NodeBase*> m_mangledExportSymbols;
+    List<Decl*> m_mangledExportSymbols;
 
     // Source files that have been pulled into the module with `__include`.
     Dictionary<SourceFile*, FileDecl*> m_mapSourceFileToFileDecl;

@@ -27,15 +27,37 @@ class NodeBase;
 class Val;
 struct ValNodeDesc;
 
+struct DataChunkWriter
+{
+public:
+    DataChunkWriter(
+        RiffContainer::DataChunk* chunk)
+        : _chunk(chunk)
+    {}
+
+    void writeData(
+        void const* data,
+        size_t size);
+#if 0
+    {
+        _chunk->writeData(data, size);
+    }
+#endif
+
+private:
+    RiffContainer::DataChunk* _chunk = nullptr;
+};
+
 struct Encoder
 {
 public:
     Encoder(Stream* stream)
         : _stream(stream)
+        , _riff(&_riffContainer)
     {
     }
 
-    ~Encoder() { RiffUtil::write(&_riff, _stream); }
+    ~Encoder() { RiffUtil::write(&_riffContainer, _stream); }
 
     void beginArray(FourCC typeCode)
     {
@@ -81,6 +103,16 @@ public:
     void encodeData(void const* data, size_t size)
     {
         encodeData(SerialBinary::kDataFourCC, data, size);
+    }
+
+    DataChunkWriter addDataChunk(FourCC tag)
+    {
+        auto saved = _riff.getCurrentChunk();
+        _riff.startChunk(RiffContainer::Chunk::Kind::Data, tag);
+        auto result = as<RiffContainer::DataChunk>(_riff.getCurrentChunk());
+        _riff.setCurrentChunk(saved);
+
+        return DataChunkWriter(result);
     }
 
     void encode(nullptr_t) { encodeData(SerialBinary::kNullFourCC, nullptr, 0); }
@@ -178,10 +210,12 @@ private:
     Stream* _stream = nullptr;
 
     // Implementation details below...
-    RiffContainer _riff;
+    RiffContainer _riffContainer;
+    RiffWriteCursor _riff;
 
 public:
-    RiffContainer* getRIFF() { return &_riff; }
+    RiffWriteCursor& getCursor() { return _riff; }
+    RiffContainer* getRIFF() { return &_riffContainer; }
 
     RiffContainer::Chunk* getRIFFChunk() { return _riff.getCurrentChunk(); }
 

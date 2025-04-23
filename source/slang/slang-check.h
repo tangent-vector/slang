@@ -22,7 +22,7 @@ bool isGlobalShaderParameter(VarDeclBase* decl);
 bool isFromCoreModule(Decl* decl);
 
 bool isBuiltinDeclThatNeedsRegistration(Decl* decl);
-void registerBuiltinDecls(Session* session, Decl* decl);
+void registerBuiltinDecl(Session* session, Decl* decl);
 
 Type* unwrapArrayType(Type* type);
 Type* unwrapModifiedType(Type* type);

@@ -38,6 +38,11 @@ struct ContainerDeclMembers
         void const* chunk,
         RefPtr<RefObject> decodeContext);
 
+    bool isDoingOnDemandDecode();
+
+    Decl* findDeclByMangledNameInBinaryModule(
+        UnownedStringSlice const& mangledName);
+
     SLANG_UNREFLECTED // We don't want to reflect the following fields
 
 private:

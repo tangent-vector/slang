@@ -385,39 +385,39 @@ SlangResult SerialSourceLocReader::read(
 
 /* !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! DebugSerialData !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! */
 
-/* static */ Result SerialSourceLocData::writeContainer(RiffContainer* container)
+/* static */ Result SerialSourceLocData::writeContainer(RiffWriteCursor& cursor)
 {
-    RiffContainer::ScopeChunk debugChunkScope(
-        container,
+    RiffWriteCursor::ScopeChunk debugChunkScope(
+        cursor,
         RiffContainer::Chunk::Kind::List,
         SerialSourceLocData::kDebugFourCc);
 
     SLANG_RETURN_ON_FAIL(SerialRiffUtil::writeArrayChunk(
         SerialSourceLocData::kDebugStringFourCc,
         m_stringTable,
-        container));
+        cursor));
     SLANG_RETURN_ON_FAIL(SerialRiffUtil::writeArrayChunk(
         SerialSourceLocData::kDebugLineInfoFourCc,
         m_lineInfos,
-        container));
+        cursor));
     SLANG_RETURN_ON_FAIL(SerialRiffUtil::writeArrayChunk(
         SerialSourceLocData::kDebugAdjustedLineInfoFourCc,
         m_adjustedLineInfos,
-        container));
+        cursor));
     SLANG_RETURN_ON_FAIL(SerialRiffUtil::writeArrayChunk(
         SerialSourceLocData::kDebugSourceInfoFourCc,
         m_sourceInfos,
-        container));
+        cursor));
 
     return SLANG_OK;
 }
 
-/* static */ Result SerialSourceLocData::readContainer(RiffContainer::ListChunk* listChunk)
+/* static */ Result SerialSourceLocData::readContainer(DebugChunkRef const& debugChunk)
 {
-    SLANG_ASSERT(listChunk->getSubType() == SerialSourceLocData::kDebugFourCc);
+    SLANG_ASSERT(debugChunk.getSubType() == SerialSourceLocData::kDebugFourCc);
 
     clear();
-    for (RiffContainer::Chunk* chunk = listChunk->m_containedChunks; chunk; chunk = chunk->m_next)
+    for(auto chunk : debugChunk)
     {
         RiffContainer::DataChunk* dataChunk = as<RiffContainer::DataChunk>(chunk);
         if (!dataChunk)

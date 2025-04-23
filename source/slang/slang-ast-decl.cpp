@@ -109,6 +109,10 @@ void ContainerDeclMembers::_initForOnDemandDecode(
     this->onDemandDecodeContext = decodeContext;
 }
 
+bool ContainerDeclMembers::isDoingOnDemandDecode()
+{
+    return this->onDemandDecodeChunk != nullptr;
+}
 
 /// Add the given `memberDecl` as a direct member declaration.
 ///

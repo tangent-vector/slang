@@ -2,6 +2,7 @@
 #include "slang-serialize-ast.h"
 
 #include "slang-ast-dispatch.h"
+#include "slang-check.h"
 #include "slang-compiler.h"
 #include "slang-diagnostics.h"
 #include "slang-mangle.h"
@@ -12,6 +13,35 @@ namespace Slang
 // for initializing a `SyntaxDecl` in the common case.
 //
 NodeBase* parseSimpleSyntax(Parser* parser, void* userData);
+
+UInt32 calcFNV1a32Hash(
+    UnownedStringSlice const& text)
+{
+    static const UInt32 kFNVOffsetBias = 0x01000193;
+    static const UInt32 kFNVPrime = 0x811c9dc5;
+
+    UInt32 hash = kFNVOffsetBias;
+    for (auto c : text)
+        hash = (hash ^ c) * kFNVPrime;
+    return hash;
+}
+
+using BinaryModuleHashCode = UInt32;
+
+BinaryModuleHashCode calcHashForUseInBinaryModule(
+    UnownedStringSlice const& text)
+{
+    return calcFNV1a32Hash(text);
+}
+
+struct BinaryModuleMangledNameEntry
+{
+    UInt32 sizeInBytesOfPrefixSharedWithPrecedingEntry;
+    UInt32 endOffsetOfOfDataForSuffix;
+    BinaryModuleHashCode hash;
+    Int32 declID;
+};
+
 
 
 struct ASTEncodingContext
@@ -30,8 +60,13 @@ private:
 
     struct ImportedDeclInfo
     {
-        Int moduleIndex = -1;
-        Decl* decl;
+        // The `DeclID` of the module that `decl`
+        // is being imported from, or 0 in the case
+        // where `decl` is itself a module.
+        //
+        DeclID importedFromModuleDeclID = 0;
+
+        Decl* decl = nullptr;
     };
     List<ImportedDeclInfo> importedDecls;
 
@@ -39,13 +74,13 @@ private:
     Dictionary<Val*, ValID> mapValToID;
     List<Val*> vals;
 
-    ModuleDecl* _module = nullptr;
+    ModuleDecl* _moduleDecl = nullptr;
 
     SerialSourceLocWriter* _sourceLocWriter = nullptr;
 
 public:
     ASTEncodingContext(Encoder* encoder, ModuleDecl* module, SerialSourceLocWriter* sourceLocWriter)
-        : encoder(encoder), _module(module), _sourceLocWriter(sourceLocWriter)
+        : encoder(encoder), _moduleDecl(module), _sourceLocWriter(sourceLocWriter)
     {
     }
 
@@ -65,15 +100,15 @@ public:
         RiffContainer::Chunk* importedDeclChunk = nullptr;
         RiffContainer::Chunk* valChunk = nullptr;
         {
-            Encoder::WithArray withList(encoder);
+            Encoder::WithArray withList(encoder, SerialBinary::kASTDeclListFourCC);
             declChunk = encoder->getRIFFChunk();
         }
         {
-            Encoder::WithArray withList(encoder);
+            Encoder::WithArray withList(encoder, SerialBinary::kASTImportedDeclListFourCC);
             importedDeclChunk = encoder->getRIFFChunk();
         }
         {
-            Encoder::WithArray withList(encoder);
+            Encoder::WithArray withList(encoder, SerialBinary::kASTValListFourCC);
             valChunk = encoder->getRIFFChunk();
         }
         Int declIndex = 0;
@@ -106,6 +141,151 @@ public:
 
         RiffContainer::calcAndSetSize(containerChunk);
         encoder->setRIFFChunk(containerChunk);
+
+        if (_builtinDeclsToRegister.getCount() != 0)
+        {
+            Encoder::WithArray withArray(encoder, SerialBinary::kASTBuiltinDeclListFourCC);
+            for (auto decl : _builtinDeclsToRegister)
+            {
+                auto declID = getDeclID(decl);
+                encode(declID);
+            }
+        }
+
+        writeExportLookupAccelerator();
+    }
+
+    struct ExportInfo
+    {
+        UnownedStringSlice mangledName;
+        BinaryModuleHashCode mangledNameHash;
+
+        DeclID declID;
+
+        bool operator<(ExportInfo const& that) const
+        {
+            return lexicographicCompare(
+                this->mangledName,
+                that.mangledName) < 0;
+        }
+    };
+
+    Count calcSharedPrefixSize(
+        UnownedStringSlice const& left,
+        UnownedStringSlice const& right)
+    {
+        auto leftSize = left.getLength();
+        auto rightSize = right.getLength();
+        auto sharedSize = std::min(leftSize, rightSize);
+
+        Count prefixSize = 0;
+        while(prefixSize < sharedSize)
+        {
+            if (left[prefixSize] != right[prefixSize])
+                break;
+            prefixSize++;
+        }
+        return prefixSize;
+    }
+
+    void writeExportLookupAccelerator()
+    {
+        auto module = _moduleDecl->module;
+        SLANG_ASSERT(module != nullptr);
+
+        List<ExportInfo> exports;
+
+        auto exportCount = module->getExportedDeclCount();
+        for (Index exportIndex = 0; exportIndex < exportCount; ++exportIndex)
+        {
+            auto exportMangledName = module->getExportedDeclMangledName(exportIndex);
+
+            auto exportDecl = module->getExportedDecl(exportIndex);
+            auto exportDeclID = getDeclID(exportDecl);
+
+            ExportInfo exportInfo;
+            exportInfo.mangledName = exportMangledName;
+            exportInfo.mangledNameHash = calcHashForUseInBinaryModule(exportMangledName);
+            exportInfo.declID = exportDeclID;
+
+            exports.add(exportInfo);
+        }
+        exports.sort();
+
+        // HACK: set the number of buckets based on the number of
+        // exports, in the hopes we can avoid collisions.
+        //
+        Count bucketCount = 2*exports.getCount();
+        auto buckets = List<Int32>::makeRepeated(-1, bucketCount);
+
+        // Each export will land in a bucket
+        for (Index exportIndex = 0; exportIndex < exportCount; ++exportIndex)
+        {
+            auto& exportInfo = exports[exportIndex];
+
+            Index bucketIndex = exportInfo.mangledNameHash % bucketCount;
+
+            if (buckets[bucketIndex] < 0)
+            {
+                buckets[bucketIndex] = Int32(exportIndex);
+            }
+            else
+            {
+                SLANG_UNEXPECTED("handle the collision!!!");
+            }
+        }
+
+        // Begin actually writing the data...
+        //
+        Encoder::WithObject exportTable(encoder, SerialBinary::kASTExportsFourCC);
+
+        auto mangledNameEntriesChunk = encoder->addDataChunk(SerialBinary::kArrayFourCC);
+        auto mangledNameDataChunk = encoder->addDataChunk(SerialBinary::kDataFourCC);
+
+        UnownedStringSlice prevEntryMangledName;
+        Count dataSize = 0;
+        for (Index exportIndex = 0; exportIndex < exportCount; ++exportIndex)
+        {
+            auto& exportInfo = exports[exportIndex];
+            auto mangledName = exportInfo.mangledName;
+
+            auto prefixSize = calcSharedPrefixSize(prevEntryMangledName, mangledName);
+            auto suffixSize = mangledName.getLength() - prefixSize;
+
+            mangledNameDataChunk.writeData(
+                mangledName.end() - suffixSize,
+                suffixSize);
+
+            dataSize += suffixSize;
+            auto endOffset = dataSize;
+
+            BinaryModuleMangledNameEntry entry;
+            entry.sizeInBytesOfPrefixSharedWithPrecedingEntry = UInt32(prefixSize);
+            entry.endOffsetOfOfDataForSuffix = UInt32(endOffset);
+            entry.hash = exportInfo.mangledNameHash;
+            entry.declID = Int32(exportInfo.declID);
+
+            mangledNameEntriesChunk.writeData(
+                &entry, sizeof(entry));
+
+            prevEntryMangledName = mangledName;
+        }
+
+        // Chunks to serialize:
+        //
+        // * mangled name data
+        //
+        // * mangled name entries, each holding:
+        //   * size of prefix shared with preceding entry
+        //   * end offset of data after that prefix (in mangled name data section)
+        //
+        // * hash buckets: each an index
+
+
+        // We need to hash each entry, and then also start computing
+        // the information to store them all as suffixes...
+
+
     }
 
     ModuleDecl* findModuleForDecl(Decl* decl)
@@ -123,7 +303,7 @@ public:
         auto declModule = findModuleForDecl(decl);
         if (declModule == nullptr)
             return nullptr;
-        if (declModule == _module)
+        if (declModule == _moduleDecl)
             return nullptr;
         return declModule;
     }
@@ -155,7 +335,7 @@ public:
             mapDeclToID.add(decl, id);
 
             ImportedDeclInfo info;
-            info.moduleIndex = ~importedFromModuleDeclID;
+            info.importedFromModuleDeclID = importedFromModuleDeclID;
             info.decl = decl;
             importedDecls.add(info);
 
@@ -166,6 +346,11 @@ public:
             DeclID id = decls.getCount();
             decls.add(decl);
             mapDeclToID.add(decl, id);
+
+            if (isBuiltinDeclThatNeedsRegistration(decl))
+            {
+                _builtinDeclsToRegister.add(decl);
+            }
 
             return id;
         }
@@ -234,11 +419,11 @@ public:
     void encodeImportedDecl(ImportedDeclInfo const& info)
     {
         Encoder::WithKeyValuePair withPair(encoder);
-        encode(info.moduleIndex);
+        encode(info.importedFromModuleDeclID);
         auto decl = info.decl;
         if (auto importedModuleDecl = as<ModuleDecl>(decl))
         {
-            SLANG_ASSERT(info.moduleIndex == -1);
+            SLANG_ASSERT(info.importedFromModuleDeclID == 0);
             encode(importedModuleDecl->getName());
         }
         else
@@ -701,9 +886,6 @@ public:
     {
         // We want to do as little as possible at this step,
         // so that we don't spend too much time...
-        //
-
-        auto cursor = _rootChunk->getFirstContainedChunk();
 
         // There are a few different top-level chunks that
         // hold different arrays that we need in order
@@ -721,23 +903,23 @@ public:
         // the `ModuleDecl` itself, which should be the
         // first entry in the list.
         //
-        auto declChunk = cursor;
-        cursor = cursor->m_next;
+        auto declChunk = _rootChunk->findContainedList(SerialBinary::kASTDeclListFourCC);
+        SLANG_ASSERT(declChunk != nullptr);
 
         // Next there is a list of all the declarations
         // referenced inside of the module that need to
         // be imported in from outside.
         //
-        auto importedDeclChunk = cursor;
-        cursor = cursor->m_next;
+        auto importedDeclChunk = _rootChunk->findContainedList(SerialBinary::kASTImportedDeclListFourCC);
+        SLANG_ASSERT(importedDeclChunk != nullptr);
 
         // Then there are all the `Val`-derived nodes that
         // are needed by the module, which will need to be
         // deduplicated so that they are unique within the
         // current compilation context.
         //
-        auto valChunk = cursor;
-        cursor = cursor->m_next;
+        auto valChunk = _rootChunk->findContainedList(SerialBinary::kASTValListFourCC);
+        SLANG_ASSERT(valChunk != nullptr);
 
         // The process of decoding the module is then spread
         // over a number of steps.
@@ -769,6 +951,30 @@ public:
         // *after* its operands.
         //
         SLANG_RETURN_ON_FAIL(initVals(valChunk));
+
+
+        // In addition to the required chunks handled above,
+        // there is also an additional *optional* chunk that
+        // can provide a list of declarations in the module that
+        // need to be registered as builtins via the `ASTBuilder`.
+        //
+        if (auto builtinsChunk = _rootChunk->findContainedList(SerialBinary::kASTBuiltinDeclListFourCC))
+        {
+            Decoder decoder(builtinsChunk);
+            Decoder::WithArray withArray(decoder, SerialBinary::kASTBuiltinDeclListFourCC);
+
+            while (decoder.hasElements())
+            {
+                Decl* decl = nullptr;
+                decode(decl, decoder);
+
+                registerBuiltinDecl(_linkage->getSessionImpl(), decl);
+            }
+        }
+
+
+        // Any of the builtin declarations *must* be ser
+
 
 #if 0
         // Once all the back-reference-able objects have been
@@ -802,6 +1008,24 @@ public:
             return _getImportedDeclByIndex(~id);
         }
     }
+
+    Decl* findDeclByMangledName(
+        UnownedStringSlice const& mangledName)
+    {
+        // We want to try and find a declaration exported by `moduleDecl`
+        // that has a mangled name matching `mangledName`.
+        //
+        // We start by looking `mangledName` up in the serialized hash
+        // table stored with the serialized data.
+        //
+        // The first step in performing that lookup is to hash `mangledName`.
+        //
+        BinaryModuleHashCode hashCode = calcHashForUseInBinaryModule(mangledName);
+
+
+        SLANG_UNEXPECTED("implement me!!!");
+    }
+
 
 private:
     struct UnhandledCase
@@ -853,7 +1077,7 @@ private:
     {
         Decoder decoder(importedDeclChunk);
 
-        Decoder::WithArray withArray(decoder);
+        Decoder::WithArray withArray(decoder, SerialBinary::kASTImportedDeclListFourCC);
         while (decoder.hasElements())
         {
             auto chunk = decoder.getCursor();
@@ -868,41 +1092,43 @@ private:
 
     Decl* _getImportedDeclByIndex(Index index)
     {
-        if (auto decl = _importedDecls[index].decl)
+        auto& info = _importedDecls[index];
+        if (auto decl = info.decl)
             return decl;
 
-        SLANG_UNEXPECTED("need to actually do stuff!");
+        Decoder decoder(info.chunk);
+        info.decl = _decodeImportedDecl(decoder);
+        return info.decl;
+    }
 
-#if 0
-            Decoder::WithKeyValuePair withPair(decoder);
+    Decl* _decodeImportedDecl(Decoder& decoder)
+    {
+        Decoder::WithKeyValuePair withPair(decoder);
 
-            Int moduleIndex;
-            decode(moduleIndex, decoder);
+        DeclID importedFromModuleDeclID;
+        decode(importedFromModuleDeclID, decoder);
 
-            if (moduleIndex == -1)
-            {
-                Name* moduleName = nullptr;
-                decode(moduleName, decoder);
+        if (importedFromModuleDeclID == 0)
+        {
+            Name* moduleName = nullptr;
+            decode(moduleName, decoder);
 
-                Decl* importedModule = getImportedModule(moduleName);
-                _importedDecls.add(importedModule);
-            }
-            else
-            {
-                auto importedFromModuleDecl = as<ModuleDecl>(_importedDecls[moduleIndex]);
-                auto importedFromModule = importedFromModuleDecl->module;
-
-                String mangledName;
-                decode(mangledName, decoder);
-
-                auto importedNode =
-                    importedFromModule->findExportFromMangledName(mangledName.getUnownedSlice());
-                auto importedDecl = as<Decl>(importedNode);
-                _importedDecls.add(importedDecl);
-            }
+            Decl* importedModule = getImportedModule(moduleName);
+            return importedModule;
         }
-        return SLANG_OK;
-#endif
+        else
+        {
+            auto importedFromModuleDecl = as<ModuleDecl>(getDeclByID(importedFromModuleDeclID));
+            auto importedFromModule = importedFromModuleDecl->module;
+
+            String mangledName;
+            decode(mangledName, decoder);
+
+            auto importedNode =
+                importedFromModule->findExportFromMangledName(mangledName.getUnownedSlice());
+            auto importedDecl = as<Decl>(importedNode);
+            return importedDecl;
+        }
     }
 
     ModuleDecl* getImportedModule(Name* moduleName)
@@ -920,7 +1146,7 @@ private:
     {
         Decoder decoder(valChunk);
 
-        Decoder::WithArray withArray(decoder);
+        Decoder::WithArray withArray(decoder, SerialBinary::kASTValListFourCC);
         while (decoder.hasElements())
         {
             auto chunk = decoder.getCursor();
@@ -941,7 +1167,7 @@ private:
     {
         Decoder decoder(declChunk);
 
-        Decoder::WithArray withArray(decoder);
+        Decoder::WithArray withArray(decoder, SerialBinary::kASTDeclListFourCC);
         while (decoder.hasElements())
         {
             auto chunk = decoder.getCursor();
@@ -1688,4 +1914,12 @@ ModuleDecl* readSerializedModuleAST(
     auto moduleDecl = as<ModuleDecl>(node);
     return moduleDecl;
 }
+
+Decl* ContainerDeclMembers::findDeclByMangledNameInBinaryModule(
+    UnownedStringSlice const& mangledName)
+{
+    auto context = as<ASTDecodingContext>(onDemandDecodeContext);
+    return context->findDeclByMangledName(mangledName);
+}
+
 } // namespace Slang

@@ -236,8 +236,10 @@ SlangResult RiffFileSystem::storeArchive(bool blobOwnsContent, ISlangBlob** outB
     SLANG_UNUSED(blobOwnsContent)
 
     RiffContainer container;
-    RiffContainer::ScopeChunk scopeContainer(
-        &container,
+    RiffWriteCursor cursor(&container);
+
+    RiffWriteCursor::ScopeChunk scopeContainer(
+        cursor,
         RiffContainer::Chunk::Kind::List,
         RiffFileSystemBinary::kContainerFourCC);
 
@@ -247,7 +249,7 @@ SlangResult RiffFileSystem::storeArchive(bool blobOwnsContent, ISlangBlob** outB
                                                           ? m_compressionSystem->getSystemType()
                                                           : CompressionSystemType::None;
         header.compressionSystemType = uint32_t(compressionSystemType);
-        container.addDataChunk(RiffFileSystemBinary::kHeaderFourCC, &header, sizeof(header));
+        cursor.addDataChunk(RiffFileSystemBinary::kHeaderFourCC, &header, sizeof(header));
     }
 
     for (const auto& [_, srcEntry] : m_entries)
@@ -258,8 +260,8 @@ SlangResult RiffFileSystem::storeArchive(bool blobOwnsContent, ISlangBlob** outB
             continue;
         }
 
-        RiffContainer::ScopeChunk scopeData(
-            &container,
+        RiffWriteCursor::ScopeChunk scopeData(
+            cursor,
             RiffContainer::Chunk::Kind::Data,
             RiffFileSystemBinary::kEntryFourCC);
 
@@ -278,18 +280,18 @@ SlangResult RiffFileSystem::storeArchive(bool blobOwnsContent, ISlangBlob** outB
         }
 
         // Entry header
-        container.write(&dstEntry, sizeof(dstEntry));
+        cursor.write(&dstEntry, sizeof(dstEntry));
 
         // Path
-        container.write(
+        cursor.write(
             srcEntry.m_canonicalPath.getBuffer(),
             srcEntry.m_canonicalPath.getLength() + 1);
 
         // Add the contained data without copying
         if (blob)
         {
-            RiffContainer::Data* data = container.addData();
-            container.setUnowned(
+            RiffContainer::DataBlock* data = cursor.addDataBlock();
+            cursor.setUnowned(
                 data,
                 const_cast<void*>(blob->getBufferPointer()),
                 blob->getBufferSize());
