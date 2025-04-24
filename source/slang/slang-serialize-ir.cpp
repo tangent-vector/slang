@@ -334,7 +334,7 @@ Result IRSerialWriter::write(
 Result _writeInstArrayChunk(
     FourCC chunkId,
     const List<IRSerialData::Inst>& array,
-    RiffWriteCursor& cursor)
+    RiffBuilder& cursor)
 {
     if (array.getCount() == 0)
     {
@@ -346,10 +346,10 @@ Result _writeInstArrayChunk(
 
 /* static */ Result IRSerialWriter::writeContainer(
     const IRSerialData& data,
-    RiffWriteCursor& cursor)
+    RiffBuilder& cursor)
 {
     typedef RiffContainer::Chunk Chunk;
-    typedef RiffWriteCursor::ScopeChunk ScopeChunk;
+    typedef RiffBuilder::ScopeChunk ScopeChunk;
 
     ScopeChunk scopeModule(cursor, Chunk::Kind::List, Bin::kIRModuleFourCc);
 
@@ -438,7 +438,7 @@ static Result _readInstArrayChunk(
             continue;
         }
 
-        switch (dataChunk->m_fourCC)
+        switch (dataChunk->getType())
         {
         case Bin::kInstFourCc:
             {

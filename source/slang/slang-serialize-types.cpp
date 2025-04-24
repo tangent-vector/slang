@@ -149,10 +149,10 @@ struct ByteReader
     const void* data,
     size_t numEntries,
     size_t typeSize,
-    RiffWriteCursor& cursor)
+    RiffBuilder& cursor)
 {
     typedef RiffContainer::Chunk Chunk;
-    typedef RiffWriteCursor::ScopeChunk ScopeChunk;
+    typedef RiffBuilder::ScopeChunk ScopeChunk;
 
     if (numEntries == 0)
     {
@@ -164,8 +164,8 @@ struct ByteReader
     SerialBinary::ArrayHeader header;
     header.numEntries = uint32_t(numEntries);
 
-    cursor.write(&header, sizeof(header));
-    cursor.write(data, typeSize * numEntries);
+    cursor.addData(&header, sizeof(header));
+    cursor.addData(data, typeSize * numEntries);
     return SLANG_OK;
 }
 

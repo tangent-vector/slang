@@ -190,7 +190,11 @@ struct SerialBinary
     static const FourCC kASTValListFourCC = SLANG_FOUR_CC('v', 'a', 'l', 's');
     static const FourCC kASTBuiltinDeclListFourCC = SLANG_FOUR_CC('b', 'l', 't', 'n');
 
+    static const FourCC kASTDirectMemberListFourCC = SLANG_FOUR_CC('m', 'b', 'r', 's');
+
     static const FourCC kASTExportsFourCC = SLANG_FOUR_CC('x', 'p', 'r', 't');
+    static const FourCC kHashTableBucketsFourCC = SLANG_FOUR_CC('b', 'k', 't', 's');
+    static const FourCC kExportTableItemsFourCC = SLANG_FOUR_CC('i', 't', 'm', 's');
 
     struct ArrayHeader
     {
@@ -240,11 +244,11 @@ struct SerialRiffUtil
         const void* data,
         size_t numEntries,
         size_t typeSize,
-        RiffWriteCursor& cursor);
+        RiffBuilder& cursor);
 
     template<typename T>
     static Result writeArrayChunk(FourCC chunkId, const List<T>& array,
-        RiffWriteCursor& cursor)
+        RiffBuilder& cursor)
     {
         return writeArrayChunk(
             chunkId,

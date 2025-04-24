@@ -170,6 +170,8 @@ public:
 struct ModuleChunkRef : RiffListChunkRef
 {
 public:
+    using RiffListChunkRef::RiffListChunkRef;
+
     static ModuleChunkRef find(RiffContainer* container);
 
     String getName();
@@ -181,17 +183,14 @@ public:
     SHA1::Digest getDigest();
 
     RiffChunkArray<StringChunkRef> getFileDependencies();
-
-protected:
-    ModuleChunkRef(RiffContainer::ListChunk* chunk)
-        : RiffListChunkRef(chunk)
-    {
-    }
 };
 
 struct EntryPointChunkRef : RiffListChunkRef
 {
 public:
+    EntryPointChunkRef()
+    {}
+
     String getMangledName() const;
     String getName() const;
     Profile getProfile() const;

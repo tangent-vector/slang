@@ -2372,12 +2372,14 @@ public:
     /// Otherwise, return null.
     ///
     RefPtr<Module> findOrLoadSerializedModuleForModuleLibrary(
+        RefPtr<RiffContainerObject> riff,
         ModuleChunkRef moduleChunk,
         DiagnosticSink* sink);
 
     RefPtr<Module> loadSerializedModule(
         Name* moduleName,
         const PathInfo& moduleFilePathInfo,
+        RefPtr<RiffContainerObject> riff,
         ModuleChunkRef moduleChunk,
         SourceLoc const& requestingLoc,
         DiagnosticSink* sink);
@@ -2385,6 +2387,7 @@ public:
     SlangResult loadSerializedModuleContents(
         Module* module,
         const PathInfo& moduleFilePathInfo,
+        RefPtr<RiffContainerObject> riff,
         ModuleChunkRef moduleChunk,
         DiagnosticSink* sink);
 

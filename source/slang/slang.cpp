@@ -687,7 +687,7 @@ SlangResult Session::_readBuiltinModule(
     StringBuilder moduleFilename;
     moduleFilename << moduleName << ".slang-module";
 
-    RiffContainer riffContainer;
+    auto riffContainer = RefPtr(new RiffContainerObject);
     {
         // Load it
         ComPtr<ISlangBlob> blob;
@@ -697,14 +697,14 @@ SlangResult Session::_readBuiltinModule(
         MemoryStreamBase stream(FileAccess::Read, blob->getBufferPointer(), blob->getBufferSize());
 
         // Load the riff container
-        SLANG_RETURN_ON_FAIL(RiffUtil::read(&stream, riffContainer));
+        SLANG_RETURN_ON_FAIL(RiffUtil::read(&stream, *riffContainer));
     }
 
     Linkage* linkage = getBuiltinLinkage();
     SourceManager* sourceManager = getBuiltinSourceManager();
     NamePool* sessionNamePool = &namePool;
 
-    auto moduleChunk = ModuleChunkRef::find(&riffContainer);
+    auto moduleChunk = ModuleChunkRef::find(riffContainer);
     if (!moduleChunk)
         return SLANG_FAIL;
 
@@ -748,6 +748,7 @@ SlangResult Session::_readBuiltinModule(
         linkage,
         astBuilder,
         nullptr, // no sink
+        riffContainer,
         astChunk,
         sourceLocReader,
         SourceLoc());
@@ -4137,6 +4138,7 @@ void Linkage::loadParsedModule(
 }
 
 RefPtr<Module> Linkage::findOrLoadSerializedModuleForModuleLibrary(
+    RefPtr<RiffContainerObject> riff,
     ModuleChunkRef moduleChunk,
     DiagnosticSink* sink)
 {
@@ -4179,12 +4181,13 @@ RefPtr<Module> Linkage::findOrLoadSerializedModuleForModuleLibrary(
     // will go ahead and load the module from the serialized form.
     //
     PathInfo filePathInfo;
-    return loadSerializedModule(moduleName, modulePathInfo, moduleChunk, SourceLoc(), sink);
+    return loadSerializedModule(moduleName, modulePathInfo, riff, moduleChunk, SourceLoc(), sink);
 }
 
 RefPtr<Module> Linkage::loadSerializedModule(
     Name* moduleName,
     const PathInfo& moduleFilePathInfo,
+    RefPtr<RiffContainerObject> riff,
     ModuleChunkRef moduleChunk,
     SourceLoc const& requestingLoc,
     DiagnosticSink* sink)
@@ -4215,7 +4218,7 @@ RefPtr<Module> Linkage::loadSerializedModule(
     try
     {
         if (SLANG_FAILED(
-                loadSerializedModuleContents(module, moduleFilePathInfo, moduleChunk, sink)))
+                loadSerializedModuleContents(module, moduleFilePathInfo, riff, moduleChunk, sink)))
         {
             mapPathToLoadedModule.remove(mostUniqueIdentity);
             mapNameToLoadedModules.remove(moduleName);
@@ -4247,19 +4250,25 @@ RefPtr<Module> Linkage::loadBinaryModuleImpl(
     // an in-memory RIFF container.
     //
     // TODO(tfoley): this is an unnecessary copy step, since
-    // we can simply use the contents of the blob directly
+    // we could simply use the contents of the blob directly
     // and navigate it in-memory.
     //
-    RiffContainer riffContainer;
+    // We are allocating a reference-counted object for the
+    // RIFF container, rather than keeping it on the stack
+    // only, because we need to retain its allocations to
+    // support on-demand deserialization of some of the
+    // content of the module.
+    //
+    auto riffContainer = RefPtr(new RiffContainerObject);
     {
         MemoryStreamBase readStream(
             FileAccess::Read,
             moduleFileContents->getBufferPointer(),
             moduleFileContents->getBufferSize());
-        SLANG_RETURN_NULL_ON_FAIL(RiffUtil::read(&readStream, riffContainer));
+        SLANG_RETURN_NULL_ON_FAIL(RiffUtil::read(&readStream, *riffContainer));
     }
 
-    auto moduleChunkRef = ModuleChunkRef::find(&riffContainer);
+    auto moduleChunkRef = ModuleChunkRef::find(riffContainer);
     if (!moduleChunkRef)
     {
         return nullptr;
@@ -4284,7 +4293,7 @@ RefPtr<Module> Linkage::loadBinaryModuleImpl(
     // the module more completely from that serialized representation.
     //
     RefPtr<Module> module =
-        loadSerializedModule(moduleName, moduleFilePathInfo, moduleChunkRef, requestingLoc, sink);
+        loadSerializedModule(moduleName, moduleFilePathInfo, riffContainer, moduleChunkRef, requestingLoc, sink);
 
     return module;
 }
@@ -4747,9 +4756,9 @@ SourceFile* Linkage::loadSourceFile(String pathFrom, String path)
 }
 
 // Check if a serialized module is up-to-date with current compiler options and source files.
-bool Linkage::isBinaryModuleUpToDate(String fromPath, RiffChunkRef const& chunk)
+bool Linkage::isBinaryModuleUpToDate(String fromPath, RiffContainer* riff)
 {
-    auto moduleChunk = ModuleChunkRef::find(chunk);
+    auto moduleChunk = ModuleChunkRef::find(riff);
     if (!moduleChunk)
         return false;
 
@@ -5203,7 +5212,7 @@ Decl* Module::findExportFromMangledName(const UnownedStringSlice& slice)
     //
     if (this->m_moduleDecl->_members.isDoingOnDemandDecode())
     {
-        return m_moduleDecl->_members.findDeclByMangledNameInBinaryModule(slice);
+        return m_moduleDecl->_members.findExportedDeclByMangledNameInBinaryModule(slice);
     }
 
     ensureExportLookupAcceleratorBuilt();
@@ -6574,6 +6583,7 @@ void Linkage::setFileSystem(ISlangFileSystem* inFileSystem)
 SlangResult Linkage::loadSerializedModuleContents(
     Module* module,
     const PathInfo& moduleFilePathInfo,
+    RefPtr<RiffContainerObject> riff,
     ModuleChunkRef moduleChunk,
     DiagnosticSink* sink)
 {
@@ -6639,6 +6649,7 @@ SlangResult Linkage::loadSerializedModuleContents(
         this,
         astBuilder,
         sink,
+        riff,
         astChunk,
         sourceLocReader,
         serializedModuleLoc);

@@ -36,7 +36,7 @@ struct IRSerialWriter
         IRSerialData* serialData);
 
     /// Write to a container
-    static Result writeContainer(const IRSerialData& data, RiffWriteCursor& cursor);
+    static Result writeContainer(const IRSerialData& data, RiffBuilder& cursor);
 
     /// Get an instruction index from an instruction
     Ser::InstIndex getInstIndex(IRInst* inst) const

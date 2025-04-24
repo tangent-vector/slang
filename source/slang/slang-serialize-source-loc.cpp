@@ -385,9 +385,9 @@ SlangResult SerialSourceLocReader::read(
 
 /* !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! DebugSerialData !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! */
 
-/* static */ Result SerialSourceLocData::writeContainer(RiffWriteCursor& cursor)
+/* static */ Result SerialSourceLocData::writeContainer(RiffBuilder& cursor)
 {
-    RiffWriteCursor::ScopeChunk debugChunkScope(
+    RiffBuilder::ScopeChunk debugChunkScope(
         cursor,
         RiffContainer::Chunk::Kind::List,
         SerialSourceLocData::kDebugFourCc);
@@ -414,7 +414,7 @@ SlangResult SerialSourceLocReader::read(
 
 /* static */ Result SerialSourceLocData::readContainer(DebugChunkRef const& debugChunk)
 {
-    SLANG_ASSERT(debugChunk.getSubType() == SerialSourceLocData::kDebugFourCc);
+    SLANG_ASSERT(debugChunk.getType() == SerialSourceLocData::kDebugFourCc);
 
     clear();
     for(auto chunk : debugChunk)
@@ -425,7 +425,7 @@ SlangResult SerialSourceLocReader::read(
             continue;
         }
 
-        switch (dataChunk->m_fourCC)
+        switch (dataChunk->getType())
         {
         case SerialSourceLocData::kDebugStringFourCc:
             {

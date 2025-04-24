@@ -35,18 +35,30 @@ struct ContainerDeclMembers
 
     void _initForOnDemandDecode(
         Count memberCount,
-        void const* chunk,
+        UInt32 idForContainerDecl,
+        void const* dataForContainerDeclMembers,
         RefPtr<RefObject> decodeContext);
 
     bool isDoingOnDemandDecode();
 
-    Decl* findDeclByMangledNameInBinaryModule(
-        UnownedStringSlice const& mangledName);
+    void ensureAllDirectMemberDeclsAreLoaded();
 
     SLANG_UNREFLECTED // We don't want to reflect the following fields
 
 private:
+    Decl* findExportedDeclByMangledNameInBinaryModule(
+        UnownedStringSlice const& mangledName);
+
+    Decl* getDirectMemberDeclByIndexInBinaryModule(
+        Index index);
+
+    Decl* findDirectMemberDeclByNameInBinaryModule(
+        Name* name);
+
+
+
     friend class ContainerDecl;
+    friend class Module;
 
     /// The raw list of direct member declarations.
     ///
@@ -70,8 +82,9 @@ private:
     // recreated.
     Index memberCountWhenAcceleratorsLastBuilt = 0;
 
-    void const* onDemandDecodeChunk = nullptr;
     RefPtr<RefObject> onDemandDecodeContext;
+    void const* onDemandDecodeData = nullptr;
+    UInt32 onDemandDecodeID = 0;
 };
 
 // A "container" decl is a parent to other declarations

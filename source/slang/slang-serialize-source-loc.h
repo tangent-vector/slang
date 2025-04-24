@@ -144,7 +144,7 @@ public:
 
     bool operator==(const ThisType& rhs) const;
 
-    Result writeContainer(RiffWriteCursor& cursor);
+    Result writeContainer(RiffBuilder& cursor);
     Result readContainer(DebugChunkRef const& chunk);
 
     List<char> m_stringTable;                   ///< String table for debug use only

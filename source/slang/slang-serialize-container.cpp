@@ -29,7 +29,7 @@ public:
 
     ~ModuleEncodingContext()
     {
-        encoder.setRIFFChunk(encoder.getRIFF()->getRoot());
+        encoder.setRIFFChunk(encoder.getRIFF()->getRootChunk());
         encodeFinalPieces();
     }
 
@@ -435,26 +435,18 @@ RiffChunkArray<StringChunkRef> ModuleChunkRef::getFileDependencies()
 
 ModuleChunkRef ModuleChunkRef::find(RiffContainer* container)
 {
-    auto found = container->getRoot()->findListRec(SerialBinary::kModuleFourCC);
+    auto found = container->getRootChunk()->findListChunkRec(SerialBinary::kModuleFourCC);
     return ModuleChunkRef(found);
 }
 
 SHA1::Digest ModuleChunkRef::getDigest()
 {
-    auto foundChunk =
-        static_cast<RiffContainer::DataChunk*>(ptr()->findContained(PropertyKeys<Module>::Digest));
-    if (!foundChunk)
+    auto found = ptr()->findData<SHA1::Digest>(PropertyKeys<Module>::Digest);
+    if (!found)
     {
         SLANG_UNEXPECTED("module chunk had no digest");
     }
-    if (foundChunk->calcPayloadSize() != sizeof(SHA1::Digest))
-    {
-        SLANG_UNEXPECTED("module digest chunk had wrong size");
-    }
-
-    SHA1::Digest digest;
-    foundChunk->getPayload(&digest);
-    return digest;
+    return *found;
 }
 
 String ModuleChunkRef::getName()
@@ -472,7 +464,7 @@ String ModuleChunkRef::getName()
 
 IRModuleChunkRef ModuleChunkRef::findIR()
 {
-    auto foundProperty = ptr()->findContainedList(PropertyKeys<Module>::IRModule);
+    auto foundProperty = ptr()->findListChunk(PropertyKeys<Module>::IRModule);
     if (!foundProperty)
         return IRModuleChunkRef(nullptr);
     return IRModuleChunkRef(
@@ -481,7 +473,7 @@ IRModuleChunkRef ModuleChunkRef::findIR()
 
 ASTModuleChunkRef ModuleChunkRef::findAST()
 {
-    auto foundProperty = ptr()->findContainedList(PropertyKeys<Module>::ASTModule);
+    auto foundProperty = ptr()->findListChunk(PropertyKeys<Module>::ASTModule);
     if (!foundProperty)
         return ASTModuleChunkRef(nullptr);
     return ASTModuleChunkRef(
@@ -490,7 +482,7 @@ ASTModuleChunkRef ModuleChunkRef::findAST()
 
 DebugChunkRef ModuleChunkRef::findDebugChunk()
 {
-    auto foundProperty = ptr()->findContainedList(SerialSourceLocData::kDebugFourCc);
+    auto foundProperty = ptr()->findListChunk(SerialSourceLocData::kDebugFourCc);
     if (!foundProperty)
         return DebugChunkRef(nullptr);
     return DebugChunkRef(
@@ -499,19 +491,19 @@ DebugChunkRef ModuleChunkRef::findDebugChunk()
 
 ContainerChunkRef ContainerChunkRef::find(RiffContainer* container)
 {
-    auto found = container->getRoot()->findListRec(SerialBinary::kContainerFourCc);
+    auto found = container->getRootChunk()->findListChunkRec(SerialBinary::kContainerFourCc);
     return ContainerChunkRef(found);
 }
 
 RiffChunkArray<ModuleChunkRef> ContainerChunkRef::getModules()
 {
-    auto found = ptr()->findContainedList(SerialBinary::kModuleListFourCc);
+    auto found = ptr()->findListChunk(SerialBinary::kModuleListFourCc);
     return RiffChunkArray<ModuleChunkRef>(found);
 }
 
 RiffChunkArray<EntryPointChunkRef> ContainerChunkRef::getEntryPoints()
 {
-    auto found = ptr()->findContainedList(SerialBinary::kEntryPointListFourCc);
+    auto found = ptr()->findListChunk(SerialBinary::kEntryPointListFourCc);
     return RiffChunkArray<EntryPointChunkRef>(found);
 }
 
@@ -567,7 +559,7 @@ RiffContainer::ListChunk* findDebugChunk(RiffContainer::Chunk* startingChunk)
 
     for (; container; container = container->m_parent)
     {
-        if (auto debugChunk = container->findContainedList(SerialSourceLocData::kDebugFourCc))
+        if (auto debugChunk = container->findListChunk(SerialSourceLocData::kDebugFourCc))
         {
             return debugChunk;
         }
@@ -660,10 +652,10 @@ SlangResult decodeModuleIR(
 
     {
         RiffContainer riffContainer;
-        RiffWriteCursor riffCursor(&riffContainer);
+        RiffBuilder riffCursor(&riffContainer);
 
         // Need to put all of this in a container
-        RiffWriteCursor::ScopeChunk containerScope(
+        RiffBuilder::ScopeChunk containerScope(
             riffCursor,
             RiffContainer::Chunk::Kind::List,
             SerialBinary::kContainerFourCc);
@@ -718,7 +710,7 @@ SlangResult decodeModuleIR(
 
 #if 0
             RiffContainer::ListChunk* debugList =
-                rootList->findContainedList(SerialSourceLocData::kDebugFourCc);
+                rootList->findListChunk(SerialSourceLocData::kDebugFourCc);
 #endif
             if (!debugChunk)
             {

@@ -14,35 +14,22 @@ namespace Slang
 //
 NodeBase* parseSimpleSyntax(Parser* parser, void* userData);
 
-UInt32 calcFNV1a32Hash(
-    UnownedStringSlice const& text)
-{
-    static const UInt32 kFNVOffsetBias = 0x01000193;
-    static const UInt32 kFNVPrime = 0x811c9dc5;
-
-    UInt32 hash = kFNVOffsetBias;
-    for (auto c : text)
-        hash = (hash ^ c) * kFNVPrime;
-    return hash;
-}
-
 using BinaryModuleHashCode = UInt32;
 
 BinaryModuleHashCode calcHashForUseInBinaryModule(
     UnownedStringSlice const& text)
 {
-    return calcFNV1a32Hash(text);
+    return FNV1a32::hash(text.begin(), text.getLength());
 }
 
 struct BinaryModuleMangledNameEntry
 {
-    UInt32 sizeInBytesOfPrefixSharedWithPrecedingEntry;
+    UInt32 parentEntryIndex;
+    UInt32 sizeInBytesOfPrefixSharedWithParentEntry;
     UInt32 endOffsetOfOfDataForSuffix;
     BinaryModuleHashCode hash;
     Int32 declID;
 };
-
-
 
 struct ASTEncodingContext
 {
@@ -139,7 +126,7 @@ public:
             }
         } while (!done);
 
-        RiffContainer::calcAndSetSize(containerChunk);
+        // RiffContainer::calcAndSetSize(containerChunk);
         encoder->setRIFFChunk(containerChunk);
 
         if (_builtinDeclsToRegister.getCount() != 0)
@@ -212,26 +199,48 @@ public:
         }
         exports.sort();
 
-        // HACK: set the number of buckets based on the number of
-        // exports, in the hopes we can avoid collisions.
+        // TODO(tfoley): we should try to be more careful about how
+        // we set the number of buckets here, so that we don't waste
+        // too much space, but also don't have too many collisions.
         //
         Count bucketCount = 2*exports.getCount();
-        auto buckets = List<Int32>::makeRepeated(-1, bucketCount);
 
-        // Each export will land in a bucket
+        // We are using a zero value to represent an empty bucket,
+        // and to make sure that we can do so, we will also be
+        // reserving the first entry in the serialized export table
+        // to be an empty/placeholder entry.
+        //
+        auto buckets = List<UInt32>::makeRepeated(0, bucketCount);
+
+        // Each export will start its search at a bucket that
+        // is based on the hash of its mangled name.
+        //
         for (Index exportIndex = 0; exportIndex < exportCount; ++exportIndex)
         {
             auto& exportInfo = exports[exportIndex];
 
             Index bucketIndex = exportInfo.mangledNameHash % bucketCount;
 
-            if (buckets[bucketIndex] < 0)
+            for (;;)
             {
-                buckets[bucketIndex] = Int32(exportIndex);
-            }
-            else
-            {
-                SLANG_UNEXPECTED("handle the collision!!!");
+                if (buckets[bucketIndex] == 0)
+                {
+                    // Note: because of our decision to use entry zero
+                    // to represent an empty bucket, and to store an
+                    // empty/placeholder entry at index zero in the
+                    // exports table, the serialized index for an
+                    // export will be one greater than its index
+                    // in the `exports` list here.
+                    //
+                    auto exportIndexToSerialize = UInt32(exportIndex + 1);
+
+                    buckets[bucketIndex] = exportIndexToSerialize;
+                    break;
+                }
+
+                bucketIndex++;
+                if (bucketIndex == bucketCount)
+                    bucketIndex = 0;
             }
         }
 
@@ -239,8 +248,45 @@ public:
         //
         Encoder::WithObject exportTable(encoder, SerialBinary::kASTExportsFourCC);
 
-        auto mangledNameEntriesChunk = encoder->addDataChunk(SerialBinary::kArrayFourCC);
+        auto mangledNameEntriesChunk = encoder->addDataChunk(SerialBinary::kExportTableItemsFourCC);
         auto mangledNameDataChunk = encoder->addDataChunk(SerialBinary::kDataFourCC);
+        auto hashTableBucketsChunk = encoder->addDataChunk(SerialBinary::kHashTableBucketsFourCC);
+
+        // The entry at index zero in the `mangledNameEntriesChunk` will
+        // be a placeholder, with an empty mangled name.
+        //
+        // As discussed earlier in this function, reserving that entry allows
+        // us to use a zero index to represent an empty bucket in the hash
+        // table, but there is another subtle reason why we use that
+        // representation.
+        //
+        // Each entry in the array of exports will store the information about
+        // its mangled name in a way that depends on the previous entry.
+        // Notably:
+        //
+        // * Each entry stores the size in bytes of the prefix that its
+        //   mangled name shares with the previous entry.
+        //
+        // * Each entry stores the *end* offset of the data for the additional
+        //   suffix of its mangled name. The starting offset of that data can
+        //   simply be read using the end offset of the previous entry.
+        //
+        // Storing a placeholder first entry can help keep things simpler
+        // when dealing with the boundary conditions, since every *valid*
+        // entry is guaranteed to have a preceding entry that is stored.
+
+        List<BinaryModuleMangledNameEntry> entries;
+
+        {
+            BinaryModuleMangledNameEntry placeholderFirstEntry;
+            placeholderFirstEntry.parentEntryIndex = 0;
+            placeholderFirstEntry.sizeInBytesOfPrefixSharedWithParentEntry = 0;
+            placeholderFirstEntry.endOffsetOfOfDataForSuffix = 0;
+            placeholderFirstEntry.hash = 0;
+            placeholderFirstEntry.declID = 0;
+
+            entries.add(placeholderFirstEntry);
+        }
 
         UnownedStringSlice prevEntryMangledName;
         Count dataSize = 0;
@@ -249,9 +295,11 @@ public:
             auto& exportInfo = exports[exportIndex];
             auto mangledName = exportInfo.mangledName;
 
+            // This new entry will only write out the part of its mangled
+            // name after any prefix it shares with the previous entry.
+            //
             auto prefixSize = calcSharedPrefixSize(prevEntryMangledName, mangledName);
             auto suffixSize = mangledName.getLength() - prefixSize;
-
             mangledNameDataChunk.writeData(
                 mangledName.end() - suffixSize,
                 suffixSize);
@@ -259,33 +307,69 @@ public:
             dataSize += suffixSize;
             auto endOffset = dataSize;
 
+            // We need to compute the index of the "parent" entry for this
+            // one, which will be an entry it shares a prefix of size `prefixSize`.
+            //
+            // Because of how we computed `prefixSize` above, it is clear that
+            // the previous entry could serve as a parent, but if we consider
+            // these entries as a kind of tree structure, we'd ideally like to
+            // keep the tree as shallow as possible, so we will start with
+            // the previous entry and then try to follow parent links until
+            // we identify the earliest entry that could be a valid parent.
+            //
+            // Note: because of how we are inserting a placeholder first
+            // entry in the serialized array, the *serialized* index of
+            // the previous entry is actually the same as the current
+            // entry's index in the `exports` array.
+            //
+            auto parentEntryIndex = exportIndex;
+            for(;;)
+            {
+                auto& parentEntry = entries[parentEntryIndex];
+                if (parentEntry.sizeInBytesOfPrefixSharedWithParentEntry < prefixSize)
+                {
+                    // The given `parentEntry` is as far up the tree as we
+                    // can go while still sharing the common prefix. We
+                    // know this because our entry has `prefixSize` bytes in
+                    // common with the `parentEntry`, but the `parentEntry`
+                    // has *fewer* bytes in commong with its parent.
+                    //
+                    break;
+                }
+                if (parentEntryIndex == 0)
+                {
+                    // We can't go any further up the tree than the root,
+                    // so if we make it all the way to our placeholder
+                    // entry, then we stop our search.
+                    break;
+                }
+
+                parentEntryIndex = parentEntry.parentEntryIndex;
+            }
+
             BinaryModuleMangledNameEntry entry;
-            entry.sizeInBytesOfPrefixSharedWithPrecedingEntry = UInt32(prefixSize);
+            entry.parentEntryIndex = UInt32(parentEntryIndex);
+            entry.sizeInBytesOfPrefixSharedWithParentEntry = UInt32(prefixSize);
             entry.endOffsetOfOfDataForSuffix = UInt32(endOffset);
             entry.hash = exportInfo.mangledNameHash;
             entry.declID = Int32(exportInfo.declID);
 
-            mangledNameEntriesChunk.writeData(
-                &entry, sizeof(entry));
+            entries.add(entry);
 
             prevEntryMangledName = mangledName;
         }
 
-        // Chunks to serialize:
-        //
-        // * mangled name data
-        //
-        // * mangled name entries, each holding:
-        //   * size of prefix shared with preceding entry
-        //   * end offset of data after that prefix (in mangled name data section)
-        //
-        // * hash buckets: each an index
+        for (auto entry : entries)
+        {
+            mangledNameEntriesChunk.writeData(
+                &entry, sizeof(entry));
+        }
 
-
-        // We need to hash each entry, and then also start computing
-        // the information to store them all as suffixes...
-
-
+        for (auto bucket : buckets)
+        {
+            hashTableBucketsChunk.writeData(
+                &bucket, sizeof(bucket));
+        }
     }
 
     ModuleDecl* findModuleForDecl(Decl* decl)
@@ -755,8 +839,13 @@ public:
         // the members down to just the ones that might
         // actually need to be serialized (e.g., because
         // they are public).
-        //
-        encode(value._get());
+
+        auto chunk = encoder->addDataChunk(SerialBinary::kASTDirectMemberListFourCC);
+        for (auto directMemberDecl : value._get())
+        {
+            UInt32 id = getDeclID(directMemberDecl);
+            chunk.writeData(&id, sizeof(id));
+        }
     }
 
     template<typename T, int N>
@@ -865,12 +954,14 @@ public:
         Linkage* linkage,
         ASTBuilder* astBuilder,
         DiagnosticSink* sink,
+        RefPtr<RiffContainerObject> riff,
         RiffContainer::Chunk* rootChunk,
         SerialSourceLocReader* sourceLocReader,
         SourceLoc requestingSourceLoc)
         : _linkage(linkage)
         , _astBuilder(astBuilder)
         , _sink(sink)
+        , _riff(riff)
         , _rootChunk(static_cast<RiffContainer::ListChunk*>(rootChunk))
         , _sourceLocReader(sourceLocReader)
         , _requestingSourceLoc(requestingSourceLoc)
@@ -879,8 +970,18 @@ public:
 
     Linkage* _linkage = nullptr;
     DiagnosticSink* _sink = nullptr;
+    RefPtr<RiffContainerObject> _riff;
     SerialSourceLocReader* _sourceLocReader = nullptr;
     SourceLoc _requestingSourceLoc;
+
+    struct ExportsTableInfo
+    {
+        ArrayView<BinaryModuleMangledNameEntry> mangledNameEntries;
+        ArrayView<char> mangledNameData;
+        ArrayView<UInt32> hashTableBuckets;
+    };
+    ExportsTableInfo _exportsTable;
+
 
     SlangResult init()
     {
@@ -903,14 +1004,14 @@ public:
         // the `ModuleDecl` itself, which should be the
         // first entry in the list.
         //
-        auto declChunk = _rootChunk->findContainedList(SerialBinary::kASTDeclListFourCC);
+        auto declChunk = _rootChunk->findListChunk(SerialBinary::kASTDeclListFourCC);
         SLANG_ASSERT(declChunk != nullptr);
 
         // Next there is a list of all the declarations
         // referenced inside of the module that need to
         // be imported in from outside.
         //
-        auto importedDeclChunk = _rootChunk->findContainedList(SerialBinary::kASTImportedDeclListFourCC);
+        auto importedDeclChunk = _rootChunk->findListChunk(SerialBinary::kASTImportedDeclListFourCC);
         SLANG_ASSERT(importedDeclChunk != nullptr);
 
         // Then there are all the `Val`-derived nodes that
@@ -918,7 +1019,7 @@ public:
         // deduplicated so that they are unique within the
         // current compilation context.
         //
-        auto valChunk = _rootChunk->findContainedList(SerialBinary::kASTValListFourCC);
+        auto valChunk = _rootChunk->findListChunk(SerialBinary::kASTValListFourCC);
         SLANG_ASSERT(valChunk != nullptr);
 
         // The process of decoding the module is then spread
@@ -958,7 +1059,7 @@ public:
         // can provide a list of declarations in the module that
         // need to be registered as builtins via the `ASTBuilder`.
         //
-        if (auto builtinsChunk = _rootChunk->findContainedList(SerialBinary::kASTBuiltinDeclListFourCC))
+        if (auto builtinsChunk = _rootChunk->findListChunk(SerialBinary::kASTBuiltinDeclListFourCC))
         {
             Decoder decoder(builtinsChunk);
             Decoder::WithArray withArray(decoder, SerialBinary::kASTBuiltinDeclListFourCC);
@@ -972,6 +1073,13 @@ public:
             }
         }
 
+        // Fetch the sections needed to implement fast lookup based
+        // of exports based on their mangled names.
+        //
+        auto exportsChunk = _rootChunk->findListChunk(SerialBinary::kASTExportsFourCC);
+        _exportsTable.mangledNameEntries = exportsChunk->findDataArray<BinaryModuleMangledNameEntry>(SerialBinary::kExportTableItemsFourCC);
+        _exportsTable.mangledNameData = exportsChunk->findDataArray<char>(SerialBinary::kDataFourCC);
+        _exportsTable.hashTableBuckets = exportsChunk->findDataArray<UInt32>(SerialBinary::kHashTableBucketsFourCC);
 
         // Any of the builtin declarations *must* be ser
 
@@ -1009,7 +1117,22 @@ public:
         }
     }
 
-    Decl* findDeclByMangledName(
+    Decl* getDirectMemberDeclByIndex(Index index, void const* containerOnDemandDecodeData)
+    {
+        auto directMemberDeclIDs = static_cast<Int32 const*>(containerOnDemandDecodeData);
+        auto memberDeclID = directMemberDeclIDs[index];
+        return getDeclByID(memberDeclID);
+    }
+
+    Decl* findDirectMemberDeclByName(
+        Name* name,
+        UInt32 containerDeclID)
+    {
+        SLANG_UNEXPECTED("implement this one too!");
+    }
+
+
+    Decl* findExportedDeclByMangledName(
         UnownedStringSlice const& mangledName)
     {
         // We want to try and find a declaration exported by `moduleDecl`
@@ -1022,10 +1145,208 @@ public:
         //
         BinaryModuleHashCode hashCode = calcHashForUseInBinaryModule(mangledName);
 
+        Count bucketCount = _exportsTable.hashTableBuckets.getCount();
 
-        SLANG_UNEXPECTED("implement me!!!");
+        Index bucketIndex = hashCode % bucketCount;
+        for (;;)
+        {
+            auto entryIndex = _exportsTable.hashTableBuckets[bucketIndex];
+
+            // If we run into an empty bucket while proping, then we
+            // know the name we are searching for is not in the table.
+            //
+            if (entryIndex == 0)
+                return nullptr;
+
+            // Otherwise, we need to check if the mangled name of
+            // the entry at `entryIndex` matches the `mangledName`
+            // we are searching for.
+            //
+            if (!doesExportTableEntryMatchMangledName(entryIndex, mangledName, hashCode))
+            {
+                // If there isn't a match, then we need to continue
+                // our search.
+                //
+                // The serialization step used simple linear probing
+                // to build the hash table, so we follow suit here.
+                //
+                // TODO(tfoley): change this to be at least a little
+                // more clever.
+                //
+                bucketIndex++;
+                if (bucketIndex == bucketCount)
+                    bucketIndex = 0;
+                continue;
+            }
+
+            // If we found a match for the mangled name, then we
+            // have identified the declaration we want to return.
+            //
+            auto declID = _exportsTable.mangledNameEntries[entryIndex].declID;
+            return getDeclByID(declID);
+        }
     }
 
+    // Get the hash of the mangled name for the export at the given `entryIndex`.
+    //
+    BinaryModuleHashCode getExportTableEntryMangledNameHash(UInt32 entryIndex)
+    {
+        SLANG_ASSERT(entryIndex > 0 && entryIndex < _exportsTable.mangledNameEntries.getCount());
+
+        auto& entry = _exportsTable.mangledNameEntries[entryIndex];
+        return entry.hash;
+    }
+
+    // Get the size in bytes of the mangled name for the export at the given `entryIndex`.
+    //
+    size_t getExportTableEntryMangledNameSize(UInt32 entryIndex)
+    {
+        SLANG_ASSERT(entryIndex > 0 && entryIndex < _exportsTable.mangledNameEntries.getCount());
+
+        // The name is stored in a slightly complicated representation for
+        // compactness (because mangled names tend to be verbose and
+        // have a lot of duplication).
+        //
+        // As a result, we need to reference both the entry being
+        // queried and its immediate predecessor to compute the size.
+        //
+        // Note that the assertion at the top of this function intentionally
+        // disallows a zero value for `entryIndex`, so we can be
+        // sure that there is always a predecessor in the table.
+        //
+        auto& entry = _exportsTable.mangledNameEntries[entryIndex];
+        auto& prevEntry = _exportsTable.mangledNameEntries[entryIndex - 1];
+
+        // Each entry directly stores the size in bytes of the prefix
+        // that it shares with the parent entry, so that part of
+        // the size is easily computed.
+        //
+        size_t prefixSize = entry.sizeInBytesOfPrefixSharedWithParentEntry;
+
+        // The entry only stores the *end* offset of the data for its
+        // suffix, so to compute the size of the suffix we need to
+        // exploit the fact that the data for this entry's suffix comes
+        // right after the data for the suffix of the preceding entry.
+        //
+        size_t suffixSize = entry.endOffsetOfOfDataForSuffix - prevEntry.endOffsetOfOfDataForSuffix;
+
+        return prefixSize + suffixSize;
+    }
+
+    bool doesExportTableEntryMatchMangledName(
+        UInt32 exportEntryIndexToMatch,
+        UnownedStringSlice keyMangledName,
+        BinaryModuleHashCode keyMangledNameHashCode)
+    {
+        // The entries in the export table store their mangled names
+        // in a slightly complicated fashion, in order to remove some
+        // of the duplication that is common with mangled name strings.
+        //
+        // As a result, checking if an entry matches a given key is
+        // more complicated than just doing a simple `strcmp()`, and
+        // we'd rather not go to the trouble of reifying the mangled
+        // name of an entry just to do the comparison.
+
+        // We start with a simple check to see if the hash code
+        // of the key matches the hash code of the entry.
+        //
+        // If the hashes don't match, we know the names don't match.
+        //
+        if (keyMangledNameHashCode != getExportTableEntryMangledNameHash(exportEntryIndexToMatch))
+            return false;
+
+        // The next early-out test is to check if the size (in bytes)
+        // of the key string matches the size of the mangled
+        // name for the entry.
+        //
+        // Note that the size of the mangled name string for the entry
+        // is computed without ever reifying that string in memory.
+        //
+        size_t keySize = keyMangledName.getLength();
+        if (keySize != getExportTableEntryMangledNameSize(exportEntryIndexToMatch))
+            return false;
+
+        // If both the hash and the size match, it is now time
+        // to start comparing the actual bytes of the key string
+        // against the mangled name of the entry.
+        //
+        // We will still work hard to make sure that we don't have
+        // to reify the name of the entry in memory (since that would
+        // require allocation).
+        //
+        // We will perform the comparison by working backword through
+        // the key string.
+        //
+        auto keyEnd = keyMangledName.end();
+        auto entryIndex = exportEntryIndexToMatch;
+        for (;;)
+        {
+            SLANG_ASSERT(entryIndex > 0);
+
+            // Using an entry and its preceding entry, we can compute
+            // the size of the unique suffix for that entry, as well
+            // as the offset for the data of that suffix.
+            //
+            auto& entry = _exportsTable.mangledNameEntries[entryIndex];
+            auto& prevEntry = _exportsTable.mangledNameEntries[entryIndex - 1];
+
+            size_t entrySuffixOffset = prevEntry.endOffsetOfOfDataForSuffix;
+
+            // We could compute the size of the suffix for the
+            // chosen `entry` using its own `endOffsetOfDataForSuffix` field
+            // and the `entrySuffixOffset` we just computed, but we don't
+            // actually care about any part of the suffix of `entry` beyond
+            // the size of our key.
+            //
+            // Thus, we can use the key string itself to determine how
+            // much of the suffix we need to compare to.
+            //
+            // Note: here we are relying on the work done during serialization
+            // to optimize the parent links. We know that at each step along
+            // the parent chain there must be at least *some* bytes of the
+            // suffix worth comparing against, or else that entry in the
+            // chain would have been skipped as a parent/ancestor.
+            //
+            size_t prefixSize = entry.sizeInBytesOfPrefixSharedWithParentEntry;
+            SLANG_ASSERT(keySize > prefixSize);
+            size_t suffixSize = keySize - prefixSize;
+
+            SLANG_ASSERT(suffixSize <= (entry.endOffsetOfOfDataForSuffix - entrySuffixOffset));
+            auto entrySuffix = UnownedStringSlice(
+                &_exportsTable.mangledNameData[entrySuffixOffset],
+                suffixSize);
+
+            SLANG_ASSERT(suffixSize <= keySize);
+            auto keySuffix = UnownedStringSlice(
+                keyEnd - suffixSize,
+                suffixSize);
+
+            // If the two names differ in this suffix, then
+            // we do not have a match.
+            //
+            if (keySuffix != entrySuffix)
+                return false;
+
+            // At this point, if we've run out of data to
+            // compare, then we know that we have a complete
+            // match.
+            //
+            if (prefixSize == 0)
+            {
+                SLANG_ASSERT(keySize == suffixSize);
+                return true;
+            }
+
+            // Otherwise, we need to continue the search
+            // using the part of the key before the suffix,
+            // and the parent of the current entry.
+            //
+            keySize -= suffixSize;
+            keyEnd -= suffixSize;
+            entryIndex = entry.parentEntryIndex;
+            SLANG_ASSERT(entryIndex != 0);
+        }
+    }
 
 private:
     struct UnhandledCase
@@ -1180,6 +1501,8 @@ private:
         return SLANG_OK;
     }
 
+    DeclID _declBeingDecodedID = 0;
+
     Decl* _getLocalDeclByIndex(Index index)
     {
         auto& info = _decls[index];
@@ -1208,8 +1531,13 @@ private:
         // of filling in the shells...
 
         {
+            auto saved = _declBeingDecodedID;
+            _declBeingDecodedID = index;
+
             Decoder decoder(info.chunk);
             decodeASTNodeContent(decl, decoder);
+
+            _declBeingDecodedID = saved;
         }
 
         return decl;
@@ -1768,29 +2096,16 @@ private:
         //
 
         auto chunk = decoder.getCursor();
+        decoder.skip();
 
-        Count count = 0;
-        Decoder::WithArray withArray(decoder);
-        while (decoder.hasElements())
-        {
-            decoder.skip();
-            count++;
-        }
+        auto dataChunk = as<RiffContainer::DataChunk>(chunk);
+        SLANG_ASSERT(dataChunk != nullptr);
 
-        members._initForOnDemandDecode(count, chunk, this);
+        auto payload = _riff->getPayload(dataChunk);
+        auto payloadSize = dataChunk->getPayloadSize();
 
-#if 0
-        // TODO: actually do the on-demand part of this...
-
-        Decoder::WithArray withArray(decoder);
-        while (decoder.hasElements())
-        {
-            Decl* member = nullptr;
-            decode(member, decoder);
-
-            members._add(member);
-        }
-#endif
+        auto directMemberCount = payloadSize / sizeof(UInt32);
+        members._initForOnDemandDecode(directMemberCount, _declBeingDecodedID, payload, this);
     }
 
     template<typename T, int N>
@@ -1890,12 +2205,13 @@ ModuleDecl* readSerializedModuleAST(
     Linkage* linkage,
     ASTBuilder* astBuilder,
     DiagnosticSink* sink,
+    RefPtr<RiffContainerObject> riff,
     RiffContainer::Chunk* chunk,
     SerialSourceLocReader* sourceLocReader,
     SourceLoc requestingSourceLoc)
 {
     auto deserializer = RefPtr(new ASTDecodingContext(
-        linkage, astBuilder, sink, chunk, sourceLocReader, requestingSourceLoc));
+        linkage, astBuilder, sink, riff, chunk, sourceLocReader, requestingSourceLoc));
 
     deserializer->init();
 
@@ -1915,11 +2231,25 @@ ModuleDecl* readSerializedModuleAST(
     return moduleDecl;
 }
 
-Decl* ContainerDeclMembers::findDeclByMangledNameInBinaryModule(
+Decl* ContainerDeclMembers::findExportedDeclByMangledNameInBinaryModule(
     UnownedStringSlice const& mangledName)
 {
     auto context = as<ASTDecodingContext>(onDemandDecodeContext);
-    return context->findDeclByMangledName(mangledName);
+    return context->findExportedDeclByMangledName(mangledName);
+}
+
+Decl* ContainerDeclMembers::getDirectMemberDeclByIndexInBinaryModule(
+    Index index)
+{
+    auto context = as<ASTDecodingContext>(onDemandDecodeContext);
+    return context->getDirectMemberDeclByIndex(index, onDemandDecodeData);
+}
+
+Decl* ContainerDeclMembers::findDirectMemberDeclByNameInBinaryModule(
+    Name* name)
+{
+    auto context = as<ASTDecodingContext>(onDemandDecodeContext);
+    return context->findDirectMemberDeclByName(name, onDemandDecodeID);
 }
 
 } // namespace Slang

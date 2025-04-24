@@ -52,6 +52,11 @@ bool isInterfaceRequirement(Decl* decl)
 
 List<Decl*> const& ContainerDecl::getMembers()
 {
+    if (_members.isDoingOnDemandDecode())
+    {
+        _members.ensureAllDirectMemberDeclsAreLoaded();
+    }
+
     return _members.members;
 }
 
@@ -62,11 +67,15 @@ Count ContainerDecl::getDirectMemberDeclCount()
 
 Decl* ContainerDecl::getDirectMemberDecl(Index index)
 {
+    SLANG_ASSERT(!_members.isDoingOnDemandDecode());
+
     return _members.members[index];
 }
 
 List<TransparentMemberInfo> const& ContainerDecl::getTransparentMembers()
 {
+    SLANG_ASSERT(!_members.isDoingOnDemandDecode());
+
     _ensureLookupAcceleratorsAreValid();
     return _members.transparentMembers;
 }
@@ -76,6 +85,11 @@ List<TransparentMemberInfo> const& ContainerDecl::getTransparentMembers()
 ///
 Decl* ContainerDecl::findFirstDirectMemberOfName(Name* name)
 {
+    if (_members.isDoingOnDemandDecode())
+    {
+        return _members.findDirectMemberDeclByNameInBinaryModule(name);
+    }
+
     _ensureLookupAcceleratorsAreValid();
     Decl* decl = nullptr;
     _members.memberDictionary.tryGetValue(name, decl);
@@ -87,37 +101,70 @@ Decl* ContainerDecl::findFirstDirectMemberOfName(Name* name)
 ///
 Decl* ContainerDecl::findNextDirectMemberDeclWithSameName(Decl* memberDecl)
 {
+    SLANG_ASSERT(!_members.isDoingOnDemandDecode());
+
     _ensureLookupAcceleratorsAreValid();
     return memberDecl->nextInContainerWithSameName;
 }
 
 void ContainerDeclMembers::_add(Decl* decl)
 {
+    SLANG_ASSERT(isDoingOnDemandDecode());
     members.add(decl);
 }
 
 void ContainerDeclMembers::_initForOnDemandDecode(
     Count memberCount,
-    void const* chunk,
+    UInt32 idForContainerDecl,
+    void const* dataForContainerDeclMembers,
     RefPtr<RefObject> decodeContext)
 {
     members.reserve(memberCount);
     for (Index i = 0; i < memberCount; ++i)
         members.add(nullptr);
 
-    this->onDemandDecodeChunk = chunk;
+    this->onDemandDecodeData = dataForContainerDeclMembers;
     this->onDemandDecodeContext = decodeContext;
+    this->onDemandDecodeID = idForContainerDecl;
 }
 
 bool ContainerDeclMembers::isDoingOnDemandDecode()
 {
-    return this->onDemandDecodeChunk != nullptr;
+    return this->onDemandDecodeData != nullptr;
+}
+
+void ContainerDeclMembers::ensureAllDirectMemberDeclsAreLoaded()
+{
+    if (!isDoingOnDemandDecode())
+        return;
+
+    auto memberCount = members.getCount();
+    for (Index i = 0; i < memberCount; ++i)
+    {
+        if (members[i])
+            continue;
+
+        members[i] = getDirectMemberDeclByIndexInBinaryModule(i);
+    }
+
+    // TODO: In principle we could clear the `onDemandDecodeData`
+    // member here, so that the container no longer returns `true`
+    // for `isDoingOnDemandDecode()`.
+    //
+    // The reason this isn't being done yet is that there are
+    // cases where a `ModuleDecl` needs to retain the ability
+    // to do on-demand operations (e.g., to resolve the mapping
+    // from mangled names to exports), and we don't want to
+    // accidentally disable that just because all of a module's
+    // direct members have ended up being loaded.
 }
 
 /// Add the given `memberDecl` as a direct member declaration.
 ///
 void ContainerDecl::addDirectMemberDecl(Decl* memberDecl)
 {
+    SLANG_ASSERT(!_members.isDoingOnDemandDecode());
+
     if (!memberDecl)
         return;
 
@@ -131,6 +178,8 @@ void ContainerDecl::addDirectMemberDecl(Decl* memberDecl)
 
 void ContainerDecl::_removeDirectMemberDecl(Decl* memberDecl)
 {
+    SLANG_ASSERT(!_members.isDoingOnDemandDecode());
+
     _members.members.remove(memberDecl);
 
     _invalidateLookupAccelerators();
@@ -138,6 +187,8 @@ void ContainerDecl::_removeDirectMemberDecl(Decl* memberDecl)
 
 void ContainerDecl::_replaceDirectMemberDeclAtIndex(Index index, Decl* replacementMemberDecl)
 {
+    SLANG_ASSERT(!_members.isDoingOnDemandDecode());
+
     _members.members[index] = replacementMemberDecl;
 
     _invalidateLookupAccelerators();
@@ -145,6 +196,8 @@ void ContainerDecl::_replaceDirectMemberDeclAtIndex(Index index, Decl* replaceme
 
 void ContainerDecl::_insertDirectMemberDeclAtIndex(Index index, Decl* memberDecl)
 {
+    SLANG_ASSERT(!_members.isDoingOnDemandDecode());
+
     _members.members.insert(index, memberDecl);
 
     _invalidateLookupAccelerators();
@@ -152,21 +205,29 @@ void ContainerDecl::_insertDirectMemberDeclAtIndex(Index index, Decl* memberDecl
 
 void ContainerDecl::_invalidateLookupAcceleratorsBecauseMemberDeclWillBecomeTransparent()
 {
+    SLANG_ASSERT(!_members.isDoingOnDemandDecode());
+
     _invalidateLookupAccelerators();
 }
 
 bool ContainerDecl::_areLookupAcceleratorsValid()
 {
+    SLANG_ASSERT(!_members.isDoingOnDemandDecode());
+
     return _members.memberCountWhenAcceleratorsLastBuilt == _members.members.getCount();
 }
 
 void ContainerDecl::_invalidateLookupAccelerators()
 {
+    SLANG_ASSERT(!_members.isDoingOnDemandDecode());
+
     _members.memberCountWhenAcceleratorsLastBuilt = -1;
 }
 
 void ContainerDecl::_ensureLookupAcceleratorsAreValid()
 {
+    SLANG_ASSERT(!_members.isDoingOnDemandDecode());
+
     // If the acceleration structures are already valid,
     // then we skip out on re-building them.
     //
