@@ -54,7 +54,7 @@ List<Decl*> const& ContainerDecl::getMembers()
 {
     if (_members.isDoingOnDemandDecode())
     {
-        _members.ensureAllDirectMemberDeclsAreLoaded();
+        _members.ensureAllDirectMemberDeclsAreLoaded(this);
     }
 
     return _members.members;
@@ -67,16 +67,22 @@ Count ContainerDecl::getDirectMemberDeclCount()
 
 Decl* ContainerDecl::getDirectMemberDecl(Index index)
 {
-    SLANG_ASSERT(!_members.isDoingOnDemandDecode());
-
-    return _members.members[index];
+    auto decl = _members.members[index];
+    if (!decl && _members.isDoingOnDemandDecode())
+    {
+        decl = _members.getDirectMemberDeclByIndexInBinaryModule(index);
+        _members.members[index] = decl;
+    }
+    return decl;
 }
 
-List<TransparentMemberInfo> const& ContainerDecl::getTransparentMembers()
+List<Decl*> const& ContainerDecl::getTransparentMembers()
 {
-    SLANG_ASSERT(!_members.isDoingOnDemandDecode());
+    if (!_members.isDoingOnDemandDecode())
+    {
+        _ensureLookupAcceleratorsAreValid();
+    }
 
-    _ensureLookupAcceleratorsAreValid();
     return _members.transparentMembers;
 }
 
@@ -101,9 +107,11 @@ Decl* ContainerDecl::findFirstDirectMemberOfName(Name* name)
 ///
 Decl* ContainerDecl::findNextDirectMemberDeclWithSameName(Decl* memberDecl)
 {
-    SLANG_ASSERT(!_members.isDoingOnDemandDecode());
+    if (!_members.isDoingOnDemandDecode())
+    {
+        _ensureLookupAcceleratorsAreValid();
+    }
 
-    _ensureLookupAcceleratorsAreValid();
     return memberDecl->nextInContainerWithSameName;
 }
 
@@ -115,7 +123,6 @@ void ContainerDeclMembers::_add(Decl* decl)
 
 void ContainerDeclMembers::_initForOnDemandDecode(
     Count memberCount,
-    UInt32 idForContainerDecl,
     void const* dataForContainerDeclMembers,
     RefPtr<RefObject> decodeContext)
 {
@@ -125,7 +132,6 @@ void ContainerDeclMembers::_initForOnDemandDecode(
 
     this->onDemandDecodeData = dataForContainerDeclMembers;
     this->onDemandDecodeContext = decodeContext;
-    this->onDemandDecodeID = idForContainerDecl;
 }
 
 bool ContainerDeclMembers::isDoingOnDemandDecode()
@@ -133,10 +139,28 @@ bool ContainerDeclMembers::isDoingOnDemandDecode()
     return this->onDemandDecodeData != nullptr;
 }
 
-void ContainerDeclMembers::ensureAllDirectMemberDeclsAreLoaded()
+void ContainerDeclMembers::ensureAllDirectMemberDeclsAreLoaded(ContainerDecl* containerDecl)
 {
     if (!isDoingOnDemandDecode())
         return;
+
+    if (as<GenericDecl>(containerDecl))
+    {
+    }
+    else if (as<FuncDecl>(containerDecl))
+    {
+    }
+    else if (as<AccessorDecl>(containerDecl))
+    {
+    }
+    else if (as<AttributeDecl>(containerDecl))
+    {
+    }
+    else
+    {
+        int f = 9;
+    }
+
 
     auto memberCount = members.getCount();
     for (Index i = 0; i < memberCount; ++i)
@@ -157,6 +181,16 @@ void ContainerDeclMembers::ensureAllDirectMemberDeclsAreLoaded()
     // from mangled names to exports), and we don't want to
     // accidentally disable that just because all of a module's
     // direct members have ended up being loaded.
+}
+
+Count ContainerDeclMembers::_getTransparentMemberCount() const
+{
+    return transparentMembers.getCount();
+}
+
+List<Decl*> const& ContainerDeclMembers::_getTransparentMembers() const
+{
+    return transparentMembers;
 }
 
 /// Add the given `memberDecl` as a direct member declaration.
@@ -278,9 +312,7 @@ void ContainerDecl::_ensureLookupAcceleratorsAreValid()
         //
         if (memberDecl->hasModifier<TransparentModifier>())
         {
-            TransparentMemberInfo info;
-            info.decl = memberDecl;
-            _members.transparentMembers.add(info);
+            _members.transparentMembers.add(memberDecl);
         }
 
         // Other than transparent members (handled above), we don't

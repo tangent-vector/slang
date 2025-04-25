@@ -557,8 +557,6 @@ struct ASTDumpContext
     }
     void dump(const ExpandedSpecializationArg& arg) { dump(arg.witness); }
 
-    void dump(const TransparentMemberInfo& memInfo) { dump(memInfo.decl); }
-
     void dumpRemaining()
     {
         // Have to keep checking count, as dumping objects can add objects

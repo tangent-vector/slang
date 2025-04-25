@@ -669,6 +669,9 @@ struct RiffDataChunkBuilder : RiffChunkBuilder
     using DataBlock = RiffContainer::DataBlock;
 
 public:
+    RiffDataChunkBuilder()
+    {}
+
     RiffDataChunkBuilder(
         RiffContainer* container,
         RiffContainer::DataChunk* chunk)

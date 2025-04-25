@@ -9,6 +9,13 @@
 #include "slang-mangle.h"
 #include "slang-serialize-mangled-name.h"
 
+
+// Enable to turn on some basic logging that shows how
+// many declarations from a given module have ended up
+// being loaded (useful when debugging).
+//
+#define SLANG_DEBUG_ON_DEMAND_LOADING_STATS 0
+
 namespace Slang
 {
 // TODO(tfoley): have the parser export this, or a utility function
@@ -16,12 +23,61 @@ namespace Slang
 //
 NodeBase* parseSimpleSyntax(Parser* parser, void* userData);
 
-struct StringTableBuilder
+struct StringTableReader
 {
 public:
-    StringTableBuilder() { _init(); }
+    StringTableReader() {}
 
-    UInt32 getStringIndex(UnownedStringSlice const& text)
+    void init(RiffContainer::ListChunk* chunk)
+    {
+        _entries = chunk->findDataArray<Binary::StringTableEntry>(SerialBinary::kStringTableItemsFourCC);
+        _data = chunk->findDataArray<char>(SerialBinary::kStringTableDataFourCC);
+    }
+
+    UnownedTerminatedStringSlice getString(Index index)
+    {
+        SLANG_ASSERT(index > 0);
+
+        auto& entry = _entries[index];
+        auto& prevEntry = _entries[index - 1];
+
+        auto beginOffset = prevEntry.endOffsetOfData;
+        auto endOffset = entry.endOffsetOfData - 1;
+
+        return UnownedTerminatedStringSlice(
+            &_data[beginOffset],
+            &_data[endOffset]);
+    }
+
+private:
+    ArrayView<Binary::StringTableEntry> _entries;
+    ArrayView<char> _data;
+};
+
+struct StringTableWriter
+{
+public:
+    StringTableWriter() {}
+
+    void init(Encoder* encoder)
+    {
+        Encoder::WithObject withStringTable(encoder, SerialBinary::kStringTableFourCc);
+
+        _entriesChunk = encoder->addDataChunk(SerialBinary::kStringTableItemsFourCC);
+        _dataChunk = encoder->addDataChunk(SerialBinary::kStringTableDataFourCC);
+
+        Binary::StringTableEntry entry;
+        entry.endOffsetOfData = 0;
+        _addEntry(entry);
+    }
+
+    void finishWriting()
+    {
+        // Nothing to do.
+    }
+
+    UInt32 getStringIndex(
+        UnownedStringSlice const& text)
     {
         if (auto found = _mapStringToIndex.tryGetValue(text))
             return *found;
@@ -30,36 +86,331 @@ public:
     }
 
 private:
+    RiffDataChunkBuilder _entriesChunk;
+    RiffDataChunkBuilder _dataChunk;
+
+    UInt32 _entryCount = 0;
+    UInt32 _dataSize = 0;
+
     Dictionary<UnownedStringSlice, UInt32> _mapStringToIndex;
-
-    List<Binary::StringTableEntry> _entries;
-    List<char> _data;
-
-    void _init()
-    {
-        Binary::StringTableEntry entry;
-        entry.endOffsetOfData = 0;
-        _entries.add(entry);
-    }
 
     UInt32 _addString(UnownedStringSlice const& text)
     {
-        _data.addRange(text.begin(), text.getLength());
-        _data.add(0);
-
-        auto endOffset = _data.getCount();
+        auto endOffset = _addData(text);
 
         Binary::StringTableEntry entry;
-        entry.endOffsetOfData = UInt32(endOffset);
+        entry.endOffsetOfData = endOffset;
 
-        auto index = UInt32(_entries.getCount());
-        _entries.add(entry);
+        auto index = _addEntry(entry);
 
         _mapStringToIndex.add(text, index);
 
         return index;
     }
+
+    UInt32 _addData(UnownedStringSlice const& text)
+    {
+        _dataChunk.writeData(text.begin(), text.getLength());
+
+        char nulByte = 0;
+        _dataChunk.writeData(&nulByte, sizeof(nulByte));
+
+        _dataSize += UInt32(text.getLength() + 1);
+
+        auto endOffset = _dataSize;
+        return endOffset;
+    }
+
+    UInt32 _addEntry(Binary::StringTableEntry entry)
+    {
+        UInt32 entryIndex = _entryCount++;
+        _entriesChunk.writeData(&entry, sizeof(entry));
+        return entryIndex;
+    }
 };
+
+
+struct DirectMemberDeclBucket
+{
+    UInt32 nameID;
+    UInt32 value;
+};
+
+struct DirectMemberDeclsReader
+{
+public:
+    DirectMemberDeclsReader(
+        RiffContainer::Chunk* chunk)
+    {
+        _membersChunk = as<RiffContainer::ListChunk>(chunk);
+    }
+
+    Count getDeclCount()
+    {
+        return getDeclIDs().getCount();
+    }
+
+    UInt32 getDeclID(Index index)
+    {
+        return getDeclIDs()[index];
+    }
+
+    ArrayView<UInt32> getDeclIDs()
+    {
+        return _membersChunk->findDataArray<UInt32>(SerialBinary::kASTDirectMemberIDsFourCC);
+    }
+
+    ArrayView<UInt32> findDeclsByName(
+        Name* keyName,
+        StringTableReader* stringTable)
+    {
+        return findDeclsByName(
+            keyName->text.getUnownedSlice(),
+            stringTable);
+    }
+
+    ArrayView<UInt32> findDeclsByName(
+        UnownedStringSlice keyName,
+        StringTableReader* stringTable)
+    {
+        auto keyNameHash = Binary::hash(keyName);
+
+        auto buckets = _membersChunk->findDataArray<DirectMemberDeclBucket>(SerialBinary::kHashTableBucketsFourCC);
+        auto bucketCount = buckets.getCount();
+
+        auto bucketIndex = keyNameHash % bucketCount;
+        for (;;)
+        {
+            auto& bucket = buckets[bucketIndex];
+            if (bucket.nameID == 0)
+            {
+                return ArrayView<UInt32>();
+            }
+
+            auto bucketName = stringTable->getString(bucket.nameID);
+            if (bucketName == keyName)
+                break;
+
+            bucketIndex = (bucketIndex + 1) % bucketCount;
+        }
+
+        auto bucketValue = buckets[bucketIndex].value;
+        if(Int32(bucketValue) > 0)
+        {
+            // The case where the bucket value doesn't have
+            // the high bit set (looks non-negative when
+            // viewed as a signed integer) is the case where
+            // the value is itself the sole declaration ID
+            // with that name. Thus we return an array view
+            // with one element, based on the value stored
+            // direclty in the bucket.
+            //
+            return ArrayView<UInt32>(&buckets[bucketIndex].value, 1);
+        }
+        else
+        {
+            // The case where the bucket has the high bit set
+            // (looks negative, when viewed as a signed integer)
+            // is the case where the value is an index into
+            // the auxilliary table of runs.
+            //
+            auto indexInRunTable = ~bucketValue;
+            auto runs = _membersChunk->findDataArray<UInt32>(SerialBinary::kASTDirectMemberRunsFourCC);
+
+            auto count = runs[indexInRunTable];
+            return ArrayView<UInt32>(&runs[indexInRunTable + 1], count);
+        }
+    }
+
+private:
+    RiffContainer::ListChunk* _membersChunk;
+};
+
+struct DirectMemberDeclsWriter
+{
+public:
+    DirectMemberDeclsWriter(
+        Encoder* encoder,
+        StringTableWriter* stringTableWriter)
+        : _stringTable(stringTableWriter)
+    {
+        // The first chunk we will generate is just about as simple
+        // as can be: a sequence of 32-bit values encoding the IDs
+        // of the direct members.
+        //
+        _memberIDsChunk = encoder->addDataChunk(SerialBinary::kASTDirectMemberIDsFourCC);
+        _runsChunk = encoder->addDataChunk(SerialBinary::kASTDirectMemberRunsFourCC);
+        _bucketsChunk = encoder->addDataChunk(SerialBinary::kHashTableBucketsFourCC);
+    }
+
+    StringTableWriter* _stringTable;
+
+    RiffDataChunkBuilder _memberIDsChunk;
+    RiffDataChunkBuilder _runsChunk;
+    RiffDataChunkBuilder _bucketsChunk;
+
+    struct MemberDeclsOfSameNameInfo
+    {
+        UInt32 nameID = 0;
+        Binary::HashCode nameHash = 0;
+        List<UInt32> declIDs;
+        Int32 encodedID = 0;
+    };
+
+    List<MemberDeclsOfSameNameInfo> runs;
+    Dictionary<Name*, Index> mapNameToRunIndex;
+
+
+    void addMemberDecl(Decl* decl, Int inDeclID)
+    {
+        SLANG_ASSERT(inDeclID > 0);
+        auto declID = UInt32(inDeclID);
+
+        _memberIDsChunk.writeData(&declID, sizeof(declID));
+
+        auto declName = decl->getName();
+        if (declName)
+        {
+            Index runIndex = 0;
+            if (!mapNameToRunIndex.tryGetValue(declName, runIndex))
+            {
+                runIndex = runs.getCount();
+                runs.add({});
+
+                mapNameToRunIndex.add(declName, runIndex);
+
+                auto nameText = declName->text.getUnownedSlice();
+                auto nameHash = Binary::hash(nameText);
+                auto nameID = _stringTable->getStringIndex(nameText);
+
+
+                runs[runIndex].nameID = nameID;
+                runs[runIndex].nameHash = nameHash;
+            }
+
+            auto& run = runs[runIndex];
+            run.declIDs.add(declID);
+        }
+    }
+
+    void finishWriting()
+    {
+        // Just having the raw list of member IDs is a starting point,
+        // but we also need to have a way to accelerate lookup based
+        // on the names of the members. In particular, we want to
+        // make it possible to find the member(s) that need to be
+        // deserialized in response to a lookup of a name in the
+        // context of the container.
+        //
+        // TODO(tfoley): It remains to be seen whether an accelerator
+        // based on the *types* of the members is also needed.
+        //
+        // We will start by building up "runs" of members that have
+        // the same name.
+        //
+
+        List<UInt32> encodedRuns;
+
+        // We will be inserting the runs into a hash table,
+        // based on their name, but the encoded value that
+        // gets inserted for a run will depend on whether
+        // it consists of only a single declaration, or
+        // comprises multiple declarations.
+        //
+        for (auto& run : runs)
+        {
+            SLANG_ASSERT(run.declIDs.getCount() > 0);
+
+            if (run.declIDs.getCount() == 1)
+            {
+                // If there is only a single declaration
+                // with the given name, then the value
+                // stored in the hash table will simply
+                // be the ID of that declaration.
+                //
+                auto declID = run.declIDs[0];
+
+                // We know that the ID must be positive.
+                // It cannot be negative because it is
+                // a member of a local declaration (and
+                // local declarations get positive IDs,
+                // while imports get negative IDs).
+                // It cannot be zero because that ID is
+                // reserved for the top-level `ModuleDecl`,
+                // which cannot be a member (it has no parent).
+                //
+                SLANG_ASSERT(declID > 0);
+
+                run.encodedID = Int32(declID);
+            }
+            else
+            {
+                // If there are multiple decls with the given
+                // name, then we we will allocate space in
+                // a table to store the runs.
+                //
+                auto index = encodedRuns.getCount();
+
+                // Each run is stored as the count of the
+                // entries to follow, and then the IDs of
+                // the declarations in the run.
+                //
+                encodedRuns.add(UInt32(run.declIDs.getCount()));
+                for (auto declID : run.declIDs)
+                {
+                    encodedRuns.add(UInt32(declID));
+                }
+
+                // The value we will write into the hash
+                // table for a non-trivial run is the
+                // bitwise inverse of the index into
+                // the `encodedRuns` table. This encoding
+                // ensures that the value is distinct
+                // from the value of an empty hash-table
+                // bucket (zero), as well as from the
+                // singleton runs (positive declaration
+                // IDs).
+                //
+                run.encodedID = Int32(~index);
+            }
+        }
+
+        auto runCount = runs.getCount();
+
+        auto bucketCount = runCount * 2;
+
+        static const auto kNullNameID = UInt32(0);
+        DirectMemberDeclBucket emptyBucket = { kNullNameID };
+        auto buckets = List<DirectMemberDeclBucket>::makeRepeated(emptyBucket, bucketCount);
+
+        for (Index runIndex = 1; runIndex < runCount; ++runIndex)
+        {
+            auto& run = runs[runIndex];
+            auto hash = run.nameHash;
+
+            auto bucketIndex = hash % bucketCount;
+            for (;;)
+            {
+                if (buckets[bucketIndex].nameID == kNullNameID)
+                {
+                    break;
+                }
+
+                bucketIndex = (bucketIndex + 1) % bucketCount;
+            }
+
+            buckets[bucketIndex].nameID = run.nameID;
+            buckets[bucketIndex].value = run.encodedID;
+        }
+
+        for (auto runItemValue : encodedRuns)
+            _runsChunk.writeData(&runItemValue, sizeof(runItemValue));
+
+        for (auto bucketValue : buckets)
+            _bucketsChunk.writeData(&bucketValue, sizeof(bucketValue));
+    }
+};
+
 
 struct ASTEncodingContext
 {
@@ -99,6 +450,7 @@ public:
     ASTEncodingContext(Encoder* encoder, ModuleDecl* module, SerialSourceLocWriter* sourceLocWriter)
         : encoder(encoder), _moduleDecl(module), _sourceLocWriter(sourceLocWriter)
     {
+        _stringTable.init(encoder);
     }
 
     template<typename T>
@@ -111,6 +463,8 @@ public:
 
     void flush()
     {
+        _stringTable.finishWriting();
+
         auto containerChunk = encoder->getRIFFChunk();
 
         RiffContainer::Chunk* declChunk = nullptr;
@@ -215,6 +569,8 @@ public:
         // for each declaration (TODO: is there a point to doing
         // it that way?)
     }
+
+    StringTableWriter _stringTableWriter;
 
     void writeExportLookupAccelerator()
     {
@@ -875,93 +1231,39 @@ public:
         }
     }
 
-    struct MemberDeclsOfSameNameInfo
-    {
-        Name* name;
-        Binary::HashCode nameHash;
-        List<DeclID> declIDs;
-    };
+    StringTableWriter _stringTable;
 
     void encodeValue(ContainerDeclMembers const& value)
     {
         Encoder::WithObject withMembersChunk(encoder, SerialBinary::kASTDirectMembersChunkFourCC);
 
+        // Our task here is to encode the direct member list
+        // of a container declaration.
+        //
+        // At the most basic this is simply a list of declarations.
+        //
         // TODO(tfoley): This could be an ideal place to filter
         // the members down to just the ones that might
         // actually need to be serialized (e.g., because
         // they are public).
+        //
+        auto& directMemberDecls = value._get();
 
-        auto chunk = encoder->addDataChunk(SerialBinary::kASTDirectMemberIDsFourCC);
-        for (auto directMemberDecl : value._get())
+        DirectMemberDeclsWriter writer(encoder, &_stringTable);
+        for (auto directMemberDecl : directMemberDecls)
         {
-            UInt32 id = getDeclID(directMemberDecl);
-            chunk.writeData(&id, sizeof(id));
+            auto declID = getDeclID(directMemberDecl);
+            writer.addMemberDecl(directMemberDecl, declID);
         }
 
-        // Just having the raw list of member IDs is a starting point,
-        // but we also need to have a way to accelerate lookup based
-        // on the names of the members.
-        //
-        // TODO(tfoley): It remains to be seen whether an accelerator
-        // based on the *types* of the members is also needed.
-        //
-        // We will start by building up "runs" of members that have
-        // the same name.
-        //
-        List<MemberDeclsOfSameNameInfo> runs;
-        Dictionary<Name*, Index> mapNameToRunIndex;
-
-        for (auto memberDecl : value._get())
+        if (value._getTransparentMemberCount())
         {
-            auto memberName = memberDecl->getName();
-            if (!memberName)
-                continue;
-
-            Index runIndex = 0;
-            if (!mapNameToRunIndex.tryGetValue(memberName, runIndex))
-            {
-                runIndex = runs.getCount();
-                runs.add({});
-
-                runs[runIndex].nameHash = Binary::hash(memberName->text.getUnownedSlice());
-            }
-
-            auto& run = runs[runIndex];
-
-            auto memberID = getDeclID(memberDecl);
-            run.declIDs.add(memberID);
+            Encoder::WithArray withTransparentMembersArray(encoder, SerialBinary::kASTTransparentMembersFourCC);
+            for (auto transparentMemberDecl : value._getTransparentMembers())
+                encode(transparentMemberDecl);
         }
 
-        auto runCount = runs.getCount();
-
-        static const auto kEmptyBucket = ~UInt32(0);
-        auto bucketCount = runCount * 2;
-        auto buckets = List<UInt32>::makeRepeated(kEmptyBucket, bucketCount);
-
-        for (Index runIndex = 1; runIndex < runCount; ++runIndex)
-        {
-            auto& run = runs[runIndex];
-            auto hash = run.nameHash;
-
-            auto bucketIndex = hash % bucketCount;
-            for (;;)
-            {
-                if (buckets[bucketIndex] == kEmptyBucket)
-                {
-                    buckets[bucketIndex] = runIndex;
-                    break;
-                }
-
-                bucketIndex = (bucketIndex + 1) % bucketCount;
-            }
-
-            // then what do we store in the bucket?
-        }
-
-        // we'll write out a set of hash-table buckets, where
-        // each bucket is the index of a "run" of declarations
-        // with the same name.
-        //
+        writer.finishWriting();
     }
 
     template<typename T, int N>
@@ -1087,10 +1389,11 @@ public:
     Linkage* _linkage = nullptr;
     DiagnosticSink* _sink = nullptr;
     RefPtr<RiffContainerObject> _riff;
-    SerialSourceLocReader* _sourceLocReader = nullptr;
+    RefPtr<SerialSourceLocReader> _sourceLocReader = nullptr;
     SourceLoc _requestingSourceLoc;
 
     MangledNameTableReader _exportsTable;
+    StringTableReader _stringTable;
 
     SlangResult init()
     {
@@ -1189,6 +1492,9 @@ public:
         auto exportsChunk = _rootChunk->findListChunk(SerialBinary::kASTExportsFourCC);
         _exportsTable.init(exportsChunk);
 
+        auto stringTableChunk = _rootChunk->findListChunk(SerialBinary::kStringTableFourCc);
+        _stringTable.init(stringTableChunk);
+
 
 #if 0
         // Once all the back-reference-able objects have been
@@ -1225,14 +1531,29 @@ public:
 
     Decl* getDirectMemberDeclByIndex(Index index, void const* containerOnDemandDecodeData)
     {
-        auto directMemberDeclIDs = static_cast<Int32 const*>(containerOnDemandDecodeData);
-        auto memberDeclID = directMemberDeclIDs[index];
+        auto membersChunk = (RiffContainer::ListChunk*) containerOnDemandDecodeData;
+        DirectMemberDeclsReader reader(membersChunk);
+
+        auto memberDeclID = reader.getDeclID(index);
+
         return getDeclByID(memberDeclID);
     }
 
-    Decl* findDirectMemberDeclByName(Name* name, UInt32 containerDeclID)
+    Decl* findDirectMemberDeclByName(Name* name, void const* containerOnDemandDecodeData)
     {
-        SLANG_UNEXPECTED("implement this one too!");
+        auto membersChunk = (RiffContainer::ListChunk*)containerOnDemandDecodeData;
+        DirectMemberDeclsReader reader(membersChunk);
+
+        auto memberIDs = reader.findDeclsByName(name, &_stringTable);
+
+        Decl* result = nullptr;
+        for (auto memberID : memberIDs)
+        {
+            auto memberDecl = getDeclByID(memberID);
+            memberDecl->nextInContainerWithSameName = result;
+            result = memberDecl;
+        }
+        return result;
     }
 
 
@@ -1400,7 +1721,9 @@ private:
         return SLANG_OK;
     }
 
-    DeclID _declBeingDecodedID = 0;
+#if SLANG_DEBUG_ON_DEMAND_LOADING_STATS
+    int _loadedDeclCount = 0;
+#endif
 
     Decl* _getLocalDeclByIndex(Index index)
     {
@@ -1430,14 +1753,24 @@ private:
         // of filling in the shells...
 
         {
-            auto saved = _declBeingDecodedID;
-            _declBeingDecodedID = index;
-
             Decoder decoder(info.chunk);
             decodeASTNodeContent(decl, decoder);
-
-            _declBeingDecodedID = saved;
         }
+
+#if SLANG_DEBUG_ON_DEMAND_LOADING_STATS
+        _loadedDeclCount++;
+
+        fprintf(stderr, "[DEMAND] on-demand loaded '%s' module declaration #%d",
+            getDeclByID(0)->getName()->text.getBuffer(),
+            int(index));
+
+        fprintf(stderr, ", have so far loaded %d of %d (%f%%)",
+            int(_loadedDeclCount),
+            int(_decls.getCount()),
+            (100 * float(_loadedDeclCount)) / float(_decls.getCount()));
+
+        fprintf(stderr, "\n");
+#endif
 
         return decl;
     }
@@ -1530,20 +1863,25 @@ private:
         {
             expr->checked = true;
         }
-        else if (auto genericDecl = as<GenericDecl>(node))
+        else if (auto decl = as<Decl>(node))
         {
-            assignGenericParameterIndices(genericDecl);
-        }
-        else if (auto syntaxDecl = as<SyntaxDecl>(node))
-        {
-            syntaxDecl->parseCallback = &parseSimpleSyntax;
-            syntaxDecl->parseUserData = (void*)syntaxDecl->syntaxClass.getInfo();
-        }
-        else if (auto namespaceLikeDecl = as<NamespaceDeclBase>(node))
-        {
-            auto declScope = _astBuilder->create<Scope>();
-            declScope->containerDecl = namespaceLikeDecl;
-            namespaceLikeDecl->ownedScope = declScope;
+            decl->checkState = DeclCheckState::FullyChecked;
+
+            if (auto genericDecl = as<GenericDecl>(node))
+            {
+                assignGenericParameterIndices(genericDecl);
+            }
+            else if (auto syntaxDecl = as<SyntaxDecl>(node))
+            {
+                syntaxDecl->parseCallback = &parseSimpleSyntax;
+                syntaxDecl->parseUserData = (void*)syntaxDecl->syntaxClass.getInfo();
+            }
+            else if (auto namespaceLikeDecl = as<NamespaceDeclBase>(node))
+            {
+                auto declScope = _astBuilder->create<Scope>();
+                declScope->containerDecl = namespaceLikeDecl;
+                namespaceLikeDecl->ownedScope = declScope;
+            }
         }
     }
 
@@ -1997,14 +2335,13 @@ private:
         auto chunk = decoder.getCursor();
         decoder.skip();
 
-        auto dataChunk = as<RiffContainer::DataChunk>(chunk);
-        SLANG_ASSERT(dataChunk != nullptr);
+        auto listChunk = as<RiffContainer::ListChunk>(chunk);
+        SLANG_ASSERT(listChunk != nullptr);
 
-        auto payload = _riff->getPayload(dataChunk);
-        auto payloadSize = dataChunk->getPayloadSize();
+        DirectMemberDeclsReader reader(listChunk);
+        auto directMemberCount = reader.getDeclCount();
 
-        auto directMemberCount = payloadSize / sizeof(UInt32);
-        members._initForOnDemandDecode(directMemberCount, _declBeingDecodedID, payload, this);
+        members._initForOnDemandDecode(directMemberCount, listChunk, this);
     }
 
     template<typename T, int N>
@@ -2152,7 +2489,7 @@ Decl* ContainerDeclMembers::getDirectMemberDeclByIndexInBinaryModule(Index index
 Decl* ContainerDeclMembers::findDirectMemberDeclByNameInBinaryModule(Name* name)
 {
     auto context = as<ASTDecodingContext>(onDemandDecodeContext);
-    return context->findDirectMemberDeclByName(name, onDemandDecodeID);
+    return context->findDirectMemberDeclByName(name, onDemandDecodeData);
 }
 
 } // namespace Slang

@@ -246,12 +246,12 @@ static void _lookUpDirectAndTransparentMembers(
     if (((int)request.options & (int)LookupOptions::IgnoreTransparentMembers) != 0)
         return;
 
-    for (auto transparentInfo : containerDecl->getTransparentMembers())
+    for (auto transparentMemberDecl : containerDecl->getTransparentMembers())
     {
         // The reference to the transparent member should use the same
         // path as we used in referring to its parent.
         DeclRef<Decl> transparentMemberDeclRef =
-            astBuilder->getMemberDeclRef(parentDeclRef, transparentInfo.decl);
+            astBuilder->getMemberDeclRef(parentDeclRef, transparentMemberDecl);
         if (transparentMemberDeclRef.getDecl() == request.declToExclude)
             continue;
 

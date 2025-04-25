@@ -506,6 +506,14 @@ FIDDLE() namespace Slang
         ///
         CapabilityChecked,
 
+        /// The highest defined level, indicating a declaration has
+        /// been fully checked.
+        ///
+        /// When adding a new checking phase after those that have already
+        /// been defined, be sure to update this definition.
+        ///
+        FullyChecked = CapabilityChecked,
+
         // For convenience at sites that call `ensureDecl()`, we define
         // some aliases for the above states that are expressed in terms
         // of what client code needs to be able to do with a declaration.
@@ -1095,12 +1103,6 @@ FIDDLE() namespace Slang
             m_begin; ///< Is either equal to m_end, or points to first *valid* filtered member
         const Element* m_end;
         MemberFilterStyle m_filterStyle;
-    };
-
-    struct TransparentMemberInfo
-    {
-        // The declaration of the transparent member
-        Decl* decl = nullptr;
     };
 
     template<typename T>

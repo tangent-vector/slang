@@ -176,7 +176,9 @@ struct SerialBinary
     static const FourCC kFileFourCC = SLANG_FOUR_CC('f', 'i', 'l', 'e');
     static const FourCC kNameFourCC = SLANG_FOUR_CC('n', 'a', 'm', 'e');
     static const FourCC kPathFourCC = SLANG_FOUR_CC('p', 'a', 't', 'h');
+
     static const FourCC kDataFourCC = SLANG_FOUR_CC('d', 'a', 't', 'a');
+    static const FourCC kItemsFourCC = SLANG_FOUR_CC('i', 't', 'm', 's');
 
     // TODO(tfoley): Figure out where to put all of these so that
     // they can be more usefully addressed.
@@ -192,10 +194,17 @@ struct SerialBinary
 
     static const FourCC kASTDirectMembersChunkFourCC = SLANG_FOUR_CC('m', 'b', 'r', 's');
     static const FourCC kASTDirectMemberIDsFourCC = SLANG_FOUR_CC('i', 'd', 's', ' ');
+    static const FourCC kASTDirectMemberRunsFourCC = SLANG_FOUR_CC('r', 'u', 'n', 's');
+    static const FourCC kASTTransparentMembersFourCC = SLANG_FOUR_CC('t', 'r', 'n', 's');
 
     static const FourCC kASTExportsFourCC = SLANG_FOUR_CC('x', 'p', 'r', 't');
     static const FourCC kHashTableBucketsFourCC = SLANG_FOUR_CC('b', 'k', 't', 's');
     static const FourCC kExportTableItemsFourCC = SLANG_FOUR_CC('i', 't', 'm', 's');
+
+
+
+    static const FourCC kStringTableItemsFourCC = kItemsFourCC;
+    static const FourCC kStringTableDataFourCC = kDataFourCC;
 
     struct ArrayHeader
     {

@@ -265,6 +265,12 @@ public:
         // b must be valid and it must be null terminated
         SLANG_ASSERT(b && b[len] == 0);
     }
+    UnownedTerminatedStringSlice(char const* b, char const* e)
+        : Super(b, e - b)
+    {
+        // [b,e) must be valid and it must be null terminated
+        SLANG_ASSERT(b && e && *e == 0);
+    }
 };
 
 // A more convenient way to make terminated slices from *string literals*

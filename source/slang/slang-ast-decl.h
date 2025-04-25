@@ -35,13 +35,16 @@ struct ContainerDeclMembers
 
     void _initForOnDemandDecode(
         Count memberCount,
-        UInt32 idForContainerDecl,
         void const* dataForContainerDeclMembers,
         RefPtr<RefObject> decodeContext);
 
     bool isDoingOnDemandDecode();
 
-    void ensureAllDirectMemberDeclsAreLoaded();
+    void ensureAllDirectMemberDeclsAreLoaded(ContainerDecl* containerDecl);
+
+    Count _getTransparentMemberCount() const;
+
+    List<Decl*> const& _getTransparentMembers() const;
 
     SLANG_UNREFLECTED // We don't want to reflect the following fields
 
@@ -67,7 +70,7 @@ private:
     // A list of transparent members, to be used in lookup
     //
     // Note: this is only valid if `_areLookupAcceleratorsValid` is true
-    List<TransparentMemberInfo> transparentMembers;
+    List<Decl*> transparentMembers;
 
     // Dictionary for looking up members by name.
     // This is built on demand before performing lookup.
@@ -84,7 +87,6 @@ private:
 
     RefPtr<RefObject> onDemandDecodeContext;
     void const* onDemandDecodeData = nullptr;
-    UInt32 onDemandDecodeID = 0;
 };
 
 // A "container" decl is a parent to other declarations
@@ -124,7 +126,7 @@ class ContainerDecl : public Decl
     /// Lookup of a name in the container declaration will also consider lookup
     /// through these member declarations.
     ///
-    List<TransparentMemberInfo> const& getTransparentMembers();
+    List<Decl*> const& getTransparentMembers();
 
     /// Find the first direct member declaration of this container declaration
     /// that has the given `name`.
