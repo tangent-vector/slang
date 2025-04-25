@@ -30,7 +30,8 @@ public:
 
     void init(RiffContainer::ListChunk* chunk)
     {
-        _entries = chunk->findDataArray<Binary::StringTableEntry>(SerialBinary::kStringTableItemsFourCC);
+        _entries =
+            chunk->findDataArray<Binary::StringTableEntry>(SerialBinary::kStringTableItemsFourCC);
         _data = chunk->findDataArray<char>(SerialBinary::kStringTableDataFourCC);
     }
 
@@ -44,9 +45,7 @@ public:
         auto beginOffset = prevEntry.endOffsetOfData;
         auto endOffset = entry.endOffsetOfData - 1;
 
-        return UnownedTerminatedStringSlice(
-            &_data[beginOffset],
-            &_data[endOffset]);
+        return UnownedTerminatedStringSlice(&_data[beginOffset], &_data[endOffset]);
     }
 
 private:
@@ -76,8 +75,7 @@ public:
         // Nothing to do.
     }
 
-    UInt32 getStringIndex(
-        UnownedStringSlice const& text)
+    UInt32 getStringIndex(UnownedStringSlice const& text)
     {
         if (auto found = _mapStringToIndex.tryGetValue(text))
             return *found;
@@ -139,43 +137,31 @@ struct DirectMemberDeclBucket
 struct DirectMemberDeclsReader
 {
 public:
-    DirectMemberDeclsReader(
-        RiffContainer::Chunk* chunk)
+    DirectMemberDeclsReader(RiffContainer::Chunk* chunk)
     {
         _membersChunk = as<RiffContainer::ListChunk>(chunk);
     }
 
-    Count getDeclCount()
-    {
-        return getDeclIDs().getCount();
-    }
+    Count getDeclCount() { return getDeclIDs().getCount(); }
 
-    UInt32 getDeclID(Index index)
-    {
-        return getDeclIDs()[index];
-    }
+    UInt32 getDeclID(Index index) { return getDeclIDs()[index]; }
 
     ArrayView<UInt32> getDeclIDs()
     {
         return _membersChunk->findDataArray<UInt32>(SerialBinary::kASTDirectMemberIDsFourCC);
     }
 
-    ArrayView<UInt32> findDeclsByName(
-        Name* keyName,
-        StringTableReader* stringTable)
+    ArrayView<UInt32> findDeclsByName(Name* keyName, StringTableReader* stringTable)
     {
-        return findDeclsByName(
-            keyName->text.getUnownedSlice(),
-            stringTable);
+        return findDeclsByName(keyName->text.getUnownedSlice(), stringTable);
     }
 
-    ArrayView<UInt32> findDeclsByName(
-        UnownedStringSlice keyName,
-        StringTableReader* stringTable)
+    ArrayView<UInt32> findDeclsByName(UnownedStringSlice keyName, StringTableReader* stringTable)
     {
         auto keyNameHash = Binary::hash(keyName);
 
-        auto buckets = _membersChunk->findDataArray<DirectMemberDeclBucket>(SerialBinary::kHashTableBucketsFourCC);
+        auto buckets = _membersChunk->findDataArray<DirectMemberDeclBucket>(
+            SerialBinary::kHashTableBucketsFourCC);
         auto bucketCount = buckets.getCount();
 
         auto bucketIndex = keyNameHash % bucketCount;
@@ -195,7 +181,7 @@ public:
         }
 
         auto bucketValue = buckets[bucketIndex].value;
-        if(Int32(bucketValue) > 0)
+        if (Int32(bucketValue) > 0)
         {
             // The case where the bucket value doesn't have
             // the high bit set (looks non-negative when
@@ -215,7 +201,8 @@ public:
             // the auxilliary table of runs.
             //
             auto indexInRunTable = ~bucketValue;
-            auto runs = _membersChunk->findDataArray<UInt32>(SerialBinary::kASTDirectMemberRunsFourCC);
+            auto runs =
+                _membersChunk->findDataArray<UInt32>(SerialBinary::kASTDirectMemberRunsFourCC);
 
             auto count = runs[indexInRunTable];
             return ArrayView<UInt32>(&runs[indexInRunTable + 1], count);
@@ -229,9 +216,7 @@ private:
 struct DirectMemberDeclsWriter
 {
 public:
-    DirectMemberDeclsWriter(
-        Encoder* encoder,
-        StringTableWriter* stringTableWriter)
+    DirectMemberDeclsWriter(Encoder* encoder, StringTableWriter* stringTableWriter)
         : _stringTable(stringTableWriter)
     {
         // The first chunk we will generate is just about as simple
@@ -380,7 +365,7 @@ public:
         auto bucketCount = runCount * 2;
 
         static const auto kNullNameID = UInt32(0);
-        DirectMemberDeclBucket emptyBucket = { kNullNameID };
+        DirectMemberDeclBucket emptyBucket = {kNullNameID};
         auto buckets = List<DirectMemberDeclBucket>::makeRepeated(emptyBucket, bucketCount);
 
         for (Index runIndex = 1; runIndex < runCount; ++runIndex)
@@ -1258,7 +1243,9 @@ public:
 
         if (value._getTransparentMemberCount())
         {
-            Encoder::WithArray withTransparentMembersArray(encoder, SerialBinary::kASTTransparentMembersFourCC);
+            Encoder::WithArray withTransparentMembersArray(
+                encoder,
+                SerialBinary::kASTTransparentMembersFourCC);
             for (auto transparentMemberDecl : value._getTransparentMembers())
                 encode(transparentMemberDecl);
         }
@@ -1531,7 +1518,7 @@ public:
 
     Decl* getDirectMemberDeclByIndex(Index index, void const* containerOnDemandDecodeData)
     {
-        auto membersChunk = (RiffContainer::ListChunk*) containerOnDemandDecodeData;
+        auto membersChunk = (RiffContainer::ListChunk*)containerOnDemandDecodeData;
         DirectMemberDeclsReader reader(membersChunk);
 
         auto memberDeclID = reader.getDeclID(index);
@@ -1760,11 +1747,15 @@ private:
 #if SLANG_DEBUG_ON_DEMAND_LOADING_STATS
         _loadedDeclCount++;
 
-        fprintf(stderr, "[DEMAND] on-demand loaded '%s' module declaration #%d",
+        fprintf(
+            stderr,
+            "[DEMAND] on-demand loaded '%s' module declaration #%d",
             getDeclByID(0)->getName()->text.getBuffer(),
             int(index));
 
-        fprintf(stderr, ", have so far loaded %d of %d (%f%%)",
+        fprintf(
+            stderr,
+            ", have so far loaded %d of %d (%f%%)",
             int(_loadedDeclCount),
             int(_decls.getCount()),
             (100 * float(_loadedDeclCount)) / float(_decls.getCount()));
