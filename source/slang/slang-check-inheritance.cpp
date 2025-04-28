@@ -157,6 +157,20 @@ InheritanceInfo SharedSemanticsContext::_calcInheritanceInfo(
     Type* selfType,
     InheritanceCircularityInfo* circularityInfo)
 {
+    if (auto matrixType = as<MatrixExpressionType>(selfType))
+    {
+        if (auto r = as<ConstantIntVal>(matrixType->getRowCount()))
+        {
+            if (auto c = as<ConstantIntVal>(matrixType->getColumnCount()))
+            {
+                if (r->getValue() == 4 && c->getValue() == 4)
+                {
+                    int f = 9;
+                }
+            }
+        }
+    }
+
     // This method is the main engine for computing linearized inheritance
     // lists for types and `extension` declarations.
     //
@@ -314,7 +328,7 @@ InheritanceInfo SharedSemanticsContext::_calcInheritanceInfo(
             //
             // For example, we might have an `extension` that applies
             // to `vector<float,N>` for any `N`, but the `selfType`
-            // that we are working with could be `<vector<int,2>` so
+            // that we are working with could be `vector<int,2>` so
             // that the extension doesn't match.
             //
             // In order to make sure that we don't enumerate members

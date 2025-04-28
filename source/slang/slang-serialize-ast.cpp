@@ -172,6 +172,16 @@ public:
         auto buckets = _membersChunk->findDataArray<DirectMemberDeclBucket>(
             SerialBinary::kHashTableBucketsFourCC);
         auto bucketCount = buckets.getCount();
+        if (!bucketCount)
+            return ArrayView<UInt32>();
+
+        if (keyName == "$init" && bucketCount == 2)
+        {
+            if (getDeclCount() == 3)
+            {
+                int f = 9;
+            }
+        }
 
         auto bucketIndex = keyNameHash % bucketCount;
         for (;;)
@@ -377,7 +387,7 @@ public:
         DirectMemberDeclBucket emptyBucket = {kNullNameID};
         auto buckets = List<DirectMemberDeclBucket>::makeRepeated(emptyBucket, bucketCount);
 
-        for (Index runIndex = 1; runIndex < runCount; ++runIndex)
+        for (Index runIndex = 0; runIndex < runCount; ++runIndex)
         {
             auto& run = runs[runIndex];
             auto hash = run.nameHash;
@@ -1242,6 +1252,39 @@ public:
         // they are public).
         //
         auto& directMemberDecls = value._get();
+
+        if (directMemberDecls.getCount() > 0)
+        {
+            if (auto extensionDecl = as<ExtensionDecl>(directMemberDecls[0]->parentDecl))
+            {
+                if (auto declRefType = as<DeclRefType>(extensionDecl->targetType))
+                {
+                    if (declRefType->getDeclRef().getName()->text == "matrix")
+                    {
+                        bool found = false;
+
+                        for (auto d : directMemberDecls)
+                        {
+                            auto ctor = as<ConstructorDecl>(d);
+                            if (!ctor)
+                                continue;
+
+                            if (ctor->getMembersOfType<ParamDecl>().getCount() == 16)
+                            {
+                                found = true;
+                                break;
+                            }
+                        }
+
+                        if (found)
+                        {
+                            int f = 9;
+                        }
+                    }
+                }
+            }
+        }
+
 
         DirectMemberDeclsWriter writer(encoder, &_stringTable);
         for (auto directMemberDecl : directMemberDecls)

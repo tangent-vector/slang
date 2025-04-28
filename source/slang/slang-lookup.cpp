@@ -773,6 +773,11 @@ static void _lookUpMembersInType(
         return;
     }
 
+    if (name && name->text == "$init" && as<MatrixExpressionType>(type))
+    {
+        int f = 9;
+    }
+
     _lookUpMembersInSuperTypeImpl(
         astBuilder,
         name,
