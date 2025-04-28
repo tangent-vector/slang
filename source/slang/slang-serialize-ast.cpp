@@ -153,6 +153,15 @@ public:
 
     ArrayView<UInt32> findDeclsByName(Name* keyName, StringTableReader* stringTable)
     {
+        // TODO(tfoley): It should probably be enforced that lookup never
+        // tries to use a null name, but that is indeed happening in some
+        // of our code. Rather than try to fix all instances of that issue
+        // throughout the codebase, it is simpler for this routine to just
+        // be defensive.
+        //
+        if (!keyName)
+            return ArrayView<UInt32>();
+
         return findDeclsByName(keyName->text.getUnownedSlice(), stringTable);
     }
 
