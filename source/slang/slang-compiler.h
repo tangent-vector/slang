@@ -1917,6 +1917,7 @@ public:
     Module* getModule() { return module; }
     ModuleDecl* getModuleDecl() { return module->getModuleDecl(); }
 
+    Linkage* getLinkage();
     Session* getSession();
     NamePool* getNamePool();
     SourceManager* getSourceManager();
@@ -2141,6 +2142,48 @@ enum ModuleBlobType
 class Linkage : public RefObject, public slang::ISession
 {
 public:
+    // Note(tfoley): This is all stuff that used to be in the `Session` (aka `ISlangGlobalSession`).
+    //
+    // It was moved here to facilitate on-demand loading.
+    //
+#if 0
+    Scope* baseLanguageScope = nullptr;
+#endif
+    Scope* coreLanguageScope = nullptr;
+    Scope* hlslLanguageScope = nullptr;
+    Scope* slangLanguageScope = nullptr;
+    Scope* glslLanguageScope = nullptr;
+
+    Scope* getLanguageScope(SourceLanguage sourceLanguage);
+
+#if 0
+    ModuleDecl* baseModuleDecl = nullptr;
+#endif
+    List<RefPtr<Module>> coreModules;
+
+    SlangResult _loadBuiltinModule(
+        slang::BuiltinModuleName moduleID,
+        ISlangBlob* moduleBinaryBlob,
+        Scope* scopeToLoadInto);
+
+    SlangResult _readBuiltinModule(
+        ISlangFileSystem* fileSystem,
+        Scope* scope,
+        String moduleName,
+        Module*& outModule);
+
+    Module* getBuiltinModule(slang::BuiltinModuleName builtinModuleName);
+
+    struct BuiltinModuleInfo
+    {
+        const char* name;
+        Scope* languageScope;
+    };
+
+    BuiltinModuleInfo getBuiltinModuleInfo(slang::BuiltinModuleName name);
+
+
+public:
     SLANG_REF_OBJECT_IUNKNOWN_ALL
 
     CompilerOptionSet m_optionSet;
@@ -2224,7 +2267,7 @@ public:
     SlangResult addPreprocessorDefine(char const* name, char const* value);
     SlangResult setMatrixLayoutMode(SlangMatrixLayoutMode mode);
     /// Create an initially-empty linkage
-    Linkage(Session* session, ASTBuilder* astBuilder, Linkage* builtinLinkage);
+    Linkage(Session* session, ASTBuilder* astBuilder);
 
     /// Dtor
     ~Linkage();
@@ -3578,15 +3621,7 @@ public:
     // thread we need to be sure any changes to m_epochId are visible to this thread.
     std::atomic<Index> m_epochId = 1;
 
-    Scope* baseLanguageScope = nullptr;
-    Scope* coreLanguageScope = nullptr;
-    Scope* hlslLanguageScope = nullptr;
-    Scope* slangLanguageScope = nullptr;
-    Scope* glslLanguageScope = nullptr;
     Name* glslModuleName = nullptr;
-
-    ModuleDecl* baseModuleDecl = nullptr;
-    List<RefPtr<Module>> coreModules;
 
     SourceManager builtinSourceManager;
 
@@ -3603,12 +3638,14 @@ public:
     Name* tryGetNameObj(String name) { return namePool.tryGetName(name); }
     //
 
+#if 0
     /// This AST Builder should only be used for creating AST nodes that are global across requests
     /// not doing so could lead to memory being consumed but not used.
     ASTBuilder* getGlobalASTBuilder() { return globalAstBuilder; }
     void finalizeSharedASTBuilder();
 
     RefPtr<ASTBuilder> globalAstBuilder;
+#endif
 
     // Generated code for core module, etc.
     String coreModulePath;
@@ -3653,20 +3690,29 @@ public:
         return m_languagePreludes[int(language)];
     }
 
+#if 0
     /// Get the built in linkage -> handy to get the core module from
     Linkage* getBuiltinLinkage() const { return m_builtinLinkage; }
-
-    Module* getBuiltinModule(slang::BuiltinModuleName builtinModuleName);
+#endif
 
     Name* getCompletionRequestTokenName() const { return m_completionTokenName; }
 
     void init();
 
-    void addBuiltinSource(
-        Scope* scope,
-        String const& path,
+    ComPtr<ISlangBlob> findBuiltinModule(
+        slang::BuiltinModuleName moduleID);
+
+    SlangResult _compileBuiltinModuleImpl(
+        slang::BuiltinModuleName moduleID,
         ISlangBlob* sourceBlob,
-        Module*& outModule);
+        ISlangBlob** outBinaryBlob);
+
+    SlangResult _writeBuiltinModuleBinaryBlob(
+        Module* module,
+        slang::BuiltinModuleName moduleID,
+        SlangArchiveType archiveType,
+        ISlangBlob** outBinaryBlob);
+
     ~Session();
 
     void addDownstreamCompileTime(double time) { m_downstreamCompileTime += time; }
@@ -3689,31 +3735,30 @@ public:
 
     int m_typeDictionarySize = 0;
 
+#if 0
     RefPtr<RefObject> m_typeCheckingCache;
     TypeCheckingCache* getTypeCheckingCache();
     std::mutex m_typeCheckingCacheMutex;
+#endif
 
 private:
-    struct BuiltinModuleInfo
-    {
-        const char* name;
-        Scope* languageScope;
-    };
-
-    BuiltinModuleInfo getBuiltinModuleInfo(slang::BuiltinModuleName name);
-
     void _initCodeGenTransitionMap();
 
-    SlangResult _readBuiltinModule(
-        ISlangFileSystem* fileSystem,
-        Scope* scope,
-        String moduleName,
-        Module*& outModule);
+    Dictionary<String, ComPtr<ISlangBlob>> _mapBuiltinModuleNameToBinaryBlob;
+
+    bool _isBuiltinModuleLoaded(
+        slang::BuiltinModuleName moduleID);
+
+    SlangResult _loadBuiltinModuleBlob(
+        slang::BuiltinModuleName moduleID,
+        ISlangBlob* moduleBinaryBlob);
 
     SlangResult _loadRequest(EndToEndCompileRequest* request, const void* data, size_t size);
 
+#if 0
     /// Linkage used for all built-in (core module) code.
     RefPtr<Linkage> m_builtinLinkage;
+#endif
 
     String
         m_downstreamCompilerPaths[int(PassThroughMode::CountOf)]; ///< Paths for each pass through

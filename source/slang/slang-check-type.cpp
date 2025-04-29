@@ -103,7 +103,7 @@ Type* SemanticsVisitor::getRemovedModifierType(ModifiedType* modifiedType, Modif
 
 Type* SemanticsVisitor::getConstantBufferType(Type* elementType, Type* layoutType)
 {
-    auto iBufferDataLayoutType = m_astBuilder->getSharedASTBuilder()->getIBufferDataLayoutType();
+    auto iBufferDataLayoutType = m_astBuilder->getIBufferDataLayoutType();
     auto witness = isSubtype(layoutType, iBufferDataLayoutType, IsSubTypeOptions());
     return m_astBuilder->getConstantBufferType(elementType, layoutType, witness);
 }

@@ -724,11 +724,13 @@ Type* DeclRefType::create(ASTBuilder* astBuilder, DeclRef<Decl> declRef)
 {
     if (declRef.getDecl()->findModifier<BuiltinTypeModifier>())
     {
+#if 0
         // Always create builtin types in global AST builder.
         if (astBuilder->getSharedASTBuilder()->getInnerASTBuilder() != astBuilder)
             return DeclRefType::create(
                 astBuilder->getSharedASTBuilder()->getInnerASTBuilder(),
                 declRef);
+#endif
 
         declRef = createDefaultSubstitutionsIfNeeded(astBuilder, nullptr, declRef);
         auto type = astBuilder->getOrCreate<BasicExpressionType>(declRef.declRefBase);

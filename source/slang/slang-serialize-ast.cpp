@@ -1521,7 +1521,7 @@ public:
                 Decl* decl = nullptr;
                 decode(decl, decoder);
 
-                registerBuiltinDecl(_linkage->getSessionImpl(), decl);
+                registerBuiltinDecl(_linkage, decl);
             }
         }
 
@@ -2531,6 +2531,11 @@ Decl* ContainerDeclMembers::getDirectMemberDeclByIndexInBinaryModule(Index index
 
 Decl* ContainerDeclMembers::findDirectMemberDeclByNameInBinaryModule(Name* name)
 {
+    if (name && name->text == "__requireTargetExtension")
+    {
+        name = name;
+    }
+
     auto context = as<ASTDecodingContext>(onDemandDecodeContext);
     return context->findDirectMemberDeclByName(name, onDemandDecodeData);
 }

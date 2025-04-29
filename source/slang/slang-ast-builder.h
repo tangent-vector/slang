@@ -13,118 +13,6 @@
 namespace Slang
 {
 
-class SharedASTBuilder : public RefObject
-{
-    friend class ASTBuilder;
-
-public:
-    void registerBuiltinDecl(Decl* decl, BuiltinTypeModifier* modifier);
-    void registerBuiltinRequirementDecl(Decl* decl, BuiltinRequirementModifier* modifier);
-    void registerMagicDecl(Decl* decl, MagicTypeModifier* modifier);
-
-    /// Get the string type
-    Type* getStringType();
-
-    /// Get the native string type
-    Type* getNativeStringType();
-
-    /// Get the enum type type
-    Type* getEnumTypeType();
-    /// Get the __Dynamic type
-    Type* getDynamicType();
-    /// Get the NullPtr type
-    Type* getNullPtrType();
-    /// Get the NullPtr type
-    Type* getNoneType();
-    /// Get the `IDifferentiable` type
-    Type* getDiffInterfaceType();
-
-    Type* getIBufferDataLayoutType();
-
-    Type* getErrorType();
-    Type* getBottomType();
-    Type* getInitializerListType();
-    Type* getOverloadedType();
-
-    SyntaxClass<NodeBase> findSyntaxClass(Name* name);
-
-    SyntaxClass<NodeBase> findSyntaxClass(const UnownedStringSlice& slice);
-
-    // Look up a magic declaration by its name
-    Decl* findMagicDecl(String const& name);
-
-    Decl* tryFindMagicDecl(String const& name);
-
-    Decl* findBuiltinRequirementDecl(BuiltinRequirementKind kind)
-    {
-        return m_builtinRequirementDecls.getValue(kind);
-    }
-
-    /// A name pool that can be used for lookup for findClassInfo etc. It is the same pool as the
-    /// Session.
-    NamePool* getNamePool() { return m_namePool; }
-
-    /// Must be called before used
-    void init(Session* session);
-
-    SharedASTBuilder();
-
-    ~SharedASTBuilder();
-
-    ASTBuilder* getInnerASTBuilder() { return m_astBuilder; }
-
-    Name* getThisTypeName()
-    {
-        if (!m_thisTypeName)
-        {
-            m_thisTypeName = getNamePool()->getName("This");
-        }
-        return m_thisTypeName;
-    }
-
-protected:
-    // State shared between ASTBuilders
-
-    Type* m_errorType = nullptr;
-    Type* m_bottomType = nullptr;
-    Type* m_initializerListType = nullptr;
-    Type* m_overloadedType = nullptr;
-    Type* m_IBufferDataLayoutType = nullptr;
-
-    // The following types are created lazily, such that part of their definition
-    // can be in the core module.
-    //
-    // Note(tfoley): These logically belong to `Type`,
-    // but order-of-declaration stuff makes that tricky
-    //
-    // TODO(tfoley): These should really belong to the compilation context!
-    //
-    Type* m_stringType = nullptr;
-    Type* m_nativeStringType = nullptr;
-    Type* m_enumTypeType = nullptr;
-    Type* m_dynamicType = nullptr;
-    Type* m_nullPtrType = nullptr;
-    Type* m_noneType = nullptr;
-    Type* m_diffInterfaceType = nullptr;
-    Type* m_builtinTypes[Index(BaseType::CountOf)];
-
-    Dictionary<String, Decl*> m_magicDecls;
-    Dictionary<BuiltinRequirementKind, Decl*> m_builtinRequirementDecls;
-
-    Dictionary<UnownedStringSlice, SyntaxClass<NodeBase>> m_sliceToTypeMap;
-    Dictionary<Name*, SyntaxClass<NodeBase>> m_nameToTypeMap;
-
-    NamePool* m_namePool = nullptr;
-
-    Name* m_thisTypeName = nullptr;
-
-    // This is a private builder used for these shared types
-    ASTBuilder* m_astBuilder = nullptr;
-    Session* m_session = nullptr;
-
-    Index m_id = 1;
-};
-
 struct ValKey
 {
     Val* val;
@@ -187,9 +75,122 @@ struct ValKeyEqual
     bool operator()(const Slang::ValNodeDesc& a, const Slang::ValKey& b) const { return b == a; }
 };
 
+class SharedASTBuilder : public RefObject
+{
+    friend class ASTBuilder;
+
+public:
+
+    SyntaxClass<NodeBase> findSyntaxClass(Name* name);
+
+    SyntaxClass<NodeBase> findSyntaxClass(const UnownedStringSlice& slice);
+
+    /// A name pool that can be used for lookup for findClassInfo etc. It is the same pool as the
+    /// Session.
+    NamePool* getNamePool() { return m_namePool; }
+
+    /// Must be called before used
+    void init(Session* session);
+
+    SharedASTBuilder();
+
+    ~SharedASTBuilder();
+
+    Name* getThisTypeName()
+    {
+        if (!m_thisTypeName)
+        {
+            m_thisTypeName = getNamePool()->getName("This");
+        }
+        return m_thisTypeName;
+    }
+
+protected:
+    // State shared between ASTBuilders
+
+    Dictionary<UnownedStringSlice, SyntaxClass<NodeBase>> m_sliceToTypeMap;
+    Dictionary<Name*, SyntaxClass<NodeBase>> m_nameToTypeMap;
+
+    NamePool* m_namePool = nullptr;
+
+    Name* m_thisTypeName = nullptr;
+
+    Session* m_session = nullptr;
+
+    Index m_id = 1;
+};
+
 class ASTBuilder : public RefObject
 {
     friend class SharedASTBuilder;
+
+public:
+
+    void registerBuiltinDecl(Decl* decl, BuiltinTypeModifier* modifier);
+    void registerBuiltinRequirementDecl(Decl* decl, BuiltinRequirementModifier* modifier);
+    void registerMagicDecl(Decl* decl, MagicTypeModifier* modifier);
+
+    /// Get the string type
+    Type* getStringType();
+
+    /// Get the native string type
+    Type* getNativeStringType();
+
+    /// Get the enum type type
+    Type* getEnumTypeType();
+    /// Get the __Dynamic type
+    Type* getDynamicType();
+    /// Get the NullPtr type
+    Type* getNullPtrType();
+    /// Get the NullPtr type
+    Type* getNoneType();
+    /// Get the `IDifferentiable` type
+    Type* getDiffInterfaceType();
+
+    Type* getIBufferDataLayoutType();
+
+    Type* getErrorType();
+    Type* getBottomType();
+    Type* getInitializerListType();
+    Type* getOverloadedType();
+
+    // Look up a magic declaration by its name
+    Decl* findMagicDecl(String const& name);
+
+    Decl* tryFindMagicDecl(String const& name);
+
+    Decl* findBuiltinRequirementDecl(BuiltinRequirementKind kind)
+    {
+        return m_builtinRequirementDecls.getValue(kind);
+    }
+
+protected:
+
+    Type* m_errorType = nullptr;
+    Type* m_bottomType = nullptr;
+    Type* m_initializerListType = nullptr;
+    Type* m_overloadedType = nullptr;
+    Type* m_IBufferDataLayoutType = nullptr;
+
+    // The following types are created lazily, such that part of their definition
+    // can be in the core module.
+    //
+    // Note(tfoley): These logically belong to `Type`,
+    // but order-of-declaration stuff makes that tricky
+    //
+    // TODO(tfoley): These should really belong to the compilation context!
+    //
+    Type* m_stringType = nullptr;
+    Type* m_nativeStringType = nullptr;
+    Type* m_enumTypeType = nullptr;
+    Type* m_dynamicType = nullptr;
+    Type* m_nullPtrType = nullptr;
+    Type* m_noneType = nullptr;
+    Type* m_diffInterfaceType = nullptr;
+    Type* m_builtinTypes[Index(BaseType::CountOf)];
+
+    Dictionary<String, Decl*> m_magicDecls;
+    Dictionary<BuiltinRequirementKind, Decl*> m_builtinRequirementDecls;
 
 public:
     Val* _getOrCreateImpl(ValNodeDesc&& desc)
@@ -433,53 +434,53 @@ public:
     /// Get the built in types
     SLANG_FORCE_INLINE Type* getBoolType()
     {
-        return m_sharedASTBuilder->m_builtinTypes[Index(BaseType::Bool)];
+        return m_builtinTypes[Index(BaseType::Bool)];
     }
     SLANG_FORCE_INLINE Type* getHalfType()
     {
-        return m_sharedASTBuilder->m_builtinTypes[Index(BaseType::Half)];
+        return m_builtinTypes[Index(BaseType::Half)];
     }
     SLANG_FORCE_INLINE Type* getFloatType()
     {
-        return m_sharedASTBuilder->m_builtinTypes[Index(BaseType::Float)];
+        return m_builtinTypes[Index(BaseType::Float)];
     }
     SLANG_FORCE_INLINE Type* getDoubleType()
     {
-        return m_sharedASTBuilder->m_builtinTypes[Index(BaseType::Double)];
+        return m_builtinTypes[Index(BaseType::Double)];
     }
     SLANG_FORCE_INLINE Type* getIntType()
     {
-        return m_sharedASTBuilder->m_builtinTypes[Index(BaseType::Int)];
+        return m_builtinTypes[Index(BaseType::Int)];
     }
     SLANG_FORCE_INLINE Type* getInt64Type()
     {
-        return m_sharedASTBuilder->m_builtinTypes[Index(BaseType::Int64)];
+        return m_builtinTypes[Index(BaseType::Int64)];
     }
     SLANG_FORCE_INLINE Type* getIntPtrType()
     {
-        return m_sharedASTBuilder->m_builtinTypes[Index(BaseType::IntPtr)];
+        return m_builtinTypes[Index(BaseType::IntPtr)];
     }
     SLANG_FORCE_INLINE Type* getUIntType()
     {
-        return m_sharedASTBuilder->m_builtinTypes[Index(BaseType::UInt)];
+        return m_builtinTypes[Index(BaseType::UInt)];
     }
     SLANG_FORCE_INLINE Type* getUInt64Type()
     {
-        return m_sharedASTBuilder->m_builtinTypes[Index(BaseType::UInt64)];
+        return m_builtinTypes[Index(BaseType::UInt64)];
     }
     SLANG_FORCE_INLINE Type* getUIntPtrType()
     {
-        return m_sharedASTBuilder->m_builtinTypes[Index(BaseType::UIntPtr)];
+        return m_builtinTypes[Index(BaseType::UIntPtr)];
     }
     SLANG_FORCE_INLINE Type* getVoidType()
     {
-        return m_sharedASTBuilder->m_builtinTypes[Index(BaseType::Void)];
+        return m_builtinTypes[Index(BaseType::Void)];
     }
 
     /// Get a builtin type by the BaseType
     SLANG_FORCE_INLINE Type* getBuiltinType(BaseType flavor)
     {
-        return m_sharedASTBuilder->m_builtinTypes[Index(flavor)];
+        return m_builtinTypes[Index(flavor)];
     }
 
     Type* getSpecializedBuiltinType(Type* typeParam, const char* magicTypeName);
@@ -490,15 +491,6 @@ public:
     Type* getStd430LayoutType();
     Type* getScalarLayoutType();
 
-    Type* getInitializerListType() { return m_sharedASTBuilder->getInitializerListType(); }
-    Type* getOverloadedType() { return m_sharedASTBuilder->getOverloadedType(); }
-    Type* getErrorType() { return m_sharedASTBuilder->getErrorType(); }
-    Type* getBottomType() { return m_sharedASTBuilder->getBottomType(); }
-    Type* getStringType() { return m_sharedASTBuilder->getStringType(); }
-    Type* getNullPtrType() { return m_sharedASTBuilder->getNullPtrType(); }
-    Type* getNoneType() { return m_sharedASTBuilder->getNoneType(); }
-    Type* getEnumTypeType() { return m_sharedASTBuilder->getEnumTypeType(); }
-    Type* getDiffInterfaceType() { return m_sharedASTBuilder->getDiffInterfaceType(); }
     // Construct the type `Ptr<valueType>`, where `Ptr`
     // is looked up as a builtin type.
     PtrType* getPtrType(Type* valueType, AddressSpace addrSpace);

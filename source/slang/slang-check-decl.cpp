@@ -3104,7 +3104,7 @@ struct SemanticsDeclDifferentialConformanceVisitor
             m_astBuilder->getDifferentiableInterfaceDecl().getDecl())
             return;
         RequirementWitness witnessValue;
-        auto requirementDecl = m_astBuilder->getSharedASTBuilder()->findBuiltinRequirementDecl(
+        auto requirementDecl = m_astBuilder->findBuiltinRequirementDecl(
             BuiltinRequirementKind::DifferentialType);
         if (!inheritanceDecl->witnessTable->getRequirementDictionary().tryGetValue(
                 requirementDecl,
@@ -3211,21 +3211,21 @@ bool isBuiltinDeclThatNeedsRegistration(Decl* decl)
     return false;
 }
 
-void registerBuiltinDecl(Session* session, Decl* decl)
+void registerBuiltinDecl(Linkage* linkage, Decl* decl)
 {
-    SharedASTBuilder* sharedASTBuilder = session->m_sharedASTBuilder;
+    ASTBuilder* astBuilder = linkage->getASTBuilder();
 
     if (auto builtinMod = decl->findModifier<BuiltinTypeModifier>())
     {
-        sharedASTBuilder->registerBuiltinDecl(decl, builtinMod);
+        astBuilder->registerBuiltinDecl(decl, builtinMod);
     }
     if (auto magicMod = decl->findModifier<MagicTypeModifier>())
     {
-        sharedASTBuilder->registerMagicDecl(decl, magicMod);
+        astBuilder->registerMagicDecl(decl, magicMod);
     }
     if (auto builtinRequirement = decl->findModifier<BuiltinRequirementModifier>())
     {
-        sharedASTBuilder->registerBuiltinRequirementDecl(decl, builtinRequirement);
+        astBuilder->registerBuiltinRequirementDecl(decl, builtinRequirement);
     }
 }
 
@@ -3233,9 +3233,9 @@ void registerBuiltinDecl(Session* session, Decl* decl)
 ///
 /// This function should only be needed for declarations in the core module.
 ///
-static void _registerBuiltinDeclsRec(Session* session, Decl* decl)
+static void _registerBuiltinDeclsRec(Linkage* linkage, Decl* decl)
 {
-    registerBuiltinDecl(session, decl);
+    registerBuiltinDecl(linkage, decl);
 
     if (auto containerDecl = as<ContainerDecl>(decl))
     {
@@ -3244,21 +3244,19 @@ static void _registerBuiltinDeclsRec(Session* session, Decl* decl)
             if (as<ScopeDecl>(childDecl))
                 continue;
 
-            _registerBuiltinDeclsRec(session, childDecl);
+            _registerBuiltinDeclsRec(linkage, childDecl);
         }
     }
     if (auto genericDecl = as<GenericDecl>(decl))
     {
-        _registerBuiltinDeclsRec(session, genericDecl->inner);
+        _registerBuiltinDeclsRec(linkage, genericDecl->inner);
     }
 }
 
-#if 0
-void registerBuiltinDecls(Session* session, Decl* decl)
+void registerBuiltinDecls(Linkage* linkage, Decl* decl)
 {
-    _registerBuiltinDeclsRec(session, decl);
+    _registerBuiltinDeclsRec(linkage, decl);
 }
-#endif
 
 Type* unwrapArrayType(Type* type)
 {
@@ -3316,7 +3314,7 @@ void SemanticsDeclVisitorBase::checkModule(ModuleDecl* moduleDecl)
     //
     if (isFromCoreModule(moduleDecl))
     {
-        _registerBuiltinDeclsRec(getSession(), moduleDecl);
+        _registerBuiltinDeclsRec(getLinkage(), moduleDecl);
     }
 
     if (moduleDecl->getDirectMemberDeclCount() > 0)
@@ -10898,7 +10896,7 @@ List<ExtensionDecl*> const& SharedSemanticsContext::getCandidateExtensionsForTyp
         // as parts of our core module are always visible,
         // even if they are not explicit `import`ed into user code.
         //
-        for (auto module : getSession()->coreModules)
+        for (auto module : getLinkage()->coreModules)
         {
             _addCandidateExtensionsFromModule(module->getModuleDecl());
         }
@@ -11154,7 +11152,7 @@ List<RefPtr<DeclAssociation>> const& SharedSemanticsContext::getAssociatedDeclsF
     {
         m_associatedDeclListsBuilt = true;
 
-        for (auto module : getSession()->coreModules)
+        for (auto module : getLinkage()->coreModules)
         {
             _addDeclAssociationsFromModule(module->getModuleDecl());
         }

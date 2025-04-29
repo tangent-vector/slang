@@ -1477,7 +1477,7 @@ Scope* ComponentType::_getOrCreateScopeForLegacyLookup(ASTBuilder* astBuilder)
         return m_lookupScope;
 
     Scope* scope = astBuilder->create<Scope>();
-    scope->parent = getLinkage()->getSessionImpl()->slangLanguageScope;
+    scope->parent = getLinkage()->slangLanguageScope;
     //
     // Next, the scope needs to include all of the
     // modules in the program as peers, as if they

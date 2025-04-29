@@ -151,8 +151,10 @@ static const BaseTypeConversionInfo kBaseTypes[] = {
      kBaseTypeConversionRank_IntPtr},
 };
 
+#if 0
 void Session::finalizeSharedASTBuilder()
 {
+#if 0
     // Force creation of all builtin types so we can make sure
     // they are created by the builtin AST builder instead of
     // some user linkage's ast builder. This avoid the problem
@@ -173,7 +175,9 @@ void Session::finalizeSharedASTBuilder()
     globalAstBuilder->getSharedASTBuilder()->getNativeStringType();
     for (auto& baseType : kBaseTypes)
         globalAstBuilder->getBuiltinType(baseType.tag);
+#endif
 }
+#endif
 
 // Given two base types, we need to be able to compute the cost of converting between them.
 ConversionCost getBaseTypeConversionCost(

@@ -32,7 +32,7 @@ SlangResult loadArchiveFileSystem(
     }
     else if (RiffFileSystem::isArchive(data, dataSizeInBytes))
     {
-        // It's riff contained (Slang specific)
+        // It's riff container (Slang specific)
         fileSystem = new RiffFileSystem(nullptr);
     }
     else

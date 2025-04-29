@@ -2050,7 +2050,7 @@ LinkedIR linkIR(CodeGenContext* codeGenContext)
     //
     auto globalSession = static_cast<Session*>(linkage->getGlobalSession());
     List<IRModule*> builtinModules;
-    for (auto& m : globalSession->coreModules)
+    for (auto& m : linkage->coreModules)
         builtinModules.add(m->getIRModule());
 
     // Link modules in the program.

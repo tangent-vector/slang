@@ -19,16 +19,6 @@ void SharedASTBuilder::init(Session* session)
     // Save the associated session
     m_session = session;
 
-    // We just want as a place to store allocations of shared types
-    {
-        RefPtr<ASTBuilder> astBuilder(new ASTBuilder);
-        astBuilder->m_sharedASTBuilder = this;
-        m_astBuilder = astBuilder.detach();
-    }
-
-    // Clear the built in types
-    memset(m_builtinTypes, 0, sizeof(m_builtinTypes));
-
     // We can just iterate over the class pointers.
     // NOTE! That this adds the names of the abstract classes too(!)
     for (Index i = 0; i < Index(ASTNodeType::CountOf); ++i)
@@ -63,140 +53,130 @@ SyntaxClass<NodeBase> SharedASTBuilder::findSyntaxClass(Name* name)
     return getSyntaxClass<NodeBase>();
 }
 
-Type* SharedASTBuilder::getStringType()
+Type* ASTBuilder::getStringType()
 {
     if (!m_stringType)
     {
         auto stringTypeDecl = findMagicDecl("StringType");
-        m_stringType = DeclRefType::create(m_astBuilder, makeDeclRef<Decl>(stringTypeDecl));
+        m_stringType = DeclRefType::create(this, makeDeclRef<Decl>(stringTypeDecl));
     }
     return m_stringType;
 }
 
-Type* SharedASTBuilder::getNativeStringType()
+Type* ASTBuilder::getNativeStringType()
 {
     if (!m_nativeStringType)
     {
         auto nativeStringTypeDecl = findMagicDecl("NativeStringType");
         m_nativeStringType =
-            DeclRefType::create(m_astBuilder, makeDeclRef<Decl>(nativeStringTypeDecl));
+            DeclRefType::create(this, makeDeclRef<Decl>(nativeStringTypeDecl));
     }
     return m_nativeStringType;
 }
 
-Type* SharedASTBuilder::getEnumTypeType()
+Type* ASTBuilder::getEnumTypeType()
 {
     if (!m_enumTypeType)
     {
         auto enumTypeTypeDecl = findMagicDecl("EnumTypeType");
-        m_enumTypeType = DeclRefType::create(m_astBuilder, makeDeclRef<Decl>(enumTypeTypeDecl));
+        m_enumTypeType = DeclRefType::create(this, makeDeclRef<Decl>(enumTypeTypeDecl));
     }
     return m_enumTypeType;
 }
 
-Type* SharedASTBuilder::getDynamicType()
+Type* ASTBuilder::getDynamicType()
 {
     if (!m_dynamicType)
     {
         auto dynamicTypeDecl = findMagicDecl("DynamicType");
-        m_dynamicType = DeclRefType::create(m_astBuilder, makeDeclRef<Decl>(dynamicTypeDecl));
+        m_dynamicType = DeclRefType::create(this, makeDeclRef<Decl>(dynamicTypeDecl));
     }
     return m_dynamicType;
 }
 
-Type* SharedASTBuilder::getNullPtrType()
+Type* ASTBuilder::getNullPtrType()
 {
     if (!m_nullPtrType)
     {
         auto nullPtrTypeDecl = findMagicDecl("NullPtrType");
-        m_nullPtrType = DeclRefType::create(m_astBuilder, makeDeclRef<Decl>(nullPtrTypeDecl));
+        m_nullPtrType = DeclRefType::create(this, makeDeclRef<Decl>(nullPtrTypeDecl));
     }
     return m_nullPtrType;
 }
 
-Type* SharedASTBuilder::getNoneType()
+Type* ASTBuilder::getNoneType()
 {
     if (!m_noneType)
     {
         auto noneTypeDecl = findMagicDecl("NoneType");
-        m_noneType = DeclRefType::create(m_astBuilder, makeDeclRef<Decl>(noneTypeDecl));
+        m_noneType = DeclRefType::create(this, makeDeclRef<Decl>(noneTypeDecl));
     }
     return m_noneType;
 }
 
-Type* SharedASTBuilder::getDiffInterfaceType()
+Type* ASTBuilder::getDiffInterfaceType()
 {
     if (!m_diffInterfaceType)
     {
         auto decl = findMagicDecl("DifferentiableType");
-        m_diffInterfaceType = DeclRefType::create(m_astBuilder, makeDeclRef<Decl>(decl));
+        m_diffInterfaceType = DeclRefType::create(this, makeDeclRef<Decl>(decl));
     }
     return m_diffInterfaceType;
 }
 
-Type* SharedASTBuilder::getIBufferDataLayoutType()
+Type* ASTBuilder::getIBufferDataLayoutType()
 {
     if (!m_IBufferDataLayoutType)
     {
         auto decl = findMagicDecl("IBufferDataLayoutType");
-        m_IBufferDataLayoutType = DeclRefType::create(m_astBuilder, makeDeclRef<Decl>(decl));
+        m_IBufferDataLayoutType = DeclRefType::create(this, makeDeclRef<Decl>(decl));
     }
     return m_IBufferDataLayoutType;
 }
 
-Type* SharedASTBuilder::getErrorType()
+Type* ASTBuilder::getErrorType()
 {
     if (!m_errorType)
-        m_errorType = m_astBuilder->getOrCreate<ErrorType>();
+        m_errorType = getOrCreate<ErrorType>();
     return m_errorType;
 }
-Type* SharedASTBuilder::getBottomType()
+Type* ASTBuilder::getBottomType()
 {
     if (!m_bottomType)
-        m_bottomType = m_astBuilder->getOrCreate<BottomType>();
+        m_bottomType = getOrCreate<BottomType>();
     return m_bottomType;
 }
-Type* SharedASTBuilder::getInitializerListType()
+Type* ASTBuilder::getInitializerListType()
 {
     if (!m_initializerListType)
-        m_initializerListType = m_astBuilder->getOrCreate<InitializerListType>();
+        m_initializerListType = getOrCreate<InitializerListType>();
     return m_initializerListType;
 }
-Type* SharedASTBuilder::getOverloadedType()
+Type* ASTBuilder::getOverloadedType()
 {
     if (!m_overloadedType)
-        m_overloadedType = m_astBuilder->getOrCreate<OverloadGroupType>();
+        m_overloadedType = getOrCreate<OverloadGroupType>();
     return m_overloadedType;
 }
 
 SharedASTBuilder::~SharedASTBuilder()
 {
-    // Release built in types..
-    for (Index i = 0; i < SLANG_COUNT_OF(m_builtinTypes); ++i)
-    {
-        m_builtinTypes[i] = nullptr;
-    }
-
-    if (m_astBuilder)
-    {
-        m_astBuilder->releaseReference();
-    }
 }
 
-void SharedASTBuilder::registerBuiltinDecl(Decl* decl, BuiltinTypeModifier* modifier)
+void ASTBuilder::registerBuiltinDecl(Decl* decl, BuiltinTypeModifier* modifier)
 {
-    auto type = DeclRefType::create(m_astBuilder, makeDeclRef<Decl>(decl));
+    auto type = DeclRefType::create(this, makeDeclRef<Decl>(decl));
     m_builtinTypes[Index(modifier->tag)] = type;
 }
 
-void SharedASTBuilder::registerBuiltinRequirementDecl(
+void ASTBuilder::registerBuiltinRequirementDecl(
     Decl* decl,
     BuiltinRequirementModifier* modifier)
 {
     m_builtinRequirementDecls[modifier->kind] = decl;
 }
 
-void SharedASTBuilder::registerMagicDecl(Decl* decl, MagicTypeModifier* modifier)
+void ASTBuilder::registerMagicDecl(Decl* decl, MagicTypeModifier* modifier)
 {
     // In some cases the modifier will have been applied to the
     // "inner" declaration of a `GenericDecl`, but what we
@@ -209,12 +189,12 @@ void SharedASTBuilder::registerMagicDecl(Decl* decl, MagicTypeModifier* modifier
     m_magicDecls[modifier->magicName] = declToRegister;
 }
 
-Decl* SharedASTBuilder::findMagicDecl(const String& name)
+Decl* ASTBuilder::findMagicDecl(const String& name)
 {
     return m_magicDecls.getValue(name);
 }
 
-Decl* SharedASTBuilder::tryFindMagicDecl(const String& name)
+Decl* ASTBuilder::tryFindMagicDecl(const String& name)
 {
     auto d = m_magicDecls.tryGetValue(name);
     return d ? *d : nullptr;
@@ -229,15 +209,9 @@ ASTBuilder::ASTBuilder(SharedASTBuilder* sharedASTBuilder, const String& name)
     , m_arena(2097152)
 {
     SLANG_ASSERT(sharedASTBuilder);
-    // Copy Val deduplication map over so we don't create duplicate Vals that are already
-    // existent in the core module.
-    m_cachedNodes = sharedASTBuilder->getInnerASTBuilder()->m_cachedNodes;
-}
 
-ASTBuilder::ASTBuilder()
-    : m_sharedASTBuilder(nullptr), m_id(-1), m_arena(2097152)
-{
-    m_name = "SharedASTBuilder::m_astBuilder";
+    // Clear the built in types
+    memset(m_builtinTypes, 0, sizeof(m_builtinTypes));
 }
 
 ASTBuilder::~ASTBuilder()
@@ -246,6 +220,11 @@ ASTBuilder::~ASTBuilder()
     {
         auto nodeClass = node->getClass();
         nodeClass.destructInstance(node);
+    }
+    // Release built in types..
+    for (Index i = 0; i < SLANG_COUNT_OF(m_builtinTypes); ++i)
+    {
+        m_builtinTypes[i] = nullptr;
     }
     incrementEpoch();
 }
@@ -461,7 +440,7 @@ DeclRef<InterfaceDecl> ASTBuilder::getDifferentiableRefInterfaceDecl()
 
 bool ASTBuilder::isDifferentiableInterfaceAvailable()
 {
-    return (m_sharedASTBuilder->tryFindMagicDecl("DifferentiableType") != nullptr);
+    return (tryFindMagicDecl("DifferentiableType") != nullptr);
 }
 
 DeclRef<InterfaceDecl> ASTBuilder::getDefaultInitializableTypeInterfaceDecl()
@@ -473,7 +452,7 @@ DeclRef<InterfaceDecl> ASTBuilder::getDefaultInitializableTypeInterfaceDecl()
 Type* ASTBuilder::getDefaultInitializableType()
 {
     return DeclRefType::create(
-        m_sharedASTBuilder->m_astBuilder,
+        this,
         getDefaultInitializableTypeInterfaceDecl());
 }
 
@@ -508,7 +487,7 @@ Type* ASTBuilder::getDifferentiableRefInterfaceType()
 
 DeclRef<Decl> ASTBuilder::getBuiltinDeclRef(const char* builtinMagicTypeName, Val* genericArg)
 {
-    auto decl = m_sharedASTBuilder->findMagicDecl(builtinMagicTypeName);
+    auto decl = findMagicDecl(builtinMagicTypeName);
     if (auto genericDecl = as<GenericDecl>(decl))
     {
         auto declRef =
@@ -526,7 +505,7 @@ DeclRef<Decl> ASTBuilder::getBuiltinDeclRef(
     const char* builtinMagicTypeName,
     ArrayView<Val*> genericArgs)
 {
-    auto decl = m_sharedASTBuilder->findMagicDecl(builtinMagicTypeName);
+    auto decl = findMagicDecl(builtinMagicTypeName);
     if (auto genericDecl = as<GenericDecl>(decl))
     {
         auto declRef = getGenericAppDeclRef(makeDeclRef(genericDecl), genericArgs);

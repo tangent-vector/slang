@@ -180,13 +180,16 @@ void Session::init()
     m_sharedASTBuilder = new SharedASTBuilder;
     m_sharedASTBuilder->init(this);
 
+#if 0
     // And the global ASTBuilder
     auto builtinAstBuilder = m_sharedASTBuilder->getInnerASTBuilder();
     globalAstBuilder = builtinAstBuilder;
+#endif
 
     // Make sure our source manager is initialized
     builtinSourceManager.initialize(nullptr, nullptr);
 
+#if 0
     // Built in linkage uses the built in builder
     m_builtinLinkage = new Linkage(this, builtinAstBuilder, nullptr);
     m_builtinLinkage->m_optionSet.set(CompilerOptionName::DebugInformation, DebugInfoLevel::None);
@@ -200,29 +203,7 @@ void Session::init()
     // doesn't keep the parent session alive.
     //
     m_builtinLinkage->_stopRetainingParentSession();
-
-    // Create scopes for various language builtins.
-    //
-    // TODO: load these on-demand to avoid parsing
-    // the core module code for languages the user won't use.
-
-    baseLanguageScope = builtinAstBuilder->create<Scope>();
-
-    // Will stay in scope as long as ASTBuilder
-    baseModuleDecl =
-        populateBaseLanguageModule(m_builtinLinkage->getASTBuilder(), baseLanguageScope);
-
-    coreLanguageScope = builtinAstBuilder->create<Scope>();
-    coreLanguageScope->nextSibling = baseLanguageScope;
-
-    hlslLanguageScope = builtinAstBuilder->create<Scope>();
-    hlslLanguageScope->nextSibling = coreLanguageScope;
-
-    slangLanguageScope = builtinAstBuilder->create<Scope>();
-    slangLanguageScope->nextSibling = hlslLanguageScope;
-
-    glslLanguageScope = builtinAstBuilder->create<Scope>();
-    glslLanguageScope->nextSibling = slangLanguageScope;
+#endif
 
     glslModuleName = getNameObj("glsl");
 
@@ -245,13 +226,12 @@ void Session::init()
         spirvCoreGrammarInfo = SPIRVCoreGrammarInfo::getEmbeddedVersion();
 }
 
-Module* Session::getBuiltinModule(slang::BuiltinModuleName name)
+Module* Linkage::getBuiltinModule(slang::BuiltinModuleName name)
 {
     auto info = getBuiltinModuleInfo(name);
-    auto builtinLinkage = getBuiltinLinkage();
-    auto moduleNameObj = builtinLinkage->getNamePool()->getName(info.name);
+    auto moduleNameObj = getSessionImpl()->getNamePool()->getName(info.name);
     RefPtr<Module> module;
-    if (builtinLinkage->mapNameToLoadedModules.tryGetValue(moduleNameObj, module))
+    if (mapNameToLoadedModules.tryGetValue(moduleNameObj, module))
         return module.get();
     return nullptr;
 }
@@ -319,6 +299,9 @@ void Session::_initCodeGenTransitionMap()
 
 void Session::addBuiltins(char const* sourcePath, char const* source)
 {
+#if 1
+    SLANG_UNEXPECTED("does anybody use this?");
+#else
     auto sourceBlob = StringBlob::moveCreate(String(source));
 
     // TODO(tfoley): Add ability to directly new builtins to the appropriate scope
@@ -326,6 +309,7 @@ void Session::addBuiltins(char const* sourcePath, char const* source)
     addBuiltinSource(coreLanguageScope, sourcePath, sourceBlob, module);
     if (module)
         coreModules.add(module);
+#endif
 }
 
 void Session::setSharedLibraryLoader(ISlangSharedLibraryLoader* loader)
@@ -359,6 +343,9 @@ SlangResult Session::checkPassThroughSupport(SlangPassThrough inPassThrough)
 
 void Session::writeCoreModuleDoc(String config)
 {
+#if 1
+    SLANG_UNEXPECTED("port this");
+#else
     ASTBuilder* astBuilder = getBuiltinLinkage()->getASTBuilder();
     SourceManager* sourceManager = getBuiltinSourceManager();
 
@@ -385,6 +372,7 @@ void Session::writeCoreModuleDoc(String config)
         // Write the diagnostic blob to stdout.
         fprintf(stderr, "%s", (const char*)diagnosticBlob->getBufferPointer());
     }
+#endif
 }
 
 const char* getBuiltinModuleNameStr(slang::BuiltinModuleName name)
@@ -404,14 +392,16 @@ const char* getBuiltinModuleNameStr(slang::BuiltinModuleName name)
     return result;
 }
 
+#if 0
 TypeCheckingCache* Session::getTypeCheckingCache()
 {
     return static_cast<TypeCheckingCache*>(m_typeCheckingCache.get());
 }
+#endif
 
-Session::BuiltinModuleInfo Session::getBuiltinModuleInfo(slang::BuiltinModuleName name)
+Linkage::BuiltinModuleInfo Linkage::getBuiltinModuleInfo(slang::BuiltinModuleName name)
 {
-    Session::BuiltinModuleInfo result;
+    Linkage::BuiltinModuleInfo result;
 
     result.name = getBuiltinModuleNameStr(name);
 
@@ -436,14 +426,12 @@ SlangResult Session::compileCoreModule(slang::CompileCoreModuleFlags compileFlag
 }
 
 SlangResult Session::compileBuiltinModule(
-    slang::BuiltinModuleName moduleName,
+    slang::BuiltinModuleName moduleID,
     slang::CompileCoreModuleFlags compileFlags)
 {
-    SLANG_AST_BUILDER_RAII(m_builtinLinkage->getASTBuilder());
-
 #ifdef _DEBUG
     time_t beginTime = 0;
-    if (moduleName == slang::BuiltinModuleName::Core)
+    if (moduleID == slang::BuiltinModuleName::Core)
     {
         // Print a message in debug builds to notice the user that compiling the core module
         // can take a while.
@@ -451,16 +439,15 @@ SlangResult Session::compileBuiltinModule(
         fprintf(stderr, "Compiling core module on debug build, this can take a while.\n");
     }
 #endif
-    BuiltinModuleInfo builtinModuleInfo = getBuiltinModuleInfo(moduleName);
-    auto moduleNameObj = m_builtinLinkage->getNamePool()->getName(builtinModuleInfo.name);
-    if (m_builtinLinkage->mapNameToLoadedModules.tryGetValue(moduleNameObj))
+
+    if (_isBuiltinModuleLoaded(moduleID))
     {
         // Already have the builtin module loaded
         return SLANG_FAIL;
     }
 
     StringBuilder moduleSrcBuilder;
-    switch (moduleName)
+    switch (moduleID)
     {
     case slang::BuiltinModuleName::Core:
         moduleSrcBuilder << (const char*)getCoreLibraryCode()->getBufferPointer()
@@ -474,19 +461,24 @@ SlangResult Session::compileBuiltinModule(
 
     // TODO(JS): Could make this return a SlangResult as opposed to exception
     auto moduleSrcBlob = StringBlob::moveCreate(moduleSrcBuilder.produceString());
+    ComPtr<ISlangBlob> compiledModuleBlob = nullptr;
     Module* compiledModule = nullptr;
-    addBuiltinSource(
-        builtinModuleInfo.languageScope,
-        builtinModuleInfo.name,
+    _compileBuiltinModuleImpl(
+        moduleID,
         moduleSrcBlob,
-        compiledModule);
+        compiledModuleBlob.writeRef());
 
+//    SLANG_AST_BUILDER_RAII(m_builtinLinkage->getASTBuilder());
+
+
+#if 0
     if (moduleName == slang::BuiltinModuleName::Core)
     {
         // We need to retain this AST so that we can use it in other code
         // (Note that the `Scope` type does not retain the AST it points to)
         coreModules.add(compiledModule);
     }
+#endif
 
     if (compileFlags & slang::CompileCoreModuleFlag::WriteDocumentation)
     {
@@ -505,10 +497,12 @@ SlangResult Session::compileBuiltinModule(
         }
     }
 
+#if 0
     finalizeSharedASTBuilder();
+#endif
 
 #ifdef _DEBUG
-    if (moduleName == slang::BuiltinModuleName::Core)
+    if (moduleID == slang::BuiltinModuleName::Core)
     {
         time_t endTime;
         time(&endTime);
@@ -523,44 +517,86 @@ SlangResult Session::loadCoreModule(const void* coreModule, size_t coreModuleSiz
     return loadBuiltinModule(slang::BuiltinModuleName::Core, coreModule, coreModuleSizeInBytes);
 }
 
+ComPtr<ISlangBlob> Session::findBuiltinModule(
+    slang::BuiltinModuleName moduleID)
+{
+    String moduleName = getBuiltinModuleNameStr(moduleID);
+    ComPtr<ISlangBlob> result;
+    _mapBuiltinModuleNameToBinaryBlob.tryGetValue(moduleName, result);
+    return result;
+}
+
+bool Session::_isBuiltinModuleLoaded(
+    slang::BuiltinModuleName moduleID)
+{
+    String moduleName = getBuiltinModuleNameStr(moduleID);
+    return _mapBuiltinModuleNameToBinaryBlob.containsKey(moduleName);
+}
+
+SlangResult Session::_loadBuiltinModuleBlob(
+    slang::BuiltinModuleName moduleID,
+    ISlangBlob* moduleBinaryBlob)
+{
+    if (_isBuiltinModuleLoaded(moduleID))
+    {
+        // Already have this builtin module loaded
+        return SLANG_FAIL;
+    }
+
+    String moduleName = getBuiltinModuleNameStr(moduleID);
+    _mapBuiltinModuleNameToBinaryBlob.add(moduleName, ComPtr(moduleBinaryBlob));
+    return SLANG_OK;
+}
+
 SlangResult Session::loadBuiltinModule(
-    slang::BuiltinModuleName moduleName,
+    slang::BuiltinModuleName moduleID,
     const void* moduleData,
     size_t sizeInBytes)
 {
     SLANG_PROFILE;
 
+    auto moduleBinaryBlob = RawBlob::create(moduleData, sizeInBytes);
+    SLANG_RETURN_ON_FAIL(_loadBuiltinModuleBlob(moduleID, moduleBinaryBlob));
+    return SLANG_OK;
+}
 
-    SLANG_AST_BUILDER_RAII(m_builtinLinkage->getASTBuilder());
+Result Linkage::_loadBuiltinModule(
+    slang::BuiltinModuleName moduleID,
+    ISlangBlob* moduleBinaryBlob,
+    Scope* scopeToLoadInto)
+{
 
-    BuiltinModuleInfo builtinModuleInfo = getBuiltinModuleInfo(moduleName);
-    auto nameObj = m_builtinLinkage->getNamePool()->getName(builtinModuleInfo.name);
-    if (m_builtinLinkage->mapNameToLoadedModules.containsKey(nameObj))
-    {
-        // Already have a core module loaded
-        return SLANG_FAIL;
-    }
+    SLANG_AST_BUILDER_RAII(getASTBuilder());
 
-    // Make a file system to read it from
+    // Make a file system to read it from.
+    //
+    // TODO(tfoley): Pass the blob through to the point
+    // where the filesystem implementation could retain
+    // it if doing so is useful.
+    //
     ComPtr<ISlangFileSystemExt> fileSystem;
-    SLANG_RETURN_ON_FAIL(loadArchiveFileSystem(moduleData, sizeInBytes, fileSystem));
+    SLANG_RETURN_ON_FAIL(loadArchiveFileSystem(
+        moduleBinaryBlob->getBufferPointer(),
+        moduleBinaryBlob->getBufferSize(),
+        fileSystem));
 
     // Let's try loading serialized modules and adding them
+    String moduleName = getBuiltinModuleNameStr(moduleID);
     Module* module = nullptr;
     SLANG_RETURN_ON_FAIL(_readBuiltinModule(
         fileSystem,
-        builtinModuleInfo.languageScope,
-        builtinModuleInfo.name,
+        scopeToLoadInto,
+        moduleName,
         module));
 
-    if (moduleName == slang::BuiltinModuleName::Core)
+    if (moduleID == slang::BuiltinModuleName::Core)
     {
         // We need to retain this AST so that we can use it in other code
         // (Note that the `Scope` type does not retain the AST it points to)
         coreModules.add(module);
     }
 
-    finalizeSharedASTBuilder();
+//    finalizeSharedASTBuilder();
     return SLANG_OK;
 }
 
@@ -570,42 +606,29 @@ SlangResult Session::saveCoreModule(SlangArchiveType archiveType, ISlangBlob** o
 }
 
 SlangResult Session::saveBuiltinModule(
-    slang::BuiltinModuleName moduleTag,
+    slang::BuiltinModuleName moduleID,
     SlangArchiveType archiveType,
     ISlangBlob** outBlob)
 {
-    // If no builtin modules have been loaded, then there is
-    // nothing to save, and we fail immediately.
-    //
-    if (m_builtinLinkage->mapNameToLoadedModules.getCount() == 0)
-    {
+    auto blob = findBuiltinModule(moduleID);
+    if (!blob)
         return SLANG_FAIL;
-    }
 
-    // The module will need to be looked up by its name, and
-    // will also be serialized out to a path with a matching name.
-    //
-    BuiltinModuleInfo moduleInfo = getBuiltinModuleInfo(moduleTag);
-    const char* moduleName = moduleInfo.name;
+    *outBlob = blob.detach();
+    return SLANG_OK;
+}
 
-    // If we cannot find a loaded module in the linkage with
-    // the appropriate name, then for some reason it hasn't
-    // been loaded, and we fail.
-    //
-    RefPtr<Module> module;
-    m_builtinLinkage->mapNameToLoadedModules.tryGetValue(
-        getNameObj(UnownedStringSlice(moduleName)),
-        module);
-    if (!module)
-    {
-        return SLANG_FAIL;
-    }
-
+SlangResult Session::_writeBuiltinModuleBinaryBlob(
+    Module* module,
+    slang::BuiltinModuleName moduleID,
+    SlangArchiveType archiveType,
+    ISlangBlob** outBinaryBlob)
+{
     // AST serialization needs access to an AST builder, so
     // we establish a current builder for the duration of
     // the serialization process.
     //
-    SLANG_AST_BUILDER_RAII(m_builtinLinkage->getASTBuilder());
+    SLANG_AST_BUILDER_RAII(module->getASTBuilder());
 
     // The serialized module will be represented as a logical
     // file in an archive, so we create a logical file system
@@ -626,6 +649,7 @@ SlangResult Session::saveBuiltinModule(
     // The output file name that we'll write to in that file system
     // is just the builtin module name with a `.slang-module` suffix.
     //
+    String moduleName = getBuiltinModuleNameStr(moduleID);
     StringBuilder moduleFileName;
     moduleFileName << moduleName << ".slang-module";
 
@@ -643,7 +667,7 @@ SlangResult Session::saveBuiltinModule(
     // process will also need access to the source manager that
     // can translate locations into their humane format.
     //
-    options.sourceManager = m_builtinLinkage->getSourceManager();
+    options.sourceManager = getBuiltinSourceManager();
 
     // At this point we can finally delegate down to the next level,
     // which handles the serialization of a Slang module into a
@@ -672,12 +696,12 @@ SlangResult Session::saveBuiltinModule(
         // its content, independent from the file system object itself; otherwise
         // the file system might return a blob that shares storage with itself.
         true,
-        outBlob));
+        outBinaryBlob));
 
     return SLANG_OK;
 }
 
-SlangResult Session::_readBuiltinModule(
+SlangResult Linkage::_readBuiltinModule(
     ISlangFileSystem* fileSystem,
     Scope* scope,
     String moduleName,
@@ -700,9 +724,9 @@ SlangResult Session::_readBuiltinModule(
         SLANG_RETURN_ON_FAIL(RiffUtil::read(&stream, *riffContainer));
     }
 
-    Linkage* linkage = getBuiltinLinkage();
-    SourceManager* sourceManager = getBuiltinSourceManager();
-    NamePool* sessionNamePool = &namePool;
+    auto session = getSessionImpl();
+    auto sourceManager = session->getBuiltinSourceManager();
+    auto sessionNamePool = session->getNamePool();
 
     auto moduleChunk = ModuleChunkRef::find(riffContainer);
     if (!moduleChunk)
@@ -735,8 +759,8 @@ SlangResult Session::_readBuiltinModule(
     // it is still possible that deserialization will fail
     // at one of the following steps.
     //
-    auto astBuilder = linkage->getASTBuilder();
-    RefPtr<Module> module(new Module(linkage, astBuilder));
+    auto astBuilder = getASTBuilder();
+    RefPtr<Module> module(new Module(this, astBuilder));
     module->setName(moduleName);
     module->setDigest(moduleDigest);
 
@@ -745,7 +769,7 @@ SlangResult Session::_readBuiltinModule(
     // of the module.
     //
     auto moduleDecl = readSerializedModuleAST(
-        linkage,
+        this,
         astBuilder,
         nullptr, // no sink
         riffContainer,
@@ -776,13 +800,13 @@ SlangResult Session::_readBuiltinModule(
     // to deserialize the IR module.
     //
     RefPtr<IRModule> irModule;
-    SLANG_RETURN_ON_FAIL(decodeModuleIR(irModule, irChunk, this, sourceLocReader));
+    SLANG_RETURN_ON_FAIL(decodeModuleIR(irModule, irChunk, session, sourceLocReader));
 
     irModule->setName(module->getNameObj());
     module->setIRModule(irModule);
 
     // Put in the loaded module map
-    linkage->mapNameToLoadedModules.add(sessionNamePool->getName(moduleName), module);
+    mapNameToLoadedModules.add(sessionNamePool->getName(moduleName), module);
 
 
     // Add the resulting code to the appropriate scope
@@ -794,7 +818,7 @@ SlangResult Session::_readBuiltinModule(
     else
     {
         // We need to create a new scope to link into the whole thing
-        auto subScope = linkage->getASTBuilder()->create<Scope>();
+        auto subScope = getASTBuilder()->create<Scope>();
         subScope->containerDecl = moduleDecl;
         subScope->nextSibling = scope->nextSibling;
         scope->nextSibling = subScope;
@@ -880,14 +904,17 @@ Session::createSession(slang::SessionDesc const& inDesc, slang::ISession** outSe
     RefPtr<ASTBuilder> astBuilder(new ASTBuilder(m_sharedASTBuilder, "Session::astBuilder"));
     slang::SessionDesc desc = makeFromSizeVersioned<slang::SessionDesc>((uint8_t*)&inDesc);
 
-    RefPtr<Linkage> linkage = new Linkage(this, astBuilder, getBuiltinLinkage());
+    RefPtr<Linkage> linkage = new Linkage(this, astBuilder);
 
+    linkage->m_typeCheckingCache = new TypeCheckingCache();
+#if 0
     {
         std::lock_guard<std::mutex> lock(m_typeCheckingCacheMutex);
         if (m_typeCheckingCache)
             linkage->m_typeCheckingCache =
                 new TypeCheckingCache(*static_cast<TypeCheckingCache*>(m_typeCheckingCache.get()));
     }
+#endif
 
     Int searchPathCount = desc.searchPathCount;
     for (Int ii = 0; ii < searchPathCount; ++ii)
@@ -1370,7 +1397,7 @@ Profile getEffectiveProfile(EntryPoint* entryPoint, TargetRequest* target)
 
 //
 
-Linkage::Linkage(Session* session, ASTBuilder* astBuilder, Linkage* builtinLinkage)
+Linkage::Linkage(Session* session, ASTBuilder* astBuilder)
     : m_session(session)
     , m_retainedSession(session)
     , m_sourceManager(&m_defaultSourceManager)
@@ -1383,14 +1410,57 @@ Linkage::Linkage(Session* session, ASTBuilder* astBuilder, Linkage* builtinLinka
 
     setFileSystem(nullptr);
 
+#if 0
     // Copy of the built in linkages modules
     if (builtinLinkage)
     {
         for (const auto& nameToMod : builtinLinkage->mapNameToLoadedModules)
             mapNameToLoadedModules.add(nameToMod);
     }
+#endif
 
     m_semanticsForReflection = new SharedSemanticsContext(this, nullptr, nullptr);
+
+
+
+#if 1
+    // Create scopes for various language builtins.
+    //
+    // TODO: load these on-demand to avoid parsing
+    // the core module code for languages the user won't use.
+
+    auto baseLanguageScope = astBuilder->create<Scope>();
+
+    // Will stay in scope as long as ASTBuilder
+    auto baseModuleDecl = populateBaseLanguageModule(astBuilder, baseLanguageScope);
+    SLANG_UNUSED(baseModuleDecl);
+
+    coreLanguageScope = astBuilder->create<Scope>();
+    coreLanguageScope->nextSibling = baseLanguageScope;
+
+    hlslLanguageScope = astBuilder->create<Scope>();
+    hlslLanguageScope->nextSibling = coreLanguageScope;
+
+    slangLanguageScope = astBuilder->create<Scope>();
+    slangLanguageScope->nextSibling = hlslLanguageScope;
+
+    glslLanguageScope = astBuilder->create<Scope>();
+    glslLanguageScope->nextSibling = slangLanguageScope;
+
+    auto tryLoadBuiltinModule = [=](slang::BuiltinModuleName moduleID, Scope* scope)
+    {
+        if (auto blob = session->findBuiltinModule(moduleID))
+        {
+            _loadBuiltinModule(moduleID, blob, scope);
+        }
+    };
+
+    tryLoadBuiltinModule(slang::BuiltinModuleName::Core, coreLanguageScope);
+    tryLoadBuiltinModule(slang::BuiltinModuleName::GLSL, glslLanguageScope);
+
+#endif
+
+
 }
 
 SharedSemanticsContext* Linkage::getSemanticsForReflection()
@@ -1408,6 +1478,7 @@ ISlangUnknown* Linkage::getInterface(const Guid& guid)
 
 Linkage::~Linkage()
 {
+#if 0
     // Upstream type checking cache.
     if (m_typeCheckingCache)
     {
@@ -1422,6 +1493,7 @@ Linkage::~Linkage()
         }
         destroyTypeCheckingCache();
     }
+#endif
 }
 
 SearchDirectoryList& Linkage::getSearchDirectories()
@@ -1966,7 +2038,7 @@ SLANG_NO_THROW slang::TypeReflection* SLANG_MCALL Linkage::getDynamicType()
 {
     SLANG_AST_BUILDER_RAII(getASTBuilder());
 
-    return asExternal(getASTBuilder()->getSharedASTBuilder()->getDynamicType());
+    return asExternal(getASTBuilder()->getDynamicType());
 }
 
 SLANG_NO_THROW SlangResult SLANG_MCALL
@@ -2412,6 +2484,11 @@ TranslationUnitRequest::TranslationUnitRequest(FrontEndCompileRequest* compileRe
     moduleName = getNamePool()->getName(m->getName());
 }
 
+Linkage* TranslationUnitRequest::getLinkage()
+{
+    return compileRequest->getLinkage();
+}
+
 Session* TranslationUnitRequest::getSession()
 {
     return compileRequest->getSession();
@@ -2427,23 +2504,25 @@ SourceManager* TranslationUnitRequest::getSourceManager()
     return compileRequest->getSourceManager();
 }
 
-Scope* TranslationUnitRequest::getLanguageScope()
+Scope* Linkage::getLanguageScope(SourceLanguage sourceLanguage)
 {
-    Scope* languageScope = nullptr;
     switch (sourceLanguage)
     {
     case SourceLanguage::HLSL:
-        languageScope = getSession()->hlslLanguageScope;
-        break;
+        return hlslLanguageScope;
+
     case SourceLanguage::GLSL:
-        languageScope = getSession()->glslLanguageScope;
-        break;
+        return glslLanguageScope;
+
     case SourceLanguage::Slang:
     default:
-        languageScope = getSession()->slangLanguageScope;
-        break;
+        return slangLanguageScope;
     }
-    return languageScope;
+}
+
+Scope* TranslationUnitRequest::getLanguageScope()
+{
+    return getLinkage()->getLanguageScope(sourceLanguage);
 }
 
 Dictionary<String, String> TranslationUnitRequest::getCombinedPreprocessorDefinitions()
@@ -3417,20 +3496,7 @@ void FrontEndCompileRequest::parseTranslationUnit(TranslationUnitRequest* transl
         if (sourceLanguage == SourceLanguage::Unknown)
             sourceLanguage = translationUnit->sourceLanguage;
 
-        Scope* languageScope = nullptr;
-        switch (sourceLanguage)
-        {
-        case SourceLanguage::HLSL:
-            languageScope = getSession()->hlslLanguageScope;
-            break;
-        case SourceLanguage::GLSL:
-            languageScope = getSession()->glslLanguageScope;
-            break;
-        case SourceLanguage::Slang:
-        default:
-            languageScope = getSession()->slangLanguageScope;
-            break;
-        }
+        Scope* languageScope = getLinkage()->getLanguageScope(sourceLanguage);
 
         if (optionSet.getBoolOption(CompilerOptionName::OutputIncludes))
         {
@@ -3720,7 +3786,7 @@ EndToEndCompileRequest::EndToEndCompileRequest(Session* session)
 {
     RefPtr<ASTBuilder> astBuilder(
         new ASTBuilder(session->m_sharedASTBuilder, "EndToEnd::Linkage::astBuilder"));
-    m_linkage = new Linkage(session, astBuilder, session->getBuiltinLinkage());
+    m_linkage = new Linkage(session, astBuilder);
     init();
 }
 
@@ -4544,7 +4610,7 @@ RefPtr<Module> Linkage::findOrImportModule(
     if (moduleName == getSessionImpl()->glslModuleName)
     {
         // This is a builtin glsl module, just load it from embedded definition.
-        auto glslModule = getSessionImpl()->getBuiltinModule(slang::BuiltinModuleName::GLSL);
+        auto glslModule = getBuiltinModule(slang::BuiltinModuleName::GLSL);
         if (!glslModule)
         {
             // Note: the way this logic is currently written, if the built-in
@@ -6738,30 +6804,32 @@ RefPtr<Module> findOrImportModule(
     return linkage->findOrImportModule(name, loc, sink, loadedModules);
 }
 
-void Session::addBuiltinSource(
-    Scope* scope,
-    String const& path,
+Result Session::_compileBuiltinModuleImpl(
+    slang::BuiltinModuleName moduleID,
     ISlangBlob* sourceBlob,
-    Module*& outModule)
+    ISlangBlob** outBinaryBlob)
 {
     SourceManager* sourceManager = getBuiltinSourceManager();
 
     DiagnosticSink sink(sourceManager, Lexer::sourceLocationLexer);
 
-    RefPtr<FrontEndCompileRequest> compileRequest =
-        new FrontEndCompileRequest(m_builtinLinkage, nullptr, &sink);
+    auto astBuilder = RefPtr(new ASTBuilder(m_sharedASTBuilder, "Session::_compileBuiltinModuleImpl"));
+    auto linkage = RefPtr(new Linkage(this, astBuilder));
+
+    auto compileRequest = new FrontEndCompileRequest(linkage, nullptr, &sink);
     compileRequest->m_isCoreModuleCode = true;
 
     // Set the source manager on the sink
     sink.setSourceManager(sourceManager);
     // Make the linkage use the builtin source manager
-    Linkage* linkage = compileRequest->getLinkage();
+//    Linkage* linkage = compileRequest->getLinkage();
     linkage->setSourceManager(sourceManager);
 
-    Name* moduleName = getNamePool()->getName(path);
+    Name* moduleName = getNamePool()->getName(getBuiltinModuleNameStr(moduleID));
     auto translationUnitIndex =
         compileRequest->addTranslationUnit(SourceLanguage::Slang, moduleName);
 
+    String path = getBuiltinModuleNameStr(moduleID); // TODO(tfoley): fix this...
     compileRequest->addTranslationUnitSourceBlob(translationUnitIndex, path, sourceBlob);
 
     SlangResult res = compileRequest->executeActionsInner();
@@ -6772,20 +6840,34 @@ void Session::addBuiltinSource(
 
         PlatformUtil::outputDebugMessage(diagnostics);
 
-        SLANG_UNEXPECTED("error in Slang core module");
+        SLANG_UNEXPECTED("error in Slang builtin module");
     }
 
     // Compiling the core module should not yield any warnings.
     SLANG_ASSERT(sink.outputBuffer.getLength() == 0);
 
-    // Extract the AST for the code we just parsed
     auto module = compileRequest->translationUnits[translationUnitIndex]->getModule();
+
+    // Extract the AST for the code we just parsed
     auto moduleDecl = module->getModuleDecl();
 
     // Extact documentation markup.
     ASTMarkup markup;
     ASTMarkupUtil::extract(moduleDecl, sourceManager, &sink, &markup);
     markup.attachToAST();
+
+    // Serialize the module to a binary.
+    //
+    SLANG_RETURN_ON_FAIL(_writeBuiltinModuleBinaryBlob(
+        module,
+        moduleID,
+        SlangArchiveType::SLANG_ARCHIVE_TYPE_RIFF_LZ4,
+        outBinaryBlob));
+
+    _mapBuiltinModuleNameToBinaryBlob.add(moduleName->text, ComPtr(*outBinaryBlob));
+    return SLANG_OK;
+
+#if 0
 
     // Put in the loaded module map
     linkage->mapNameToLoadedModules.add(moduleName, module);
@@ -6806,10 +6888,12 @@ void Session::addBuiltinSource(
     }
 
     outModule = module;
+#endif
 }
 
 Session::~Session()
 {
+#if 0
     // This is necessary because this ASTBuilder uses the SharedASTBuilder also owned by the
     // session. If the SharedASTBuilder gets dtored before the globalASTBuilder it has a dangling
     // pointer, which is referenced in the ASTBuilder dtor (likely) causing a crash.
@@ -6819,6 +6903,7 @@ Session::~Session()
 
     // destroy modules next
     coreModules = decltype(coreModules)();
+#endif
 }
 
 } // namespace Slang

@@ -8400,6 +8400,7 @@ void parseSourceFile(
 
 static void addBuiltinSyntaxImpl(
     Session* session,
+    ASTBuilder* astBuilder,
     Scope* scope,
     char const* nameText,
     SyntaxParseCallback callback,
@@ -8408,34 +8409,34 @@ static void addBuiltinSyntaxImpl(
 {
     Name* name = session->getNamePool()->getName(nameText);
 
-    ASTBuilder* globalASTBuilder = session->getGlobalASTBuilder();
-
-    SyntaxDecl* syntaxDecl = globalASTBuilder->create<SyntaxDecl>();
+    SyntaxDecl* syntaxDecl = astBuilder->create<SyntaxDecl>();
     syntaxDecl->nameAndLoc = NameLoc(name);
     syntaxDecl->syntaxClass = syntaxClass;
     syntaxDecl->parseCallback = callback;
     syntaxDecl->parseUserData = userData;
-    addModifier(syntaxDecl, globalASTBuilder->create<PublicModifier>());
+    addModifier(syntaxDecl, astBuilder->create<PublicModifier>());
     AddMember(scope, syntaxDecl);
 }
 
 template<typename T>
 static void addBuiltinSyntax(
     Session* session,
+    ASTBuilder* astBuilder,
     Scope* scope,
     char const* name,
     SyntaxParseCallback callback,
     void* userData = nullptr)
 {
-    addBuiltinSyntaxImpl(session, scope, name, callback, userData, getSyntaxClass<T>());
+    addBuiltinSyntaxImpl(session, astBuilder, scope, name, callback, userData, getSyntaxClass<T>());
 }
 
 template<typename T>
-static void addSimpleModifierSyntax(Session* session, Scope* scope, char const* name)
+static void addSimpleModifierSyntax(Session* session, ASTBuilder* builder, Scope* scope, char const* name)
 {
     auto syntaxClass = getSyntaxClass<T>();
     addBuiltinSyntaxImpl(
         session,
+        astBuilder,
         scope,
         name,
         &parseSimpleSyntax,
@@ -9204,6 +9205,7 @@ ModuleDecl* populateBaseLanguageModule(ASTBuilder* astBuilder, Scope* scope)
     {
         addBuiltinSyntaxImpl(
             session,
+            astBuilder,
             scope,
             info.keywordName,
             info.callback,
