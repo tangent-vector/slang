@@ -1742,7 +1742,11 @@ void SemanticsDeclModifiersVisitor::visitStructDecl(StructDecl* structDecl)
         setAccessorDecl->ownedScope->parent = propertyDeclScope;
         propertyDecl->addMember(setAccessorDecl);
 
-        structDecl->_replaceDirectMemberBitFieldVariableDeclAtIndexWithPropertyDeclThatWasSynthesizedForIt(i, varDecl, propertyDecl);
+        structDecl
+            ->_replaceDirectMemberBitFieldVariableDeclAtIndexWithPropertyDeclThatWasSynthesizedForIt(
+                i,
+                varDecl,
+                propertyDecl);
     }
 }
 
@@ -2761,7 +2765,8 @@ void SemanticsDeclBodyVisitor::checkVarDeclCommon(VarDeclBase* varDecl)
             // or we encounter some *other* non-`static` variable declaration,
             // in which case the unsized declaration is invalid.
             //
-            for (auto memberIdx = parentDecl->getDirectMemberDeclCount() - 1; memberIdx >= 0; memberIdx--)
+            for (auto memberIdx = parentDecl->getDirectMemberDeclCount() - 1; memberIdx >= 0;
+                 memberIdx--)
             {
                 auto memberDecl = parentDecl->getDirectMemberDecl(memberIdx);
 
@@ -2902,7 +2907,8 @@ bool SemanticsVisitor::trySynthesizeDifferentialAssociatedTypeRequirementWitness
     ASTSynthesizer synth(m_astBuilder, getNamePool());
 
     AggTypeDecl* aggTypeDecl = nullptr;
-    if (auto existingDecl = context->parentDecl->findLastDirectMemberDeclOfName(requirementDeclRef.getName()))
+    if (auto existingDecl =
+            context->parentDecl->findLastDirectMemberDeclOfName(requirementDeclRef.getName()))
     {
         // Remove the `ToBeSynthesizedModifier`.
         if (as<ToBeSynthesizedModifier>(existingDecl->modifiers.first))
@@ -3084,7 +3090,8 @@ bool SemanticsVisitor::trySynthesizeDifferentialAssociatedTypeRequirementWitness
 
     // The `Differential` type of a `Differential` type is always itself.
     auto differentialName = getName("Differential");
-    bool hasDifferentialTypeDef = aggTypeDecl->findLastDirectMemberDeclOfName(differentialName) != nullptr;
+    bool hasDifferentialTypeDef =
+        aggTypeDecl->findLastDirectMemberDeclOfName(differentialName) != nullptr;
     if (!hasDifferentialTypeDef)
     {
         auto assocTypeDef = m_astBuilder->create<TypeDefDecl>();
@@ -4683,7 +4690,8 @@ GenericDecl* SemanticsVisitor::synthesizeGenericSignatureForRequirementWitness(
     // from the original requirement decl. For example, we can simply apply declref substituion on
     // the original type constraint `U:IDerived` to get `UImpl : IDerived`.
     //
-    for (auto constraintDecl : requiredMemberDeclRef.getDecl()->getDirectMemberDeclsOfType<GenericTypeConstraintDecl>())
+    for (auto constraintDecl :
+         requiredMemberDeclRef.getDecl()->getDirectMemberDeclsOfType<GenericTypeConstraintDecl>())
     {
         auto synConstraintDecl = m_astBuilder->create<GenericTypeConstraintDecl>();
         synConstraintDecl->nameAndLoc = constraintDecl->getNameAndLoc();
@@ -6846,7 +6854,7 @@ bool SemanticsVisitor::trySynthesizeDifferentialMethodRequirementWitness(
 
     Decl* witnessDecl = synGeneric ? (Decl*)synGeneric : synFunc;
     SLANG_ASSERT(context->parentDecl == witnessDecl->parentDecl);
-    
+
     context->parentDecl->addDirectMemberDecl(witnessDecl);
 
     addModifier(synFunc, m_astBuilder->create<SynthesizedModifier>());
@@ -8236,7 +8244,9 @@ void SemanticsDeclBasesVisitor::visitEnumDecl(EnumDecl* decl)
             if (auto enumTypeTypeInterfaceDecl =
                     as<InterfaceDecl>(enumTypeTypeDeclRefType->getDeclRef().getDecl()))
             {
-                if (auto foundMemberDecl = enumTypeTypeInterfaceDecl->findLastDirectMemberDeclOfName(tagAssociatedTypeName))
+                if (auto foundMemberDecl =
+                        enumTypeTypeInterfaceDecl->findLastDirectMemberDeclOfName(
+                            tagAssociatedTypeName))
                 {
                     tagAssociatedTypeDecl = foundMemberDecl;
                 }
@@ -8803,7 +8813,8 @@ List<Val*> getDefaultSubstitutionArgs(
     bool shouldCache = true;
 
     // create default substitution arguments for constraints
-    for (auto genericTypeConstraintDecl : genericDecl->getDirectMemberDeclsOfType<GenericTypeConstraintDecl>())
+    for (auto genericTypeConstraintDecl :
+         genericDecl->getDirectMemberDeclsOfType<GenericTypeConstraintDecl>())
     {
         if (semantics)
             semantics->ensureDecl(genericTypeConstraintDecl, DeclCheckState::ReadyForReference);
@@ -9500,7 +9511,7 @@ Expr* SemanticsDeclBodyVisitor::createCtorParamExpr(ConstructorDecl* ctor, Index
         return nullptr;
 
     auto param = as<ParamDecl>(ctor->getDirectMemberDecl(paramIndex));
-    if(!param)
+    if (!param)
         return nullptr;
 
     auto paramType = param->getType();
@@ -9593,8 +9604,7 @@ void SemanticsDeclBodyVisitor::synthesizeCtorBodyForMemberVar(
     // Once thing to notice is that if a member variable doesn't have name, it must be synthesized
     // instead of defined by user, we should not put it into the constructor because it's not a real
     // member.
-    if (varDeclBase->hasModifier<HLSLStaticModifier>() ||
-        varDeclBase->getName() == nullptr)
+    if (varDeclBase->hasModifier<HLSLStaticModifier>() || varDeclBase->getName() == nullptr)
         return;
 
     Expr* initExpr = nullptr;
@@ -9799,7 +9809,9 @@ void SemanticsDeclBodyVisitor::visitAggTypeDecl(AggTypeDecl* aggTypeDecl)
         auto seqStmt = as<SeqStmt>(as<BlockStmt>(structDeclInfo.defaultCtor->body)->body);
         if (seqStmt && seqStmt->stmts.getCount() == 0)
         {
-            structDecl->_removeDirectMemberConstructorDeclBecauseSynthesizedAnotherDefaultConstructorInstead(structDeclInfo.defaultCtor);
+            structDecl
+                ->_removeDirectMemberConstructorDeclBecauseSynthesizedAnotherDefaultConstructorInstead(
+                    structDeclInfo.defaultCtor);
         }
     }
 }
@@ -11024,7 +11036,7 @@ void SemanticsDeclScopeWiringVisitor::visitImplementingDecl(ImplementingDecl* de
         return;
 
     auto firstMember = fileDecl->getFirstDirectMemberDecl();
-    if(!firstMember)
+    if (!firstMember)
         return;
 
     if (as<ModuleDeclarationDecl>(firstMember))
@@ -11917,7 +11929,7 @@ int compareDecls(Decl& lhs, Decl& rhs)
     //   us down that path, and ensuring that they are kinds of
     //   declarations we explicitly need/want to support here (e.g.,
     //   generic parameters).
-    //   
+    //
     if (ContainerDecl* lca = findDeclsLowestCommonAncestor(lLCAChild, rLCAChild))
     {
         res = _compareDeclsInCommonParentByOrderOfDeclaration(lca, lLCAChild, rLCAChild);
