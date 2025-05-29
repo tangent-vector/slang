@@ -38,6 +38,10 @@ public:
 
     List<Decl*>& _refDecls() { return decls; }
 
+    void _initForOnDemandDeserialization(
+        RefObject* deserializationContext,
+        void const* deserializationData);
+
 private:
     friend class ContainerDecl;
     friend struct ASTDumpContext;
@@ -51,6 +55,12 @@ private:
         Dictionary<Name*, Decl*> mapNameToLastDeclOfThatName;
         List<Decl*> filteredListOfTransparentDecls;
     } accelerators;
+
+    struct
+    {
+        RefPtr<RefObject> context;
+        void const* data = nullptr;
+    } onDemandDeserialization;
 };
 
 /// A conceptual list of declarations of the same name, in the same container.

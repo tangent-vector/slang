@@ -168,6 +168,7 @@ public:
     virtual void handleName(Name*& value) = 0;
     virtual void handleSourceLoc(SourceLoc& value) = 0;
     virtual void handleToken(Token& value) = 0;
+    virtual void handleContainerDeclDirectMemberDecls(ContainerDeclDirectMemberDecls& value) = 0;
 
     // Note that this type does *not* inherit from `ISerializerImpl`.
     //
@@ -437,7 +438,7 @@ void serialize(ASTSerializer const& serializer, NameLoc& value)
 
 void serialize(ASTSerializer const& serializer, ContainerDeclDirectMemberDecls& value)
 {
-    serialize(serializer, value._refDecls());
+    serializer->handleContainerDeclDirectMemberDecls(value);
 }
 
 #if 0 // FIDDLE TEMPLATE:
@@ -506,6 +507,7 @@ private:
     virtual void handleToken(Token& value) override;
     virtual void handleASTNode(NodeBase*& node) override;
     virtual void handleASTNodeContents(NodeBase* node) override;
+    virtual void handleContainerDeclDirectMemberDecls(ContainerDeclDirectMemberDecls& value) override;
 
     void _writeImportedModule(ModuleDecl* moduleDecl);
     void _writeImportedDecl(Decl* decl, ModuleDecl* importedFromModuleDecl);
@@ -531,7 +533,7 @@ private:
     }
 };
 
-struct ASTDecodingContext : ASTSerializerImpl
+struct ASTDecodingContext : public RefObject, public ASTSerializerImpl
 {
 public:
     ASTDecodingContext(
@@ -554,7 +556,7 @@ private:
     Linkage* _linkage = nullptr;
     ASTBuilder* _astBuilder = nullptr;
     DiagnosticSink* _sink = nullptr;
-    SerialSourceLocReader* _sourceLocReader = nullptr;
+    RefPtr<SerialSourceLocReader> _sourceLocReader = nullptr;
     SourceLoc _requestingSourceLoc;
     ISerializerImpl* _reader = nullptr;
 
@@ -565,6 +567,7 @@ private:
     virtual void handleToken(Token& value) override;
     virtual void handleASTNode(NodeBase*& outNode) override;
     virtual void handleASTNodeContents(NodeBase* node) override;
+    virtual void handleContainerDeclDirectMemberDecls(ContainerDeclDirectMemberDecls& value) override;
 
     ModuleDecl* _readImportedModule();
     NodeBase* _readImportedDecl();
@@ -834,6 +837,23 @@ void ASTDecodingContext::handleASTNodeContents(NodeBase* node)
     serializeASTNodeContents(serializer, node);
 
     _cleanUpASTNode(node);
+}
+
+void ASTEncodingContext::handleContainerDeclDirectMemberDecls(ContainerDeclDirectMemberDecls& value)
+{
+    ASTSerializer serializer(this);
+    serialize(serializer, value._refDecls());
+}
+
+void ASTDecodingContext::handleContainerDeclDirectMemberDecls(ContainerDeclDirectMemberDecls& value)
+{
+    // We don't want to recursively deserialize
+    // all of the contents up front, so we will
+    // instead try to snapshot where we are and
+    // save it for later.
+    //
+    auto chunk = _riffReader.readChunk();
+    value._initForOnDemandDeserialization(this, chunk);
 }
 
 //
