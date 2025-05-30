@@ -15,5 +15,7 @@ using namespace Slang;
 
 lua_State* getLuaState();
 
-String evaluateScriptCode(String originalFileName, String scriptSource, DiagnosticSink* sink);
+String evaluateScriptCode(
+    SourceLoc loc,
+    String originalFileName, String scriptSource, DiagnosticSink* sink);
 } // namespace fiddle

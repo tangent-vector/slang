@@ -162,8 +162,8 @@ private:
         /// Callback that can be invoked to serialize the object's data.
         Callback callback;
 
-        /// User-data pointer for `callback`
-        void* userData;
+        /// Context pointer for `callback`
+        void* context;
     };
 
     /// The chunk where object definitions are listed.
@@ -237,10 +237,10 @@ private:
     virtual void beginOptional() override;
     virtual void endOptional() override;
 
-    virtual void handleSharedPtr(void*& value, Callback callback, void* userData) override;
-    virtual void handleUniquePtr(void*& value, Callback callback, void* userData) override;
+    virtual void handleSharedPtr(void*& value, Callback callback, void* context) override;
+    virtual void handleUniquePtr(void*& value, Callback callback, void* context) override;
 
-    virtual void handleDeferredObjectContents(void* valuePtr, Callback callback, void* userData)
+    virtual void handleDeferredObjectContents(void* valuePtr, Callback callback, void* context)
         override;
 };
 
@@ -357,8 +357,8 @@ private:
         /// The callback to apply to read data into the `valuePtr`
         Callback callback;
 
-        /// The user-data pointer for the `callback`.
-        void* userData;
+        /// The context pointer for the `callback`.
+        void* context;
     };
 
     /// Deferred actions that are still pending.
@@ -440,10 +440,10 @@ private:
     virtual void beginOptional() override;
     virtual void endOptional() override;
 
-    virtual void handleSharedPtr(void*& value, Callback callback, void* userData) override;
-    virtual void handleUniquePtr(void*& value, Callback callback, void* userData) override;
+    virtual void handleSharedPtr(void*& value, Callback callback, void* context) override;
+    virtual void handleUniquePtr(void*& value, Callback callback, void* context) override;
 
-    virtual void handleDeferredObjectContents(void* valuePtr, Callback callback, void* userData)
+    virtual void handleDeferredObjectContents(void* valuePtr, Callback callback, void* context)
         override;
 };
 
