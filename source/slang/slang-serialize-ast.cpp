@@ -2139,16 +2139,6 @@ T const* _findEntryInFossilizedDictionaryWithSortedKeys(
     }
 
     return nullptr;
-
-    for (auto& entry : dictionary)
-    {
-        if (entry.key != key)
-            continue;
-
-        return &entry.value;
-    }
-
-    return nullptr;
 }
 
 Decl* ASTSerialReadContext::findExportedDeclByMangledName(UnownedStringSlice const& mangledName)
