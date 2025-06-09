@@ -173,8 +173,7 @@ bool ContainerDeclDirectMemberDecls::isUsingOnDemandDeserialization() const
 
 bool ContainerDeclDirectMemberDecls::_areLookupAcceleratorsValid() const
 {
-    return accelerators.declCountWhenLastUpdated ==
-           decls.getCount();
+    return accelerators.declCountWhenLastUpdated == decls.getCount();
 }
 
 void ContainerDeclDirectMemberDecls::_invalidateLookupAccelerators() const
@@ -252,9 +251,7 @@ void ContainerDeclDirectMemberDecls::_ensureLookupAcceleratorsAreValid() const
         // all of the overloaded functions with a given name.
         //
         Decl* prevMemberWithSameName = nullptr;
-        accelerators.mapNameToLastDeclOfThatName.tryGetValue(
-            memberName,
-            prevMemberWithSameName);
+        accelerators.mapNameToLastDeclOfThatName.tryGetValue(memberName, prevMemberWithSameName);
         memberDecl->_prevInContainerWithSameName = prevMemberWithSameName;
 
         // Whether or not there was a previous declaration with this

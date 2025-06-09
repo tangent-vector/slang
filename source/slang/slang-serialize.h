@@ -466,9 +466,14 @@ public:
     }
 
     template<typename I, typename C>
-    SerializerBase(SerializerBase<I,C> const& serializer, std::enable_if_t<std::is_convertible_v<I*,Impl*> && std::is_convertible_v<C*,Context*>, void>* = nullptr)
+    SerializerBase(
+        SerializerBase<I, C> const& serializer,
+        std::enable_if_t<
+            std::is_convertible_v<I*, Impl*> && std::is_convertible_v<C*, Context*>,
+            void>* = nullptr)
         : _impl(serializer.getImpl()), _context(serializer.getContext())
-    {}
+    {
+    }
 
     Impl* getImpl() const { return _impl; }
     Context* getContext() const { return _context; }
@@ -994,17 +999,23 @@ void _serializeObjectCallback(void* valuePtr, void* impl, void* context)
 }
 
 template<typename I, typename C, typename T>
-void serializeSharedPtr(Serializer_<I,C> const& serializer, T*& value)
+void serializeSharedPtr(Serializer_<I, C> const& serializer, T*& value)
 {
     ((Serializer)serializer)
-        ->handleSharedPtr(*(void**)&value, _serializeObjectCallback<I, C, T>, serializer.getContext());
+        ->handleSharedPtr(
+            *(void**)&value,
+            _serializeObjectCallback<I, C, T>,
+            serializer.getContext());
 }
 
 template<typename I, typename C, typename T>
-void serializeUniquePtr(Serializer_<I,C> const& serializer, T*& value)
+void serializeUniquePtr(Serializer_<I, C> const& serializer, T*& value)
 {
     ((Serializer)serializer)
-        ->handleUniquePtr(*(void**)&value, _serializeObjectCallback<I, C, T>, serializer.getContext());
+        ->handleUniquePtr(
+            *(void**)&value,
+            _serializeObjectCallback<I, C, T>,
+            serializer.getContext());
 }
 
 template<typename S, typename T>

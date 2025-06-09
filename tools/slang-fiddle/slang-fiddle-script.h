@@ -17,5 +17,7 @@ lua_State* getLuaState();
 
 String evaluateScriptCode(
     SourceLoc loc,
-    String originalFileName, String scriptSource, DiagnosticSink* sink);
+    String originalFileName,
+    String scriptSource,
+    DiagnosticSink* sink);
 } // namespace fiddle

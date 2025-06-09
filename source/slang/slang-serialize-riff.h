@@ -263,7 +263,7 @@ public:
     ~RIFFSerialReader();
 
     /// Read a chunk from the current cursor position.
-    /// 
+    ///
     /// This operation can be used to skip over an entire value
     /// that might otherwise need to be read with a sequence of
     /// operations of the `ISerializerImpl` interface.
@@ -272,7 +272,7 @@ public:
     /// `RIFFSerialReader` to read the contents of the chunk
     /// at some later time, or code can simply navigate the
     /// chunk in memory using their own logic.
-    /// 
+    ///
     RIFF::Chunk const* readChunk();
 
 private:

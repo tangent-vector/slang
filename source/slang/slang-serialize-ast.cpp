@@ -2,15 +2,14 @@
 #include "slang-serialize-ast.h"
 
 #include "slang-ast-dispatch.h"
-#include "slang-compiler.h"
 #include "slang-check.h"
+#include "slang-compiler.h"
 #include "slang-diagnostics.h"
 #include "slang-mangle.h"
 #include "slang-parser.h"
+#include "slang-serialize-ast.cpp.fiddle"
 #include "slang-serialize-fossil.h"
 #include "slang-serialize-riff.h"
-
-#include "slang-serialize-ast.cpp.fiddle"
 
 #define SLANG_ENABLE_AST_DESERIALIZATION_STATS 0
 #define SLANG_DISABLE_ON_DEMAND_AST_DESERIALIZATION 1
@@ -35,13 +34,13 @@ namespace Slang
 // For the general-purpose serialization framework in `slang-serialize.h`, the
 // main requirement is that any type that we want to serialize should have an
 // available overload of `serialize()`.
-// 
-// 
+//
+//
 // In principle, the declarations and definitions of these functions ought to
 // be more closely associated with the types that they pertain to, but for now
 // they are all just getting dumped here in the AST serialization logic, because
 // it is currenly the only place that cares about this stuff.
-// 
+//
 void serialize(Serializer const&, RefObject&)
 {
     // There's actually no data stored in a `RefObject`, since it only exists
@@ -242,7 +241,7 @@ SLANG_DECLARE_FOSSILIZED_AS(SemanticVersion, SemanticVersion::RawValue);
 // `SemanticVersion::RawValue` above), in other cases we need to *define*
 // an intermediate type to store the data we care about in a more
 // direct fashion.
-// 
+//
 // When serializing an AST `ModuleDecl`, there are certain pieces
 // of data that are implicitly encoded in the object graph under
 // that module declaration that are beneficial to make explicit
@@ -329,7 +328,6 @@ struct ContainerDeclDirectMemberDeclsInfo
     // the given name).
     //
     FIDDLE() OrderedDictionary<String, FossilUInt> mapNameToDeclIndex;
-
 };
 
 //
@@ -356,9 +354,10 @@ public:
     virtual void handleName(ASTSerializer const& serializer, Name*& value) = 0;
     virtual void handleSourceLoc(ASTSerializer const& serializer, SourceLoc& value) = 0;
     virtual void handleToken(ASTSerializer const& serializer, Token& value) = 0;
-    virtual void handleContainerDeclDirectMemberDecls(ASTSerializer const& serializer, ContainerDeclDirectMemberDecls& value) = 0;
+    virtual void handleContainerDeclDirectMemberDecls(
+        ASTSerializer const& serializer,
+        ContainerDeclDirectMemberDecls& value) = 0;
 };
-
 
 
 //
@@ -534,13 +533,11 @@ public:
     /// * `module` is the module that is being serialized, and will be
     ///   used to detect whether declarations are part of the module,
     ///   or imported from other modules.
-    /// 
+    ///
     /// * `sourceLocWriter` will be used to handle translation of
     ///   `SourceLoc`s into a format suitable for serialization.
     ///
-    ASTSerialWriteContext(
-        ModuleDecl* module,
-        SerialSourceLocWriter* sourceLocWriter)
+    ASTSerialWriteContext(ModuleDecl* module, SerialSourceLocWriter* sourceLocWriter)
         : _module(module), _sourceLocWriter(sourceLocWriter)
     {
     }
@@ -560,10 +557,15 @@ private:
     virtual void handleToken(ASTSerializer const& serializer, Token& value) override;
     virtual void handleASTNode(ASTSerializer const& serializer, NodeBase*& node) override;
     virtual void handleASTNodeContents(ASTSerializer const& serializer, NodeBase* node) override;
-    virtual void handleContainerDeclDirectMemberDecls(ASTSerializer const& serializer, ContainerDeclDirectMemberDecls& value) override;
+    virtual void handleContainerDeclDirectMemberDecls(
+        ASTSerializer const& serializer,
+        ContainerDeclDirectMemberDecls& value) override;
 
     void _writeImportedModule(ASTSerializer const& serializer, ModuleDecl* moduleDecl);
-    void _writeImportedDecl(ASTSerializer const& serializer, Decl* decl, ModuleDecl* importedFromModuleDecl);
+    void _writeImportedDecl(
+        ASTSerializer const& serializer,
+        Decl* decl,
+        ModuleDecl* importedFromModuleDecl);
 
     ModuleDecl* _findModuleForDecl(Decl* decl)
     {
@@ -734,7 +736,9 @@ private:
     virtual void handleToken(ASTSerializer const& serializer, Token& value) override;
     virtual void handleASTNode(ASTSerializer const& serializer, NodeBase*& outNode) override;
     virtual void handleASTNodeContents(ASTSerializer const& serializer, NodeBase* node) override;
-    virtual void handleContainerDeclDirectMemberDecls(ASTSerializer const& serializer, ContainerDeclDirectMemberDecls& value) override;
+    virtual void handleContainerDeclDirectMemberDecls(
+        ASTSerializer const& serializer,
+        ContainerDeclDirectMemberDecls& value) override;
 
     ModuleDecl* _readImportedModule(ASTSerializer const& serializer);
     NodeBase* _readImportedDecl(ASTSerializer const& serializer);
@@ -784,7 +788,7 @@ void ASTSerialWriteContext::handleSourceLoc(ASTSerializer const& serializer, Sou
         // source location writer will write out as part of its own
         // representation (all of which goes into the dedicated debug
         // data chunk, distinct from the AST).
-        // 
+        //
         SerialSourceLocData::SourceLoc rawValue = _sourceLocWriter->addSourceLoc(value);
         serialize(serializer, rawValue);
     }
@@ -1336,7 +1340,7 @@ void serialize(ASTSerializer const& serializer, ValNodeOperand& value)
 // doesn't end up being any code that will actually use these generated
 // types in the case where there is inhertance going on that would
 // break C++ "standard layout" rules.
-// 
+//
 // TODO: If we reach a point where the use of inheritance ends up
 // breaking things, then we'll have to do a fair bit more. It might
 // seem like we could just turn the `: public Whatever` base into
@@ -1474,7 +1478,7 @@ void ASTSerialWriteContext::handleASTNode(ASTSerializer const& serializer, NodeB
             //
             // * When the `decl` we are writing is itself a module
             //   (and thus identical to `moduleDeclWasImportedFrom`).
-            // 
+            //
             // * The ordinary case, where `decl` is one of the declarations
             //   contained in `moduleDeclWasImportedFrom`.
             //
@@ -1499,7 +1503,7 @@ void ASTSerialWriteContext::handleASTNode(ASTSerializer const& serializer, NodeB
     // way that AST nodes derived from `Val` are
     // deduplicated as part of creation, we can't
     // defer reading their operands.
-    // 
+    //
     // Thus we branch here based on whether we are
     // writing a `Val`-derived node, or not.
     //
@@ -1628,7 +1632,9 @@ void ASTSerialReadContext::handleASTNode(ASTSerializer const& serializer, NodeBa
 // store a single field with the name of the module.
 //
 
-void ASTSerialWriteContext::_writeImportedModule(ASTSerializer const& serializer, ModuleDecl* moduleDecl)
+void ASTSerialWriteContext::_writeImportedModule(
+    ASTSerializer const& serializer,
+    ModuleDecl* moduleDecl)
 {
     ASTNodeType type = _getAsASTNodeType(PseudoASTNodeType::ImportedModule);
     auto moduleName = moduleDecl->getName();
@@ -1669,7 +1675,10 @@ ModuleDecl* ASTSerialReadContext::_readImportedModule(ASTSerializer const& seria
 // and the mangled name of the specific declaration.
 //
 
-void ASTSerialWriteContext::_writeImportedDecl(ASTSerializer const& serializer, Decl* decl, ModuleDecl* importedFromModuleDecl)
+void ASTSerialWriteContext::_writeImportedDecl(
+    ASTSerializer const& serializer,
+    Decl* decl,
+    ModuleDecl* importedFromModuleDecl)
 {
     ASTNodeType type = _getAsASTNodeType(PseudoASTNodeType::ImportedDecl);
     auto mangledName = getMangledName(getCurrentASTBuilder(), decl);
@@ -1780,7 +1789,6 @@ void ASTSerialReadContext::_cleanUpASTNode(NodeBase* node)
             SLANG_UNUSED(directMemberDecls);
         }
 #endif
-
     }
 }
 
@@ -1799,11 +1807,6 @@ void ASTSerialReadContext::_assignGenericParameterIndices(GenericDecl* genericDe
         }
     }
 }
-
-
-
-
-
 
 
 //
@@ -1856,7 +1859,8 @@ static void _collectASTModuleInfo(ModuleDecl* moduleDecl, ASTModuleInfo& moduleI
 // by defining the logic to collect the required information:
 //
 
-static ContainerDeclDirectMemberDeclsInfo _collectContainerDeclDirectMemberDeclsInfo(ContainerDeclDirectMemberDecls const& decls)
+static ContainerDeclDirectMemberDeclsInfo _collectContainerDeclDirectMemberDeclsInfo(
+    ContainerDeclDirectMemberDecls const& decls)
 {
     ContainerDeclDirectMemberDeclsInfo info;
     info.decls = decls.getDecls();
@@ -1933,7 +1937,9 @@ static ContainerDeclDirectMemberDeclsInfo _collectContainerDeclDirectMemberDecls
     return info;
 }
 
-void ASTSerialWriteContext::handleContainerDeclDirectMemberDecls(ASTSerializer const& serializer, ContainerDeclDirectMemberDecls& value)
+void ASTSerialWriteContext::handleContainerDeclDirectMemberDecls(
+    ASTSerializer const& serializer,
+    ContainerDeclDirectMemberDecls& value)
 {
     // Writing the members of a container declaration is
     // just a matter of collecting the information into
@@ -1944,7 +1950,9 @@ void ASTSerialWriteContext::handleContainerDeclDirectMemberDecls(ASTSerializer c
     serialize(serializer, info);
 }
 
-void ASTSerialReadContext::handleContainerDeclDirectMemberDecls(ASTSerializer const& serializer, ContainerDeclDirectMemberDecls& value)
+void ASTSerialReadContext::handleContainerDeclDirectMemberDecls(
+    ASTSerializer const& serializer,
+    ContainerDeclDirectMemberDecls& value)
 {
     // In the reading direction, we will intentionally
     // *not* deserialize things the usual way, because
@@ -1965,7 +1973,8 @@ void ASTSerialReadContext::handleContainerDeclDirectMemberDecls(ASTSerializer co
     ISerializerImpl* readerImpl = serializer.getImpl();
     auto fossilReader = static_cast<Fossil::SerialReader*>(readerImpl);
     //
-    auto fossilizedInfo = (Fossilized<ContainerDeclDirectMemberDeclsInfo>*) fossilReader->readValPtr().get();
+    auto fossilizedInfo =
+        (Fossilized<ContainerDeclDirectMemberDeclsInfo>*)fossilReader->readValPtr().get();
 
     // We can read specific fields out of the `fossilizedInfo`
     // without triggering full deserialization. At this point
@@ -1983,7 +1992,6 @@ void ASTSerialReadContext::handleContainerDeclDirectMemberDecls(ASTSerializer co
     //
     value._initForOnDemandDeserialization(this, fossilizedInfo, declCount);
 }
-
 
 
 //
@@ -2024,7 +2032,10 @@ Decl* ASTSerialReadContext::readFossilizedDecl(Fossilized<Decl>* fossilizedDecl)
 {
     auto contentValPtr = getVariantContentPtr(fossilizedDecl);
 
-    Fossil::SerialReader reader(_readContext, *contentValPtr, Fossil::SerialReader::InitialStateType::PseudoPtr);
+    Fossil::SerialReader reader(
+        _readContext,
+        *contentValPtr,
+        Fossil::SerialReader::InitialStateType::PseudoPtr);
     ASTSerializer serializer(&reader, this);
 
     Decl* decl = nullptr;
@@ -2047,7 +2058,14 @@ ModuleDecl* readSerializedModuleAST(
 
     auto fossilizedModuleInfo = cast<Fossilized<ASTModuleInfo>>(rootVal);
 
-    auto sharedDecodingContext = RefPtr(new ASTSerialReadContext(linkage, astBuilder, sink, sourceLocReader, requestingSourceLoc, fossilizedModuleInfo, blobHoldingSerializedData));
+    auto sharedDecodingContext = RefPtr(new ASTSerialReadContext(
+        linkage,
+        astBuilder,
+        sink,
+        sourceLocReader,
+        requestingSourceLoc,
+        fossilizedModuleInfo,
+        blobHoldingSerializedData));
 
     // TODO: we want to be careful and not deserialize everything here.
     //
@@ -2077,15 +2095,16 @@ ModuleDecl* readSerializedModuleAST(
     Fossilized<ASTModuleInfo>* rawFossilizedModuleInfo = fossilizedModuleInfo;
 
 
-    ModuleDecl* moduleDecl = as<ModuleDecl>(sharedDecodingContext->readFossilizedDecl(rawFossilizedModuleInfo->moduleDecl));
+    ModuleDecl* moduleDecl = as<ModuleDecl>(
+        sharedDecodingContext->readFossilizedDecl(rawFossilizedModuleInfo->moduleDecl));
     SLANG_ASSERT(moduleDecl);
 
-    #if SLANG_ENABLE_AST_DESERIALIZATION_STATS
+#if SLANG_ENABLE_AST_DESERIALIZATION_STATS
     fprintf(
         stderr,
         "finished loading the `ModuleDecl` for '%s'\n",
         moduleDecl->getName()->text.getBuffer());
-    #endif
+#endif
 
     for (Fossilized<Decl>* fossilizedDecl : rawFossilizedModuleInfo->declsToRegister)
     {
@@ -2093,17 +2112,18 @@ ModuleDecl* readSerializedModuleAST(
         registerBuiltinDecl(astBuilder, decl);
     }
 
-    #if SLANG_ENABLE_AST_DESERIALIZATION_STATS
+#if SLANG_ENABLE_AST_DESERIALIZATION_STATS
     fprintf(
         stderr,
         "finished registering builtins for '%s'\n",
         moduleDecl->getName()->text.getBuffer());
-    #endif
+#endif
 
     return moduleDecl;
 }
 
-Decl* ContainerDecl::findExportedDeclByMangledNameInSerializedModule(UnownedStringSlice const& mangledName)
+Decl* ContainerDecl::findExportedDeclByMangledNameInSerializedModule(
+    UnownedStringSlice const& mangledName)
 {
     SLANG_ASSERT(isUsingOnDemandDeserialization());
 
@@ -2158,7 +2178,8 @@ void ContainerDeclDirectMemberDecls::_readSerializedTransparentDecls() const
     SLANG_ASSERT(isUsingOnDemandDeserialization());
     SLANG_ASSERT(accelerators.filteredListOfTransparentDecls.getCount() == 0);
 
-    auto& fossilizedInfo = *(Fossilized<ContainerDeclDirectMemberDeclsInfo>*)onDemandDeserialization.data;
+    auto& fossilizedInfo =
+        *(Fossilized<ContainerDeclDirectMemberDeclsInfo>*)onDemandDeserialization.data;
 
     if (fossilizedInfo.transparentDeclIndices.getElementCount() == 0)
         return;
@@ -2176,7 +2197,8 @@ Decl* ContainerDeclDirectMemberDecls::_readSerializedDeclAtIndex(Index index) co
     SLANG_ASSERT(isUsingOnDemandDeserialization());
 
     auto sharedContext = as<ASTSerialReadContext>(onDemandDeserialization.context);
-    auto& fossilizedInfo = *(Fossilized<ContainerDeclDirectMemberDeclsInfo>*)onDemandDeserialization.data;
+    auto& fossilizedInfo =
+        *(Fossilized<ContainerDeclDirectMemberDeclsInfo>*)onDemandDeserialization.data;
 
     auto& fossilizedDecl = fossilizedInfo.decls[index];
 
@@ -2191,7 +2213,8 @@ Decl* ContainerDeclDirectMemberDecls::_readSerializedDeclsOfName(Name* name) con
     if (name == nullptr)
         return nullptr;
 
-    auto& fossilizedInfo = *(Fossilized<ContainerDeclDirectMemberDeclsInfo>*)onDemandDeserialization.data;
+    auto& fossilizedInfo =
+        *(Fossilized<ContainerDeclDirectMemberDeclsInfo>*)onDemandDeserialization.data;
 
     auto found = _findEntryInFossilizedDictionaryWithSortedKeys(
         fossilizedInfo.mapNameToDeclIndex,

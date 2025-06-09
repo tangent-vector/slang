@@ -32,8 +32,8 @@ namespace Slang
 
 namespace Fossil
 {
-    template<typename T>
-    using RelativePtr = RelativePtr32<T>;
+template<typename T>
+using RelativePtr = RelativePtr32<T>;
 }
 
 // Various other parts of the format need to store offsets or counts,
@@ -164,7 +164,7 @@ public:
 //
 // Simple scalar values are fossilized into a wrapper
 // `struct` that contains the underlying value.
-// 
+//
 // The reason to impose the wrapper `struct` is that
 // it allows us to control the alignment of the type
 // in case it turns out that different targets/compilers
@@ -189,10 +189,10 @@ private:
     T _value;
 };
 
-#define SLANG_DECLARE_FOSSILIZED_SIMPLE_TYPE(TYPE, TAG)     \
-    template<>                                              \
-    struct FossilizedTypeTraits<TYPE>                       \
-    {                                                       \
+#define SLANG_DECLARE_FOSSILIZED_SIMPLE_TYPE(TYPE, TAG)                           \
+    template<>                                                                    \
+    struct FossilizedTypeTraits<TYPE>                                             \
+    {                                                                             \
         using FossilizedType = FossilizedSimpleVal<TYPE, FossilizedValKind::TAG>; \
     };
 
@@ -256,10 +256,11 @@ private:
 // By default we assume that an `enum` type should be fossilized
 // as a signed 32-bit integer.
 //
-#define SLANG_DECLARE_FOSSILIZED_ENUM(TYPE)      \
-    template<>                                        \
-    struct Fossilized_<TYPE> : FossilizedViaCastVal<TYPE, int32_t>                 \
-    {};
+#define SLANG_DECLARE_FOSSILIZED_ENUM(TYPE)                        \
+    template<>                                                     \
+    struct Fossilized_<TYPE> : FossilizedViaCastVal<TYPE, int32_t> \
+    {                                                              \
+    };
 
 //
 // For many of the other kinds of types that get fossilized,
@@ -279,10 +280,7 @@ public:
     Size getSize() const;
     UnownedTerminatedStringSlice get() const;
 
-    operator UnownedTerminatedStringSlice() const
-    {
-        return get();
-    }
+    operator UnownedTerminatedStringSlice() const { return get(); }
 
 private:
     // Before the `this` address, there is a `FossilUInt`
@@ -302,10 +300,7 @@ public:
         return _obj ? _obj->get() : UnownedTerminatedStringSlice();
     }
 
-    operator UnownedTerminatedStringSlice() const
-    {
-        return get();
-    }
+    operator UnownedTerminatedStringSlice() const { return get(); }
 
 private:
     FossilizedPtr<FossilizedStringObj> _obj;
@@ -337,10 +332,10 @@ inline bool operator!=(FossilizedStringObj const& left, UnownedStringSlice const
 }
 
 #define SLANG_DECLARE_FOSSILIZED_TYPE(LIVE, FOSSILIZED) \
-    template<>                                   \
-    struct FossilizedTypeTraits<LIVE>            \
-    {                                            \
-        using FossilizedType = FOSSILIZED; \
+    template<>                                          \
+    struct FossilizedTypeTraits<LIVE>                   \
+    {                                                   \
+        using FossilizedType = FOSSILIZED;              \
     }
 
 SLANG_DECLARE_FOSSILIZED_TYPE(String, FossilizedString);
@@ -395,7 +390,7 @@ public:
     {
         if (!_obj)
             return nullptr;
-        return (T const*) _obj.get()->getBuffer();
+        return (T const*)_obj.get()->getBuffer();
     }
 
     T const* begin() const { return getBuffer(); }
@@ -453,13 +448,13 @@ struct FossilizedKeyValuePair
 };
 
 template<typename K, typename V>
-struct FossilizedTypeTraits<KeyValuePair<K,V>>
+struct FossilizedTypeTraits<KeyValuePair<K, V>>
 {
     using FossilizedType = FossilizedKeyValuePair<Fossilized<K>, Fossilized<V>>;
 };
 
 template<typename K, typename V>
-struct FossilizedTypeTraits<std::pair<K,V>>
+struct FossilizedTypeTraits<std::pair<K, V>>
 {
     using FossilizedType = FossilizedKeyValuePair<Fossilized<K>, Fossilized<V>>;
 };
@@ -480,22 +475,21 @@ struct FossilizedDictionaryObj : FossilizedDictionaryObjBase
 };
 
 
-
 template<typename K, typename V>
-struct FossilizedDictionary : FossilizedContainer<FossilizedKeyValuePair<K,V>>
+struct FossilizedDictionary : FossilizedContainer<FossilizedKeyValuePair<K, V>>
 {
 public:
-    using Entry = FossilizedKeyValuePair<K,V>;
+    using Entry = FossilizedKeyValuePair<K, V>;
 };
 
 template<typename K, typename V>
-struct FossilizedTypeTraits<Dictionary<K,V>>
+struct FossilizedTypeTraits<Dictionary<K, V>>
 {
     using FossilizedType = FossilizedDictionary<Fossilized<K>, Fossilized<V>>;
 };
 
 template<typename K, typename V>
-struct FossilizedTypeTraits<OrderedDictionary<K,V>>
+struct FossilizedTypeTraits<OrderedDictionary<K, V>>
 {
     using FossilizedType = FossilizedDictionary<Fossilized<K>, Fossilized<V>>;
 };
@@ -507,15 +501,17 @@ struct FossilizedTypeTraits<OrderedDictionary<K,V>>
 
 namespace details
 {
-    template<typename T>
-    T fossilizedPointerTargetType(T*, void*);
-
-    template<typename T>
-    FossilizedStringObj fossilizedPointerTargetType(T*, FossilizedString*);
-}
+template<typename T>
+T fossilizedPointerTargetType(T*, void*);
 
 template<typename T>
-using FossilizedPointerTarget = decltype(details::fossilizedPointerTargetType(std::declval<Fossilized<T>*>(), std::declval<Fossilized<T>*>()));
+FossilizedStringObj fossilizedPointerTargetType(T*, FossilizedString*);
+} // namespace details
+
+template<typename T>
+using FossilizedPointerTarget = decltype(details::fossilizedPointerTargetType(
+    std::declval<Fossilized<T>*>(),
+    std::declval<Fossilized<T>*>()));
 
 
 template<typename T>
@@ -562,14 +558,8 @@ template<typename T>
 struct FossilizedOptional : FossilizedVal
 {
 public:
-    explicit operator bool() const
-    {
-        return _value.get() != nullptr;
-    }
-    T const& operator*() const
-    {
-        return *_value.get();
-    }
+    explicit operator bool() const { return _value.get() != nullptr; }
+    T const& operator*() const { return *_value.get(); }
 
 private:
     FossilizedPtr<T> _value;
@@ -658,19 +648,6 @@ private:
     }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 struct FossilizedPtrLikeLayout
 {
     // Note: we aren't using inheritance in the definitions
@@ -726,9 +703,12 @@ public:
     }
 
     template<typename U>
-    DynRefBase(DynRefBase<U> const& other, std::enable_if_t<std::is_convertible_v<U*,T*>, void*> = nullptr)
+    DynRefBase(
+        DynRefBase<U> const& other,
+        std::enable_if_t<std::is_convertible_v<U*, T*>, void*> = nullptr)
         : _dataPtr(other.getDataPtr()), _layout((Layout*)other.getLayout())
-    {}
+    {
+    }
 
     /// Get the kind of value being referenced.
     ///
@@ -752,11 +732,11 @@ public:
 
     operator T const&() const { return *_dataPtr; }
 
-//    T const& get() { return *_data; }
+    //    T const& get() { return *_data; }
 
-//    operator FossilizedVal*() const { return _data; }
+    //    operator FossilizedVal*() const { return _data; }
 
-//    FossilizedVal* operator->() const { return _data; }
+    //    FossilizedVal* operator->() const { return _data; }
 
 private:
     T* _dataPtr = nullptr;
@@ -795,7 +775,8 @@ public:
     template<typename U>
     DynPtr(DynPtr<U> const& ptr, std::enable_if_t<std::is_convertible_v<U*, T*>, void*> = nullptr)
         : _ref(*ptr)
-    {}
+    {
+    }
 
 
     DynPtr<T>& operator=(DynPtr<T> const&) = default;
@@ -815,12 +796,6 @@ private:
 };
 
 
-
-
-
-
-
-
 //
 // We support dynamic casting of `DynRef`s to the various important
 // sub-types of `FossilizedVal`.
@@ -828,121 +803,106 @@ private:
 
 namespace detail
 {
-    template<typename T>
-    struct DynamicCastHelper
-    {
-        static bool isMatchingKind(FossilizedValKind kind)
-        {
-            return kind == T::kKind;
-        }
-    };
+template<typename T>
+struct DynamicCastHelper
+{
+    static bool isMatchingKind(FossilizedValKind kind) { return kind == T::kKind; }
+};
 
-    template<>
-    struct DynamicCastHelper<FossilizedVal>
+template<>
+struct DynamicCastHelper<FossilizedVal>
+{
+    static bool isMatchingKind(FossilizedValKind) { return true; }
+};
+
+template<>
+struct DynamicCastHelper<FossilizedStringObj>
+{
+    static bool isMatchingKind(FossilizedValKind kind)
     {
-        static bool isMatchingKind(FossilizedValKind)
+        return kind == FossilizedValKind::StringObj;
+    }
+};
+
+template<>
+struct DynamicCastHelper<FossilizedArrayObjBase>
+{
+    static bool isMatchingKind(FossilizedValKind kind)
+    {
+        return kind == FossilizedValKind::ArrayObj;
+    }
+};
+
+template<>
+struct DynamicCastHelper<FossilizedDictionaryObjBase>
+{
+    static bool isMatchingKind(FossilizedValKind kind)
+    {
+        return kind == FossilizedValKind::DictionaryObj;
+    }
+};
+
+template<>
+struct DynamicCastHelper<FossilizedContainerObjBase>
+{
+    static bool isMatchingKind(FossilizedValKind kind)
+    {
+        switch (kind)
         {
+        default:
+            return false;
+
+        case FossilizedValKind::ArrayObj:
+        case FossilizedValKind::DictionaryObj:
             return true;
         }
-    };
+    }
+};
 
-    template<>
-    struct DynamicCastHelper<FossilizedStringObj>
+template<>
+struct DynamicCastHelper<FossilizedOptionalObj<FossilizedVal>>
+{
+    static bool isMatchingKind(FossilizedValKind kind)
     {
-        static bool isMatchingKind(FossilizedValKind kind)
-        {
-            return kind == FossilizedValKind::StringObj;
-        }
-    };
+        return kind == FossilizedValKind::OptionalObj;
+    }
+};
 
-    template<>
-    struct DynamicCastHelper<FossilizedArrayObjBase>
+template<>
+struct DynamicCastHelper<FossilizedPtr<FossilizedVal>>
+{
+    static bool isMatchingKind(FossilizedValKind kind) { return kind == FossilizedValKind::Ptr; }
+};
+
+template<>
+struct DynamicCastHelper<FossilizedStructVal>
+{
+    static bool isMatchingKind(FossilizedValKind kind) { return kind == FossilizedValKind::Struct; }
+};
+
+template<>
+struct DynamicCastHelper<FossilizedTupleVal>
+{
+    static bool isMatchingKind(FossilizedValKind kind) { return kind == FossilizedValKind::Tuple; }
+};
+
+template<>
+struct DynamicCastHelper<FossilizedRecordVal>
+{
+    static bool isMatchingKind(FossilizedValKind kind)
     {
-        static bool isMatchingKind(FossilizedValKind kind)
+        switch (kind)
         {
-            return kind == FossilizedValKind::ArrayObj;
+        default:
+            return false;
+
+        case FossilizedValKind::Tuple:
+        case FossilizedValKind::Struct:
+            return true;
         }
-    };
-
-    template<>
-    struct DynamicCastHelper<FossilizedDictionaryObjBase>
-    {
-        static bool isMatchingKind(FossilizedValKind kind)
-        {
-            return kind == FossilizedValKind::DictionaryObj;
-        }
-    };
-
-    template<>
-    struct DynamicCastHelper<FossilizedContainerObjBase>
-    {
-        static bool isMatchingKind(FossilizedValKind kind)
-        {
-            switch (kind)
-            {
-            default:
-                return false;
-
-            case FossilizedValKind::ArrayObj:
-            case FossilizedValKind::DictionaryObj:
-                return true;
-            }
-        }
-    };
-
-    template<>
-    struct DynamicCastHelper<FossilizedOptionalObj<FossilizedVal>>
-    {
-        static bool isMatchingKind(FossilizedValKind kind)
-        {
-            return kind == FossilizedValKind::OptionalObj;
-        }
-    };
-
-    template<>
-    struct DynamicCastHelper<FossilizedPtr<FossilizedVal>>
-    {
-        static bool isMatchingKind(FossilizedValKind kind)
-        {
-            return kind == FossilizedValKind::Ptr;
-        }
-    };
-
-    template<>
-    struct DynamicCastHelper<FossilizedStructVal>
-    {
-        static bool isMatchingKind(FossilizedValKind kind)
-        {
-            return kind == FossilizedValKind::Struct;
-        }
-    };
-
-    template<>
-    struct DynamicCastHelper<FossilizedTupleVal>
-    {
-        static bool isMatchingKind(FossilizedValKind kind)
-        {
-            return kind == FossilizedValKind::Tuple;
-        }
-    };
-
-    template<>
-    struct DynamicCastHelper<FossilizedRecordVal>
-    {
-        static bool isMatchingKind(FossilizedValKind kind)
-        {
-            switch (kind)
-            {
-            default:
-                return false;
-
-            case FossilizedValKind::Tuple:
-            case FossilizedValKind::Struct:
-                return true;
-            }
-        }
-    };
-}
+    }
+};
+} // namespace detail
 
 /// Statically cast a reference to a fossilized value.
 ///
@@ -982,25 +942,6 @@ DynPtr<T> as(DynPtr<U> valPtr)
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 template<>
 struct DynRef<FossilizedVal> : DynRefBase<FossilizedVal>
 {
@@ -1016,10 +957,10 @@ public:
 using FossilizedValRef = DynRef<FossilizedVal>;
 
 template<typename T, FossilizedValKind K>
-struct DynRef<FossilizedSimpleVal<T,K>> : DynRefBase<FossilizedSimpleVal<T,K>>
+struct DynRef<FossilizedSimpleVal<T, K>> : DynRefBase<FossilizedSimpleVal<T, K>>
 {
 public:
-    using DynRefBase<FossilizedSimpleVal<T,K>>::DynRefBase;
+    using DynRefBase<FossilizedSimpleVal<T, K>>::DynRefBase;
 
     T const& get() const { return *(this->getDataPtr()); }
 };
@@ -1039,10 +980,7 @@ struct DynRef<FossilizedRecordVal> : DynRefBase<FossilizedRecordVal>
 public:
     using DynRefBase<FossilizedRecordVal>::DynRefBase;
 
-    Count getFieldCount() const
-    {
-        return getLayout()->fieldCount;
-    }
+    Count getFieldCount() const { return getLayout()->fieldCount; }
 
     DynRef<FossilizedVal> getField(Index index) const;
 };
@@ -1053,10 +991,7 @@ struct DynRef<FossilizedStringObj> : DynRefBase<FossilizedStringObj>
 public:
     using DynRefBase<FossilizedStringObj>::DynRefBase;
 
-    UnownedTerminatedStringSlice get() const
-    {
-        return getDataPtr()->get();
-    }
+    UnownedTerminatedStringSlice get() const { return getDataPtr()->get(); }
 };
 
 template<typename T>
@@ -1065,10 +1000,7 @@ struct DynRef<FossilizedOptionalObj<T>> : DynRefBase<FossilizedOptionalObj<T>>
 public:
     using DynRefBase<FossilizedOptionalObj<T>>::DynRefBase;
 
-    bool hasValue() const
-    {
-        return this->getDataPtr() != nullptr;
-    }
+    bool hasValue() const { return this->getDataPtr() != nullptr; }
 
     DynRef<T> getValue() const
     {
@@ -1089,10 +1021,7 @@ public:
         return DynRef<T>(*ptrPtr, this->getLayout()->elementLayout.get());
     }
 
-    operator T* () const
-    {
-        return this->getTarget().getDataPtr();
-    }
+    operator T*() const { return this->getTarget().getDataPtr(); }
 };
 
 template<>
@@ -1105,7 +1034,7 @@ public:
     {
         auto data = this->getDataPtr();
         if (!data)
-            return 0;     
+            return 0;
         return data->getElementCount();
     }
 
@@ -1151,10 +1080,7 @@ struct DynRef<FossilizedContainer<T>> : DynRefBase<FossilizedContainer<T>>
 public:
     using DynRefBase<FossilizedContainer<T>>::DynRefBase;
 
-    Count getElementCount() const
-    {
-        return this->getDataPtr()->getElementCount();
-    }
+    Count getElementCount() const { return this->getDataPtr()->getElementCount(); }
 
     DynRef<T> getElement(Index index) const;
 
@@ -1176,7 +1102,6 @@ public:
 
     Iterator begin() const { return Iterator(*this, 0); }
     Iterator end() const { return Iterator(*this, getElementCount()); }
-
 };
 
 template<typename T>
@@ -1186,28 +1111,23 @@ public:
     using DynRefBase<FossilizedArray<T>>::DynRefBase;
 };
 
-template<typename K,  typename V>
+template<typename K, typename V>
 struct DynRef<FossilizedKeyValuePair<K, V>> : DynRef<FossilizedRecordVal>
 {
 public:
     using DynRef<FossilizedRecordVal>::DynRef;
 
-    DynRef<K> getKey() const
-    {
-        return cast<K>(this->getField(0));
-    }
+    DynRef<K> getKey() const { return cast<K>(this->getField(0)); }
 
-    DynRef<V> getValue() const
-    {
-        return cast<V>(this->getField(1));
-    }
+    DynRef<V> getValue() const { return cast<V>(this->getField(1)); }
 };
 
-template<typename K,  typename V>
-struct DynRef<FossilizedDictionary<K, V>> : DynRef<FossilizedContainer<FossilizedKeyValuePair<K,V>>>
+template<typename K, typename V>
+struct DynRef<FossilizedDictionary<K, V>>
+    : DynRef<FossilizedContainer<FossilizedKeyValuePair<K, V>>>
 {
 public:
-    using DynRef<FossilizedContainer<FossilizedKeyValuePair<K,V>>>::DynRef;
+    using DynRef<FossilizedContainer<FossilizedKeyValuePair<K, V>>>::DynRef;
 };
 
 
@@ -1263,7 +1183,6 @@ private:
 
 
 using FossilizedValPtr = DynPtr<FossilizedVal>;
-
 
 
 #if 0

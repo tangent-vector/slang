@@ -4,7 +4,6 @@
 
 #include "slang-ast-base.h"
 #include "slang-ast-decl.h.fiddle"
-
 #include "slang-fossil.h"
 
 FIDDLE()

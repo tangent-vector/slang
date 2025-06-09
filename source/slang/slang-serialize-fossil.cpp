@@ -897,7 +897,10 @@ void SerialWriter::_flush()
 
         _state = State(fossilizedObject->ptrLayout, fossilizedObject->chunk);
 
-        fossilizedObject->callback(&fossilizedObject->liveObjectPtr, this, fossilizedObject->context);
+        fossilizedObject->callback(
+            &fossilizedObject->liveObjectPtr,
+            this,
+            fossilizedObject->context);
     }
 
     // Once we've written out all the payload data, we can start to work on
@@ -1138,8 +1141,10 @@ void SerialWriter::LayoutObjKey::hashInto(Hasher& hasher) const
 // SerialReader
 //
 
-SerialReader::SerialReader(ReadContext& context, FossilizedValRef valRef,
-                 InitialStateType initialState)
+SerialReader::SerialReader(
+    ReadContext& context,
+    FossilizedValRef valRef,
+    InitialStateType initialState)
     : _context(context)
 {
     // We track the number of active `SerialReader`s that
@@ -1622,7 +1627,7 @@ FossilizedValPtr SerialReader::_readValPtr()
             auto index = _state.elementIndex++;
 
             auto recordPtr = as<FossilizedRecordVal>(_state.baseValPtr);
-            return FossilizedValPtr( recordPtr->getField(index) );
+            return FossilizedValPtr(recordPtr->getField(index));
         }
 
     case State::Type::Optional:
@@ -1631,7 +1636,7 @@ FossilizedValPtr SerialReader::_readValPtr()
             SLANG_ASSERT(_state.elementIndex == 0);
 
             auto optionalPtr = as<FossilizedOptionalObj<FossilizedVal>>(_state.baseValPtr);
-            return FossilizedValPtr( optionalPtr->getValue() );
+            return FossilizedValPtr(optionalPtr->getValue());
         }
 
     case State::Type::Array:
@@ -1641,7 +1646,7 @@ FossilizedValPtr SerialReader::_readValPtr()
             auto index = _state.elementIndex++;
 
             auto containerPtr = as<FossilizedContainerObjBase>(_state.baseValPtr);
-            return FossilizedValPtr( containerPtr->getElement(index) );
+            return FossilizedValPtr(containerPtr->getElement(index));
         }
 
     default:

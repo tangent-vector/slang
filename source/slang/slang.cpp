@@ -756,12 +756,12 @@ SlangResult Session::_readBuiltinModule(
     moduleDecl->module = module;
     module->setModuleDecl(moduleDecl);
 
-    #if 0
+#if 0
     if (isFromCoreModule(moduleDecl))
     {
         registerBuiltinDecls(this, moduleDecl);
     }
-    #endif
+#endif
 
     // After the AST module has been read in, we next look
     // to deserialize the IR module.

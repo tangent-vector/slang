@@ -46,17 +46,9 @@ DIAGNOSTIC(300002, Error, expectedEndMarker, "expected a template end line ('$0'
 
 // Template Lua Parsing/Execution
 
-DIAGNOSTIC(
-    400001,
-    Fatal,
-    scriptLoadError,
-    "failure while loading lua script: $0")
+DIAGNOSTIC(400001, Fatal, scriptLoadError, "failure while loading lua script: $0")
 
-DIAGNOSTIC(
-    400002,
-    Fatal,
-    scriptExecutionError,
-    "failure while executing lua script: $0")
+DIAGNOSTIC(400002, Fatal, scriptExecutionError, "failure while executing lua script: $0")
 
 
 // Scraper: Parsing

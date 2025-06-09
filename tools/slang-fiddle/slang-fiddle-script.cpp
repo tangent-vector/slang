@@ -32,7 +32,7 @@ int _trace(lua_State* L)
         lua_pushliteral(L, " ");
         luaL_tolstring(L, i + 1, nullptr);
     }
-    lua_concat(L, 2*argCount);
+    lua_concat(L, 2 * argCount);
 
     size_t size = 0;
     char const* buffer = lua_tolstring(L, -1, &size);
@@ -69,7 +69,7 @@ void diagnoseLuaError(lua_State* L)
 
         size_t size = 0;
         char const* buffer = lua_tolstring(L, -1, &size);
-        message.append( UnownedStringSlice(buffer, size) );
+        message.append(UnownedStringSlice(buffer, size));
         message.append("\n");
     }
 
@@ -185,7 +185,9 @@ lua_State* getLuaState()
 
 String evaluateScriptCode(
     SourceLoc loc,
-    String originalFileName, String scriptSource, DiagnosticSink* sink)
+    String originalFileName,
+    String scriptSource,
+    DiagnosticSink* sink)
 {
     StringBuilder builder;
     _builder = &builder;

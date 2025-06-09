@@ -567,13 +567,14 @@ public:
         PseudoPtr,
     };
 
-    SerialReader(ReadContext& context,
-                 FossilizedValRef valRef,
-                 InitialStateType initialState = InitialStateType::Root);
+    SerialReader(
+        ReadContext& context,
+        FossilizedValRef valRef,
+        InitialStateType initialState = InitialStateType::Root);
     ~SerialReader();
 
     /// Read a value from the current cursor position.
-    /// 
+    ///
     /// This operation can be used to skip over an entire value
     /// that might otherwise need to be read with a sequence of
     /// operations of the `ISerializerImpl` interface.
@@ -582,7 +583,7 @@ public:
     /// `Fossil::SerialReader` to read the contents of the value
     /// at some later time, or code can simply navigate the
     /// data in memory using their own logic.
-    /// 
+    ///
     FossilizedValPtr readValPtr();
 
     void flush();
