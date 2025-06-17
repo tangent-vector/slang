@@ -2084,7 +2084,7 @@ Decl* ASTSerialReadContext::readFossilizedDecl(Fossilized<Decl>* fossilizedDecl)
     serialize(serializer, decl);
     return decl;
 }
-
+#if 0
 static void _dump(FossilizedAnyValPtr valPtr, int depth = 0)
 {
     for (auto i = 0; i < depth; ++i)
@@ -2114,6 +2114,7 @@ static void _dump(FossilizedAnyValPtr valPtr, int depth = 0)
         return;
     }
 }
+#endif
 
 // Hello, Future Tess -
 //
@@ -2161,7 +2162,7 @@ ModuleDecl* readSerializedModuleAST(
     auto dataChunk = as<RIFF::DataChunk>(chunk);
 
     auto rootValPtr = Fossil::getRootValue(dataChunk->getPayload(), dataChunk->getPayloadSize());
-    _dump(rootValPtr);
+//    _dump(rootValPtr);
 
     TESS_TRACE("rootVal: %p", rootValPtr.get());
     auto fossilizedModuleInfoPtr = cast<Fossilized<ASTModuleInfo>>(rootValPtr);
