@@ -4480,9 +4480,6 @@ RefPtr<Module> Linkage::loadSourceModuleImpl(
     if (errorCountAfter != errorCountBefore && !isInLanguageServer())
     {
         _diagnoseErrorInImportedModule(sink);
-    }
-    if (errorCountAfter && !isInLanguageServer())
-    {
         // Something went wrong during the parsing, so we should bail out.
         return nullptr;
     }
