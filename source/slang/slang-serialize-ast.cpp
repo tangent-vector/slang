@@ -2162,7 +2162,7 @@ ModuleDecl* readSerializedModuleAST(
     auto dataChunk = as<RIFF::DataChunk>(chunk);
 
     auto rootValPtr = Fossil::getRootValue(dataChunk->getPayload(), dataChunk->getPayloadSize());
-//    _dump(rootValPtr);
+    //    _dump(rootValPtr);
 
     TESS_TRACE("rootVal: %p", rootValPtr.get());
     auto fossilizedModuleInfoPtr = cast<Fossilized<ASTModuleInfo>>(rootValPtr);
