@@ -748,7 +748,7 @@ template<typename X, typename T>
 FossilizedArrayObj<T> fossilizedPtrTargetType(X*, FossilizedArray<T>*);
 
 template<typename X, typename K, typename V>
-FossilizedDictionaryObj<K,V> fossilizedPtrTargetType(X*, FossilizedDictionary<K,V>*);
+FossilizedDictionaryObj<K, V> fossilizedPtrTargetType(X*, FossilizedDictionary<K, V>*);
 } // namespace details
 
 //
@@ -907,9 +907,7 @@ public:
     /// Only enabled if `U*` is convertible to `T*`.
     ///
     template<typename U>
-    ValPtr(
-        ValPtr<U> ptr,
-        std::enable_if_t<std::is_convertible_v<U*, T*>, void>* = nullptr)
+    ValPtr(ValPtr<U> ptr, std::enable_if_t<std::is_convertible_v<U*, T*>, void>* = nullptr)
         : _ref(*ptr)
     {
     }

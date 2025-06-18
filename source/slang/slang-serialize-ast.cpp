@@ -2079,7 +2079,8 @@ ModuleDecl* readSerializedModuleAST(
         SLANG_UNEXPECTED("invalid format for serialized module AST");
     }
 
-    Fossil::AnyValPtr rootValPtr = Fossil::getRootValue(dataChunk->getPayload(), dataChunk->getPayloadSize());
+    Fossil::AnyValPtr rootValPtr =
+        Fossil::getRootValue(dataChunk->getPayload(), dataChunk->getPayloadSize());
     if (!rootValPtr)
     {
         SLANG_UNEXPECTED("invalid format for serialized module AST");
@@ -2123,8 +2124,8 @@ ModuleDecl* readSerializedModuleAST(
     // we need right away is the actual `ModuleDecl` (since we need to
     // return it from this function).
     //
-    ModuleDecl* moduleDecl = as<ModuleDecl>(
-        sharedDecodingContext->readFossilizedDecl(fossilizedModuleInfo->moduleDecl));
+    ModuleDecl* moduleDecl =
+        as<ModuleDecl>(sharedDecodingContext->readFossilizedDecl(fossilizedModuleInfo->moduleDecl));
     SLANG_ASSERT(moduleDecl);
 
 #if SLANG_ENABLE_AST_DESERIALIZATION_STATS
