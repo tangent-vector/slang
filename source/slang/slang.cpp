@@ -756,13 +756,6 @@ SlangResult Session::_readBuiltinModule(
     moduleDecl->module = module;
     module->setModuleDecl(moduleDecl);
 
-#if 0
-    if (isFromCoreModule(moduleDecl))
-    {
-        registerBuiltinDecls(this, moduleDecl);
-    }
-#endif
-
     // After the AST module has been read in, we next look
     // to deserialize the IR module.
     //
@@ -5279,10 +5272,12 @@ void Module::_processFindDeclsExportSymbolsRec(Decl* decl)
 
 Decl* Module::findExportedDeclByMangledName(const UnownedStringSlice& mangledName)
 {
-    // TODO(tfoley): If this is a module that is being on-demand
-    // deserialized, then we need the mangled name mapping stuff
-    // to be baked into the serialized file, rather than attempt
-    // to enumerate all of the declarations in the module here.
+    // If this module is a serialized module that is being
+    // deserialized on-demand, then we want to use the
+    // mangled name mapping that was baked into the serialized
+    // data, rather than attempt to enumerate all of the declarations
+    // in the module (as would be done if we proceeded to call
+    // `ensureExportLookupAcceleratorBuilt()`).
     //
     if (this->m_moduleDecl->isUsingOnDemandDeserializationForExports())
     {

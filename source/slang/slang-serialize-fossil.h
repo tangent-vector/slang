@@ -569,7 +569,7 @@ public:
 
     SerialReader(
         ReadContext& context,
-        FossilizedAnyValPtr valPtr,
+        Fossil::AnyValPtr valPtr,
         InitialStateType initialState = InitialStateType::Root);
     ~SerialReader();
 
@@ -584,7 +584,7 @@ public:
     /// at some later time, or code can simply navigate the
     /// data in memory using their own logic.
     ///
-    FossilizedAnyValPtr readValPtr();
+    Fossil::AnyValPtr readValPtr();
 
     void flush();
 
@@ -619,7 +619,7 @@ private:
         /// that will be read (e.g., for the `Root` case), or it might be
         /// a container that is a parent of the next value to be read.
         ///
-        FossilizedAnyValPtr baseValPtr;
+        Fossil::AnyValPtr baseValPtr;
 
         /// Index of next element to read.
         ///
@@ -666,7 +666,7 @@ private:
         ObjectState state = ObjectState::Unread;
 
         void* resurrectedObjectPtr = nullptr;
-        FossilizedAnyValPtr fossilizedObjectPtr;
+        Fossil::AnyValPtr fossilizedObjectPtr;
     };
 
     //
@@ -697,14 +697,14 @@ private:
     ///
     /// This is the case for scalars, tuples, and structs.
     ///
-    FossilizedAnyValPtr _readValPtr();
+    Fossil::AnyValPtr _readValPtr();
 
     /// Read an indirect value.
     ///
     /// This is the case for things like optionals, that are
     /// always encoded as a pointer.
     ///
-    FossilizedAnyValPtr _readIndirectValPtr();
+    Fossil::AnyValPtr _readIndirectValPtr();
 
     /// Read a potentially-indirect value.
     ///
@@ -713,7 +713,7 @@ private:
     ///
     /// Otherwise, this will return a reference to the value itself.
     ///
-    FossilizedAnyValPtr _readPotentiallyIndirectValPtr();
+    Fossil::AnyValPtr _readPotentiallyIndirectValPtr();
 
 
     template<typename T>

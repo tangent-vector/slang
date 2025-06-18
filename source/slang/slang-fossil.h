@@ -2,33 +2,6 @@
 #ifndef SLANG_FOSSIL_H
 #define SLANG_FOSSIL_H
 
-#include "../core/slang-relative-ptr.h"
-
-#include <stdarg.h>
-#include <stdio.h>
-
-static inline void _tessTrace(char const* message, ...)
-{
-#if 0
-    va_list args;
-    va_start(args, message);
-
-    char buffer[1024];
-    vsnprintf(buffer, sizeof(buffer), message, args);
-
-    fprintf(stderr, "TESS: %s\n", buffer);
-#else
-    SLANG_UNUSED(message);
-#endif
-}
-
-#define TESS_TRACE(...)          \
-    do                           \
-    {                            \
-        _tessTrace(__VA_ARGS__); \
-    } while (0)
-
-
 //
 // This file defines a memory-mappable binary format for
 // serialized object graphs. To distinguish this specific
@@ -50,6 +23,10 @@ static inline void _tessTrace(char const* message, ...)
 
 namespace Slang
 {
+
+struct FossilizedPtrLikeLayout;
+struct FossilizedRecordLayout;
+struct FossilizedValLayout;
 
 using FossilInt = int32_t;
 using FossilUInt = uint32_t;
@@ -83,8 +60,6 @@ enum class FossilizedValKind : FossilUInt
 // without having to deserialize any of the intermediate objects.
 //
 // Fossil uses 32-bit relative pointers, to keep the format compact.
-
-struct FossilizedPtrLikeLayout;
 
 template<typename T>
 struct FossilizedPtr : RelativePtr32<T>
@@ -132,166 +107,30 @@ template<typename T>
 using Fossilized = FossilizedTypeTraits<T>::FossilizedType;
 
 //
-// In addition to being able to expose a statically-known
-// layout through `Fossilized<T>`, the fossil format also
-// allows data to be *self-describing*, by carying its layout
-// with it.
-//
-// A `FossilizedValLayout` describes the in-memory layout of a fossilized
-// value. Given a `FossilizedValLayout` and a pointer to the data
-// for a particular value, it is possible to inspect the structure
-// of the fossilized data.
-//
-// If all you have is a `FossilizedVal*`, then there is no way to access
-// its contents without assuming it is of some particular type and casting
-// it.
-//
-// A `FossilizedVariantObj` is a fossilized value that is self-describing;
-// it stores a (relative) pointer to a layout, which can be used to inspect
-// its own data/state.
+// In many cases, a new C++ type can be fossilized using
+// the same representation as some existing type, so we
+// allow them to conveniently declare that fact with
+// a macro.
 //
 
-struct FossilizedValLayout;
-struct FossilizedPtrLikeLayout;
-struct FossilizedContainerLayout;
-struct FossilizedRecordLayout;
-struct FossilizedVariantObj;
-
-/// Layout information about a fossilized value in memory.
-///
-///
-/// Every `FossilizedValLayout` stores the kind of the value.
-/// Based on that kind, specific additional fields may be
-/// available as part of the layout.
-///
-struct FossilizedValLayout
-{
-    FossilizedValKind kind;
-};
-
-/// A reference to a fossilized value in memory, along with layout information.
-///
-template<typename T, typename L = typename T::Layout>
-struct DynRefBase
-{
-public:
-    using Val = T;
-    using Layout = L;
-
-    /// Construct a null reference.
-    ///
-    DynRefBase() {}
-
-    /// Construct a reference to the given `data`, assuming it has the given `layout`.
-    ///
-    DynRefBase(T* data, Layout const* layout)
-        : _data(data), _layout(layout)
-    {
+#define SLANG_DECLARE_FOSSILIZED_AS(TYPE, FOSSILIZED_AS)  \
+    template<>                                            \
+    struct FossilizedTypeTraits<TYPE>                     \
+    {                                                     \
+        using FossilizedType = Fossilized<FOSSILIZED_AS>; \
     }
 
-    template<typename U>
-    DynRefBase(DynRefBase<U> ref, std::enable_if_t<std::is_convertible_v<U*, T*>, void>* = nullptr)
-        : _data(ref.getDataPtr()), _layout((Layout const*)ref.getLayout())
-    {
+//
+// Another common pattern is when some aggregate type
+// can simply be fossilized as one of its members.
+//
+
+#define SLANG_DECLARE_FOSSILIZED_AS_MEMBER(TYPE, MEMBER)           \
+    template<>                                                     \
+    struct FossilizedTypeTraits<TYPE>                              \
+    {                                                              \
+        using FossilizedType = Fossilized<decltype(TYPE::MEMBER)>; \
     }
-
-    /// Get a pointer to the value being referenced.
-    ///
-    T* getDataPtr() const { return _data; }
-
-    /// Get a reference to the value being referenced.
-    ///
-    template<typename U = T>
-    std::enable_if_t<!std::is_same_v<U, void>, T>& getDataRef() const
-    {
-        return *_data;
-    }
-
-    /// Get the layout of the value being referenced.
-    ///
-    Layout const* getLayout() const { return _layout; }
-
-    /// Get the kind of value being referenced.
-    ///
-    /// This reference must not be null.
-    ///
-    FossilizedValKind getKind() const
-    {
-        SLANG_ASSERT(getLayout());
-        return getLayout()->kind;
-    }
-
-    //    operator T&() const { return *_data; }
-
-protected:
-    T* _data = nullptr;
-    Layout const* _layout = nullptr;
-};
-
-template<typename T>
-struct DynRef : DynRefBase<T>
-{
-    using DynRefBase<T>::DynRefBase;
-};
-
-template<>
-struct DynRef<void> : DynRefBase<void, FossilizedValLayout>
-{
-    using DynRefBase<void, FossilizedValLayout>::DynRefBase;
-};
-
-template<typename T>
-struct DynPtr
-{
-public:
-    using TargetVal = T;
-    using TargetLayout = typename DynRef<T>::Layout;
-
-    /// Construct a null pointer.
-    ///
-    DynPtr() {}
-    DynPtr(std::nullptr_t) {}
-
-    /// Construct a pointer to the given `data`, assuming it has the given `layout`.
-    ///
-    DynPtr(T* data, TargetLayout const* layout)
-        : _ref(data, layout)
-    {
-    }
-
-    explicit DynPtr(DynRef<T> ref)
-        : _ref(ref)
-    {
-    }
-
-    template<typename U>
-    DynPtr(DynPtr<U> ptr, std::enable_if_t<std::is_convertible_v<U*, T*>, void>* = nullptr)
-        : _ref(*ptr)
-    {
-    }
-
-    T* getDataPtr() const { return _ref.getDataPtr(); }
-    TargetLayout* getLayout() const { return _ref.getLayout(); }
-
-    DynRef<T> operator*() const { return _ref; }
-
-    T* get() const { return _ref.getDataPtr(); }
-    operator T*() const { return get(); }
-
-    DynRef<T> const* operator->() const { return &_ref; }
-
-private:
-    DynRef<T> _ref;
-};
-
-template<typename T>
-inline DynPtr<T> getAddress(DynRef<T> ref)
-{
-    return DynPtr<T>(ref);
-}
-
-using FossilizedAnyValRef = DynRef<void>;
-using FossilizedAnyValPtr = DynPtr<void>;
 
 //
 // Simple scalar values are fossilized into a wrapper
@@ -446,17 +285,192 @@ private:
     // sequence of `getSize() + 1` bytes.
 };
 
-template<>
-struct DynRef<FossilizedStringObj> : DynRefBase<FossilizedStringObj>
+//
+// The array and dictionary types are handled largely
+// the same as strings, with the added detail that the
+// object type is split into a base type without the
+// template parameters, and a subtype that has those
+// parameters. The base type enables navigating of
+// these containers dynamically, based on layout.
+//
+
+struct FossilizedContainerLayout
+{
+    FossilizedValKind kind;
+    FossilizedPtr<FossilizedValLayout> elementLayout;
+    FossilUInt elementStride;
+};
+
+struct FossilizedContainerObjBase
 {
 public:
-    using DynRefBase<FossilizedStringObj>::DynRefBase;
+    using Layout = FossilizedContainerLayout;
 
-    Size getSize() const { return getDataPtr()->getSize(); }
-    UnownedTerminatedStringSlice get() const { return getDataPtr()->get(); }
+    Count getElementCount() const;
 
-    operator UnownedTerminatedStringSlice() const { return get(); }
+    void const* getBuffer() const { return this; }
+
+    static bool isMatchingKind(FossilizedValKind kind)
+    {
+        switch (kind)
+        {
+        default:
+            return false;
+
+        case FossilizedValKind::ArrayObj:
+        case FossilizedValKind::DictionaryObj:
+            return true;
+        }
+    }
+
+private:
+    // Before the `this` address, there is a `FossilUInt`
+    // with the number of elements.
+    //
+    // At the `this` address there is a sequence of
+    // `getCount()` elements. The layout of those elements
+    // cannot be determined without having a `FossilizedContainerLayout`
+    // for this container.
 };
+
+template<typename T>
+struct FossilizedContainerObj : FossilizedContainerObjBase
+{
+public:
+};
+
+struct FossilizedArrayObjBase : FossilizedContainerObjBase
+{
+public:
+    static bool isMatchingKind(FossilizedValKind kind)
+    {
+        return kind == FossilizedValKind::ArrayObj;
+    }
+};
+
+template<typename T>
+struct FossilizedArrayObj : FossilizedArrayObjBase
+{
+};
+
+//
+// While we defined the core `FossilizedPtr` type above, there is
+// some subtlety involved in defining the way that a C++ pointer
+// type like `T*` maps to its fossilized representation via
+// `Fossilized<T*>`. The reason for this is that the binary layout
+// of fossilized data avoids storing redundant pointers-to-pointers,
+// so because a `Dictionary<int, float>` would already be stored
+// via an indirection in the binary layout, a pointer type
+// `Dictionary<int, float> *` would be stored with the exact same
+// binary layout.
+//
+// When computing what `Fossilized<T*>` is, the result will be
+// `FossilizedPtr< FossilizedPtrTarget<T> >`. The `FossilizedPtrTarget<T>`
+// template uses a set of helpers defined in a `details` namespace
+// to compute the correct target type.
+//
+
+namespace details
+{
+//
+// By default, a `Fossilized<T*>` will just be a `FossilizedPtr<Fossilized<T>>`.
+//
+template<typename T>
+T fossilizedPtrTargetType(T*, void*);
+} // namespace details
+
+template<typename T>
+using FossilizedPtrTarget = decltype(details::fossilizedPtrTargetType(
+    std::declval<Fossilized<T>*>(),
+    std::declval<Fossilized<T>*>()));
+
+
+template<typename T>
+struct FossilizedTypeTraits<T*>
+{
+    using FossilizedType = FossilizedPtr<FossilizedPtrTarget<T>>;
+};
+
+template<typename T>
+struct FossilizedTypeTraits<RefPtr<T>>
+{
+    using FossilizedType = FossilizedPtr<FossilizedPtrTarget<T>>;
+};
+
+
+//
+// An optional value is effectively just a pointer, with
+// the null case being used to represent the absence of
+// a value.
+//
+
+struct FossilizedPtrLikeLayout
+{
+    // Note: we aren't using inheritance in the definitions
+    // of these types, because per the letter of the law in
+    // C++, a type is only "standard layout" when there is
+    // only a single type in the inheritance hierarchy that
+    // has (non-static) data members.
+
+    FossilizedValKind kind;
+    FossilizedPtr<FossilizedValLayout> elementLayout;
+};
+
+struct FossilizedOptionalObjBase
+{
+public:
+    void* getValue() { return this; }
+
+    void const* getValue() const { return this; }
+
+    using Layout = FossilizedPtrLikeLayout;
+
+    static bool isMatchingKind(FossilizedValKind kind)
+    {
+        return kind == FossilizedValKind::OptionalObj;
+    }
+
+private:
+    // An absent optional is encoded as a null pointer
+    // (so `this` would be null), while a present value
+    // is encoded as a pointer to that value. Thus the
+    // held value is at the same address as `this`.
+};
+
+template<typename T>
+struct FossilizedOptionalObj : FossilizedOptionalObjBase
+{
+    T* getValue() { return this; }
+
+    T const* getValue() const { return this; }
+};
+
+template<typename T>
+struct FossilizedOptional
+{
+public:
+    explicit operator bool() const { return _value.get() != nullptr; }
+    T const& operator*() const { return *_value.get(); }
+
+private:
+    FossilizedPtr<T> _value;
+};
+
+template<typename T>
+struct FossilizedTypeTraits<std::optional<T>>
+{
+    using FossilizedType = FossilizedOptional<FossilizedPtrTarget<T>>;
+};
+
+static_assert(sizeof(Fossilized<std::optional<double>>) == sizeof(FossilUInt));
+
+//
+// With all of the various `Fossilized*Obj` cases defined above,
+// we can now define the more direct versions of things that
+// apply in the common case. For example, `Fossilized<String>`
+// simply maps to the `FossilizedString` type, and the parallels
+// are similar for arrays and dictionaries.
+//
 
 struct FossilizedString
 {
@@ -513,70 +527,6 @@ SLANG_DECLARE_FOSSILIZED_TYPE(UnownedTerminatedStringSlice, FossilizedString);
 static_assert(std::is_same_v<Fossilized<String>, FossilizedString>);
 static_assert(sizeof(Fossilized<String>) == sizeof(FossilUInt));
 
-//
-// The array and dictionary types are handled largely
-// the same as strings, with the added detail that the
-// object type is split into a base type without the
-// template parameters, and a subtype that has those
-// parameters. The base type enables navigating of
-// these containers dynamically, based on layout.
-//
-
-struct FossilizedContainerObjBase
-{
-public:
-    using Layout = FossilizedContainerLayout;
-
-    Count getElementCount() const;
-
-    void const* getBuffer() const { return this; }
-
-    static bool isMatchingKind(FossilizedValKind kind)
-    {
-        switch (kind)
-        {
-        default:
-            return false;
-
-        case FossilizedValKind::ArrayObj:
-        case FossilizedValKind::DictionaryObj:
-            return true;
-        }
-    }
-
-private:
-    // Before the `this` address, there is a `FossilUInt`
-    // with the number of elements.
-    //
-    // At the `this` address there is a sequence of
-    // `getCount()` elements. The layout of those elements
-    // cannot be determined without having a `FossilizedContainerLayout`
-    // for this container.
-};
-
-template<>
-struct DynRef<FossilizedContainerObjBase> : DynRefBase<FossilizedContainerObjBase>
-{
-public:
-    using DynRefBase<FossilizedContainerObjBase>::DynRefBase;
-
-    Count getElementCount() const
-    {
-        auto data = this->getDataPtr();
-        if (!data)
-            return 0;
-        return data->getElementCount();
-    }
-
-    FossilizedAnyValRef getElement(Index index) const;
-};
-
-template<typename T>
-struct FossilizedContainerObj : FossilizedContainerObjBase
-{
-public:
-};
-
 template<typename T>
 struct FossilizedContainer
 {
@@ -599,38 +549,6 @@ public:
 
 private:
     FossilizedPtr<FossilizedContainerObj<T>> _obj;
-};
-
-
-struct FossilizedArrayObjBase : FossilizedContainerObjBase
-{
-public:
-    static bool isMatchingKind(FossilizedValKind kind)
-    {
-        return kind == FossilizedValKind::ArrayObj;
-    }
-};
-
-template<typename T>
-struct FossilizedArrayObj : FossilizedArrayObjBase
-{
-};
-
-template<>
-struct DynRef<FossilizedArrayObjBase> : DynRefBase<FossilizedArrayObjBase>
-{
-public:
-    using DynRefBase<FossilizedArrayObjBase>::DynRefBase;
-
-    Count getElementCount() const
-    {
-        auto data = this->getDataPtr();
-        if (!data)
-            return 0;
-        return data->getElementCount();
-    }
-
-    FossilizedAnyValRef getElement(Index index) const;
 };
 
 template<typename T>
@@ -704,23 +622,6 @@ struct FossilizedDictionaryObj : FossilizedDictionaryObjBase
 {
 };
 
-template<>
-struct DynRef<FossilizedDictionaryObjBase> : DynRefBase<FossilizedDictionaryObjBase>
-{
-public:
-    using DynRefBase<FossilizedDictionaryObjBase>::DynRefBase;
-
-    Count getElementCount() const
-    {
-        auto data = this->getDataPtr();
-        if (!data)
-            return 0;
-        return data->getElementCount();
-    }
-
-    FossilizedAnyValRef getElement(Index index) const;
-};
-
 template<typename K, typename V>
 struct FossilizedDictionary : FossilizedContainer<FossilizedKeyValuePair<K, V>>
 {
@@ -743,121 +644,9 @@ struct FossilizedTypeTraits<OrderedDictionary<K, V>>
 static_assert(sizeof(Fossilized<Dictionary<String, String>>) == sizeof(FossilUInt));
 
 //
-// TODO: need to handle pointers here, with some clever logic...
-//
-
-namespace details
-{
-template<typename T>
-T fossilizedPointerTargetType(T*, void*);
-
-template<typename T>
-FossilizedStringObj fossilizedPointerTargetType(T*, FossilizedString*);
-} // namespace details
-
-template<typename T>
-using FossilizedPointerTarget = decltype(details::fossilizedPointerTargetType(
-    std::declval<Fossilized<T>*>(),
-    std::declval<Fossilized<T>*>()));
-
-
-template<typename T>
-struct FossilizedTypeTraits<T*>
-{
-    using FossilizedType = FossilizedPtr<FossilizedPointerTarget<T>>;
-};
-
-template<typename T>
-struct FossilizedTypeTraits<RefPtr<T>>
-{
-    using FossilizedType = FossilizedPtr<FossilizedPointerTarget<T>>;
-};
-
-
-//
-// An optional value is effectively just a pointer, with
-// the null case being used to represent the absence of
-// a value.
-//
-
-struct FossilizedPtrLikeLayout
-{
-    // Note: we aren't using inheritance in the definitions
-    // of these types, because per the letter of the law in
-    // C++, a type is only "standard layout" when there is
-    // only a single type in the inheritance hierarchy that
-    // has (non-static) data members.
-
-    FossilizedValKind kind;
-    FossilizedPtr<FossilizedValLayout> elementLayout;
-};
-
-struct FossilizedOptionalObjBase
-{
-public:
-    void* getValue() { return this; }
-
-    void const* getValue() const { return this; }
-
-    using Layout = FossilizedPtrLikeLayout;
-
-    static bool isMatchingKind(FossilizedValKind kind)
-    {
-        return kind == FossilizedValKind::OptionalObj;
-    }
-
-private:
-    // An absent optional is encoded as a null pointer
-    // (so `this` would be null), while a present value
-    // is encoded as a pointer to that value. Thus the
-    // held value is at the same address as `this`.
-};
-
-template<typename T>
-struct FossilizedOptionalObj : FossilizedOptionalObjBase
-{
-    T* getValue() { return this; }
-
-    T const* getValue() const { return this; }
-};
-
-template<>
-struct DynRef<FossilizedOptionalObjBase> : DynRefBase<FossilizedOptionalObjBase>
-{
-public:
-    using DynRefBase<FossilizedOptionalObjBase>::DynRefBase;
-
-    bool hasValue() const { return this->getDataPtr() != nullptr; }
-
-    FossilizedAnyValRef getValue() const
-    {
-        SLANG_ASSERT(hasValue());
-        return FossilizedAnyValRef(this->getDataPtr(), this->getLayout()->elementLayout.get());
-    }
-};
-
-
-template<typename T>
-struct FossilizedOptional
-{
-public:
-    explicit operator bool() const { return _value.get() != nullptr; }
-    T const& operator*() const { return *_value.get(); }
-
-private:
-    FossilizedPtr<T> _value;
-};
-
-template<typename T>
-struct FossilizedTypeTraits<std::optional<T>>
-{
-    using FossilizedType = FossilizedOptional<FossilizedPointerTarget<T>>;
-};
-
-static_assert(sizeof(Fossilized<std::optional<double>>) == sizeof(FossilUInt));
-
-//
-//
+// A record (struct or tuple) is stored simply as a sequence of field
+// values, and its layout gives the total number of fields as well as
+// the offset and layout of each.
 //
 
 struct FossilizedRecordElementLayout
@@ -876,6 +665,13 @@ struct FossilizedRecordLayout
     FossilizedRecordElementLayout* getField(Index index) const;
 };
 
+/// Stand-in for a fossilized record of unknown type.
+///
+/// Note that user-defined fossilized types should *not* try
+/// to inherit from `FossilizedRecordVal`, as doing so can
+/// end up breaking the correlation between the binary layout
+/// of fossilized data and the matching C++ declarations.
+///
 struct FossilizedRecordVal
 {
 public:
@@ -893,17 +689,6 @@ public:
             return true;
         }
     }
-};
-
-template<>
-struct DynRef<FossilizedRecordVal> : DynRefBase<FossilizedRecordVal>
-{
-public:
-    using DynRefBase<FossilizedRecordVal>::DynRefBase;
-
-    Count getFieldCount() const { return getLayout()->fieldCount; }
-
-    FossilizedAnyValRef getField(Index index) const;
 };
 
 //
@@ -946,84 +731,113 @@ private:
 static_assert(sizeof(FossilizedVariant) == sizeof(FossilUInt));
 
 //
-// In many cases, a new C++ type can be fossilized using
-// the same representation as some existing type, so we
-// allow them to conveniently declare that fact with
-// a macro.
+// Now that all of the relevant types for fossilized data have been defined,
+// we can circle back to define the specializations of `FossilizedPtrTargetType`
+// for the types that need it.
 //
 
-#define SLANG_DECLARE_FOSSILIZED_AS(TYPE, FOSSILIZED_AS)  \
-    template<>                                            \
-    struct FossilizedTypeTraits<TYPE>                     \
-    {                                                     \
-        using FossilizedType = Fossilized<FOSSILIZED_AS>; \
-    }
-
-//
-// Another common pattern is when some aggregate type
-// can simply be fossilized as one of its members.
-//
-
-#define SLANG_DECLARE_FOSSILIZED_AS_MEMBER(TYPE, MEMBER)           \
-    template<>                                                     \
-    struct FossilizedTypeTraits<TYPE>                              \
-    {                                                              \
-        using FossilizedType = Fossilized<decltype(TYPE::MEMBER)>; \
-    }
-
-
-template<typename T>
-struct DynRef<FossilizedPtr<T>> : DynRefBase<FossilizedPtr<T>>
+namespace details
 {
-public:
-    using DynRefBase<FossilizedPtr<T>>::DynRefBase;
+template<typename X>
+FossilizedStringObj fossilizedPtrTargetType(X*, FossilizedString*);
 
-    DynRef<T> getTargetValRef() const
-    {
-        auto ptrPtr = this->getDataPtr();
-        return DynRef<T>(*ptrPtr, this->getLayout()->elementLayout.get());
-    }
+template<typename X>
+FossilizedVariantObj fossilizedPtrTargetType(X*, FossilizedVariant*);
 
-    DynPtr<T> getTargetValPtr() const { return DynPtr<T>(getTargetValRef()); }
+template<typename X, typename T>
+FossilizedArrayObj<T> fossilizedPtrTargetType(X*, FossilizedArray<T>*);
 
-    //    DynRef<T> operator*() const;
-};
+template<typename X, typename K, typename V>
+FossilizedDictionaryObj<K,V> fossilizedPtrTargetType(X*, FossilizedDictionary<K,V>*);
+} // namespace details
 
-struct FossilizedContainerLayout
+//
+// In addition to being able to expose a statically-known
+// layout through `Fossilized<T>`, the fossil format also
+// allows data to be *self-describing*, by carying its layout
+// with it.
+//
+// A `FossilizedValLayout` describes the in-memory layout of a fossilized
+// value. Given a `FossilizedValLayout` and a pointer to the data
+// for a particular value, it is possible to inspect the structure
+// of the fossilized data.
+//
+// If all you have is a `void*` to a fossilzied value, then there is no way
+// to access its contents without assuming it is of some particular type and
+// casting it.
+//
+// A `FossilizedVariantObj` is a fossilized value that is self-describing;
+// it stores a (relative) pointer to a layout, which can be used to inspect
+// its own data/state.
+//
+
+struct FossilizedValLayout;
+struct FossilizedPtrLikeLayout;
+struct FossilizedContainerLayout;
+struct FossilizedRecordLayout;
+struct FossilizedVariantObj;
+
+/// Layout information about a fossilized value in memory.
+///
+///
+/// Every `FossilizedValLayout` stores the kind of the value.
+/// Based on that kind, specific additional fields may be
+/// available as part of the layout.
+///
+struct FossilizedValLayout
 {
     FossilizedValKind kind;
-    FossilizedPtr<FossilizedValLayout> elementLayout;
-    FossilUInt elementStride;
 };
 
-
-#if 0
-/// A reference to a fossilized value in memory, and its layout.
+namespace Fossil
+{
+/// A reference to a fossilized value in memory, along with layout information.
 ///
-template<typename T>
-struct DynRefBase
+template<typename T, typename L = typename T::Layout>
+struct ValRefBase
 {
 public:
-    using Layout = typename T::Layout;
+    using Val = T;
+    using Layout = L;
 
     /// Construct a null reference.
     ///
-    DynRefBase() {}
+    ValRefBase() {}
 
-    /// Construct a reference to the given `dataPtr`, assuming it has the given `layout`.
+    /// Construct a reference to the given `data`, assuming it has the given `layout`.
     ///
-    DynRefBase(T* dataPtr, Layout* layout)
-        : _dataPtr(dataPtr), _layout(layout)
+    ValRefBase(T* data, Layout const* layout)
+        : _data(data), _layout(layout)
     {
     }
 
+    /// Construct a copy of `ref`.
+    ///
+    /// Only enabled if `U*` is convertible to `T*`.
+    ///
     template<typename U>
-    DynRefBase(
-        DynRefBase<U> const& other,
-        std::enable_if_t<std::is_convertible_v<U*, T*>, void*> = nullptr)
-        : _dataPtr(other.getDataPtr()), _layout((Layout*)other.getLayout())
+    ValRefBase(ValRefBase<U> ref, std::enable_if_t<std::is_convertible_v<U*, T*>, void>* = nullptr)
+        : _data(ref.getDataPtr()), _layout((Layout const*)ref.getLayout())
     {
     }
+
+    /// Get a pointer to the value being referenced.
+    ///
+    T* getDataPtr() const { return _data; }
+
+    /// Get a reference to the value being referenced.
+    ///
+    /// This accessor is disabled in the case where `T` is `void`.
+    ///
+    template<typename U = T>
+    std::enable_if_t<!std::is_same_v<U, void>, T>& getDataRef() const
+    {
+        return *_data;
+    }
+
+    /// Get the layout of the value being referenced.
+    ///
+    Layout const* getLayout() const { return _layout; }
 
     /// Get the kind of value being referenced.
     ///
@@ -1031,327 +845,148 @@ public:
     ///
     FossilizedValKind getKind() const
     {
-        TESS_TRACE("DynRefBase::getKind()");
-        TESS_TRACE("    this:%p", this);
-        TESS_TRACE("    _dataPtr:%p", _dataPtr);
-        TESS_TRACE("    _layout:%p", _layout);
-
         SLANG_ASSERT(getLayout());
         return getLayout()->kind;
     }
 
-    /// Get the layout of the value being referenced.
-    ///
-    Layout* getLayout() const { return _layout; }
-
-    /// Get a pointer to the value being referenced.
-    ///
-    T* getDataPtr() const { return _dataPtr; }
-
-    bool isNull() const { return getDataPtr() == nullptr; }
-
-    operator T const&() const { return *_dataPtr; }
-
-    //    T const& get() { return *_data; }
-
-    //    operator FossilizedVal*() const { return _data; }
-
-    //    FossilizedVal* operator->() const { return _data; }
-
-private:
-    T* _dataPtr = nullptr;
-    Layout* _layout = nullptr;
+protected:
+    T* _data = nullptr;
+    Layout const* _layout = nullptr;
 };
 
+/// A reference to a fossilized value in memory, along with layout information.
+///
 template<typename T>
-struct DynRef : DynRefBase<T>
+struct ValRef : ValRefBase<T>
 {
-public:
-    using DynRefBase<T>::DynRefBase;
+    using ValRefBase<T>::ValRefBase;
 };
-#endif
-#if 0
+
+/// Specialization of `ValRef<T>` for the case where `T` is `void`.
+///
+template<>
+struct ValRef<void> : ValRefBase<void, FossilizedValLayout>
+{
+    using ValRefBase<void, FossilizedValLayout>::ValRefBase;
+};
+
+/// A pointer to a fossilized value in memory, along with layout information.
+///
 template<typename T>
-struct DynPtr
+struct ValPtr
 {
 public:
-    DynPtr() = default;
-    DynPtr(DynPtr<T> const&) = default;
+    using TargetVal = T;
+    using TargetLayout = typename ValRef<T>::Layout;
 
-    DynPtr(T* ptr, typename T::Layout* layout)
-        : _ref(ptr, layout)
+    /// Construct a null pointer.
+    ///
+    ValPtr() {}
+    ValPtr(std::nullptr_t) {}
+
+    /// Construct a pointer to the given `data`, assuming it has the given `layout`.
+    ///
+    ValPtr(T* data, TargetLayout const* layout)
+        : _ref(data, layout)
     {
     }
 
-    DynPtr(DynRef<FossilizedPtr<T>> const& ptrRef)
-        : _ref(ptrRef.getTarget())
+    /// Construct a pointer to the value referenced by `ref`.
+    ///
+    /// This constructor is basically equivalent to the address-of operator `&`.
+    /// We define it as a constructor as a slightly more preferable alternative
+    /// to overloading prefix `operator&` (which is almost always a Bad Idea)
+    ///
+    explicit ValPtr(ValRef<T> ref)
+        : _ref(ref)
     {
     }
 
-    explicit DynPtr(DynRefBase<T> const& ref)
-        : _ref(ref.getDataPtr(), ref.getLayout())
-    {
-    }
-
+    /// Construct a copy of `ptr`.
+    ///
+    /// Only enabled if `U*` is convertible to `T*`.
+    ///
     template<typename U>
-    DynPtr(DynPtr<U> const& ptr, std::enable_if_t<std::is_convertible_v<U*, T*>, void*> = nullptr)
+    ValPtr(
+        ValPtr<U> ptr,
+        std::enable_if_t<std::is_convertible_v<U*, T*>, void>* = nullptr)
         : _ref(*ptr)
     {
     }
 
+    /// Get a pointer to the value being referenced.
+    ///
+    T* getDataPtr() const { return _ref.getDataPtr(); }
 
-    DynPtr<T>& operator=(DynPtr<T> const&) = default;
+    /// Get the layout of the value being referenced.
+    ///
+    TargetLayout* getLayout() const { return _ref.getLayout(); }
 
     T* get() const { return _ref.getDataPtr(); }
+    operator T*() const { return get(); }
 
-    DynRef<T> operator*() const { return _ref; }
+    /// Deference this `ValPtr` to get a `ValRef`.
+    ///
+    ValRef<T> operator*() const { return _ref; }
 
-    DynRef<T> const* operator->() const { return &_ref; }
-    operator DynRef<T> const*() const { return &_ref; }
-    operator T*() const { return _ref.getDataPtr(); }
-
-    explicit operator bool() { return !_ref.isNull(); }
+    /// Deference this `ValPtr` for member access.
+    ///
+    /// Note that an overloaded `operator->` must return either
+    /// a pointer or a type that itself overloads `operator->`.
+    /// Because `ValRef<T>` is not functionally a "smart pointer"
+    /// to a `T`, the logical behavior here is that we want
+    /// `someValPtr->foo` to be equvialent to `someValRef.foo`,
+    /// where `someValRef` is a reference to the same value
+    /// that `someValPtr` points to. The correct way to get
+    /// that behavior is for the `operator->` on `ValPtr`
+    /// to return a pointer to a `ValRef`.
+    ///
+    ValRef<T> const* operator->() const { return &_ref; }
 
 private:
-    DynRef<T> _ref;
+    ValRef<T> _ref;
 };
-#endif
 
-#if 0
+/// Get a `ValPtr` pointing to the same value as the given `ref`.
+///
+template<typename T>
+inline ValPtr<T> getAddress(ValRef<T> ref)
+{
+    return ValPtr<T>(ref);
+}
+
+using AnyValRef = ValRef<void>;
+using AnyValPtr = ValPtr<void>;
 
 //
-// We support dynamic casting of `DynRef`s to the various important
-// sub-types of `FossilizedVal`.
+// In order to make `ValRef<T>` more usable in contexts where we want
+// to make use of the knowledge that it refers to a `T`, we define
+// various specializations of `ValRef` for the specific types that
+// are relevant for decoding serialized data.
+//
+// Note that we do not need to define any specializations of
+// `ValPtr`, because that is ultimately just a wrapper around
+// `ValRef`.
 //
 
-namespace detail
-{
-template<typename T>
-struct DynamicCastHelper
-{
-    static bool isMatchingKind(FossilizedValKind kind) { return kind == T::kKind; }
-};
-
 template<>
-struct DynamicCastHelper<FossilizedVal>
-{
-    static bool isMatchingKind(FossilizedValKind) { return true; }
-};
-
-template<>
-struct DynamicCastHelper<FossilizedStringObj>
-{
-    static bool isMatchingKind(FossilizedValKind kind)
-    {
-        return kind == FossilizedValKind::StringObj;
-    }
-};
-
-template<>
-struct DynamicCastHelper<FossilizedArrayObjBase>
-{
-    static bool isMatchingKind(FossilizedValKind kind)
-    {
-        return kind == FossilizedValKind::ArrayObj;
-    }
-};
-
-template<>
-struct DynamicCastHelper<FossilizedDictionaryObjBase>
-{
-    static bool isMatchingKind(FossilizedValKind kind)
-    {
-        return kind == FossilizedValKind::DictionaryObj;
-    }
-};
-
-template<>
-struct DynamicCastHelper<FossilizedContainerObjBase>
-{
-    static bool isMatchingKind(FossilizedValKind kind)
-    {
-        switch (kind)
-        {
-        default:
-            return false;
-
-        case FossilizedValKind::ArrayObj:
-        case FossilizedValKind::DictionaryObj:
-            return true;
-        }
-    }
-};
-
-template<>
-struct DynamicCastHelper<FossilizedOptionalObj<FossilizedVal>>
-{
-    static bool isMatchingKind(FossilizedValKind kind)
-    {
-        return kind == FossilizedValKind::OptionalObj;
-    }
-};
-
-template<>
-struct DynamicCastHelper<FossilizedPtr<FossilizedVal>>
-{
-    static bool isMatchingKind(FossilizedValKind kind) { return kind == FossilizedValKind::Ptr; }
-};
-
-template<>
-struct DynamicCastHelper<FossilizedStructVal>
-{
-    static bool isMatchingKind(FossilizedValKind kind) { return kind == FossilizedValKind::Struct; }
-};
-
-template<>
-struct DynamicCastHelper<FossilizedTupleVal>
-{
-    static bool isMatchingKind(FossilizedValKind kind) { return kind == FossilizedValKind::Tuple; }
-};
-
-template<>
-struct DynamicCastHelper<FossilizedRecordVal>
-{
-    static bool isMatchingKind(FossilizedValKind kind)
-    {
-        switch (kind)
-        {
-        default:
-            return false;
-
-        case FossilizedValKind::Tuple:
-        case FossilizedValKind::Struct:
-            return true;
-        }
-    }
-};
-} // namespace detail
-
-/// Statically cast a reference to a fossilized value.
-///
-template<typename T, typename U>
-DynRef<T> cast(DynRef<U> valRef)
-{
-    if (valRef.isNull())
-        return DynRef<T>();
-    return DynRef<T>(
-        static_cast<T*>(valRef.getDataPtr()),
-        reinterpret_cast<typename T::Layout*>(valRef.getLayout()));
-}
-#endif
-
-/// Statically cast a pointer to a fossilized value.
-///
-template<typename T>
-DynPtr<T> cast(FossilizedAnyValPtr valPtr)
-{
-    if (!valPtr)
-        return DynPtr<T>();
-    return DynPtr<T>(
-        static_cast<T*>(valPtr.getDataPtr()),
-        (typename T::Layout*)(valPtr->getLayout()));
-}
-
-/// Dynamic cast of a reference to a fossilized value.
-///
-template<typename T>
-DynPtr<T> as(FossilizedAnyValPtr valPtr)
-{
-    if (!valPtr || !T::isMatchingKind(valPtr->getKind()))
-    {
-        return nullptr;
-    }
-
-    return DynPtr<T>(
-        static_cast<T*>(valPtr.getDataPtr()),
-        (typename T::Layout*)(valPtr->getLayout()));
-}
-
-#if 0
-template<>
-struct DynRef<FossilizedVal> : DynRefBase<FossilizedVal>
+struct ValRef<FossilizedStringObj> : ValRefBase<FossilizedStringObj>
 {
 public:
-    using DynRefBase<FossilizedVal>::DynRefBase;
+    using ValRefBase<FossilizedStringObj>::ValRefBase;
 
-    DynRef(FossilizedVariantObj* valPtr)
-        : DynRefBase<FossilizedVal>(valPtr->getContentDataPtr(), valPtr->getContentLayout())
-    {
-    }
-};
-
-using FossilizedValRef = DynRef<FossilizedVal>;
-
-template<typename T, FossilizedValKind K>
-struct DynRef<FossilizedSimpleVal<T, K>> : DynRefBase<FossilizedSimpleVal<T, K>>
-{
-public:
-    using DynRefBase<FossilizedSimpleVal<T, K>>::DynRefBase;
-
-    T const& get() const { return *(this->getDataPtr()); }
-};
-
-template<>
-struct DynRef<Fossilized<bool>> : DynRefBase<Fossilized<bool>>
-{
-public:
-    using DynRefBase<Fossilized<bool>>::DynRefBase;
-
-    bool get() const { return *(this->getDataPtr()); }
-};
-
-template<>
-struct DynRef<FossilizedRecordVal> : DynRefBase<FossilizedRecordVal>
-{
-public:
-    using DynRefBase<FossilizedRecordVal>::DynRefBase;
-
-};
-
-template<>
-struct DynRef<FossilizedStringObj> : DynRefBase<FossilizedStringObj>
-{
-public:
-    using DynRefBase<FossilizedStringObj>::DynRefBase;
-
+    Size getSize() const { return getDataPtr()->getSize(); }
     UnownedTerminatedStringSlice get() const { return getDataPtr()->get(); }
+
+    operator UnownedTerminatedStringSlice() const { return get(); }
 };
 
-template<typename T>
-struct DynRef<FossilizedOptionalObj<T>> : DynRefBase<FossilizedOptionalObj<T>>
-{
-public:
-    using DynRefBase<FossilizedOptionalObj<T>>::DynRefBase;
-
-    bool hasValue() const { return this->getDataPtr() != nullptr; }
-
-    DynRef<T> getValue() const
-    {
-        SLANG_ASSERT(hasValue());
-        return DynRef<T>(this->getDataPtr(), this->getLayout()->elementLayout.get());
-    }
-};
-
-template<typename T>
-struct DynRef<FossilizedPtr<T>> : DynRefBase<FossilizedPtr<T>>
-{
-public:
-    using DynRefBase<FossilizedPtr<T>>::DynRefBase;
-
-    DynRef<T> getTarget() const
-    {
-        auto ptrPtr = this->getDataPtr();
-        return DynRef<T>(*ptrPtr, this->getLayout()->elementLayout.get());
-    }
-
-    operator T*() const { return this->getTarget().getDataPtr(); }
-};
 
 template<>
-struct DynRef<FossilizedContainerObjBase> : DynRefBase<FossilizedContainerObjBase>
+struct ValRef<FossilizedContainerObjBase> : ValRefBase<FossilizedContainerObjBase>
 {
 public:
-    using DynRefBase<FossilizedContainerObjBase>::DynRefBase;
+    using ValRefBase<FossilizedContainerObjBase>::ValRefBase;
 
     Count getElementCount() const
     {
@@ -1361,188 +996,131 @@ public:
         return data->getElementCount();
     }
 
-    DynRef<FossilizedVal> getElement(Index index) const;
+    AnyValRef getElement(Index index) const;
+};
 
-    struct Iterator
+
+template<>
+struct ValRef<FossilizedArrayObjBase> : ValRefBase<FossilizedArrayObjBase>
+{
+public:
+    using ValRefBase<FossilizedArrayObjBase>::ValRefBase;
+
+    Count getElementCount() const
     {
-    public:
-        Iterator(DynRef<FossilizedContainerObjBase> const& container, Index index)
-            : _container(container), _index(index)
-        {
-        }
-        bool operator!=(Iterator const& other) const { return _index != other._index; }
-        void operator++() { _index++; }
-        DynRef<FossilizedVal> operator*() const { return _container.getElement(_index); }
+        auto data = this->getDataPtr();
+        if (!data)
+            return 0;
+        return data->getElementCount();
+    }
 
-    private:
-        DynRef<FossilizedContainerObjBase> const& _container;
-        Index _index;
-    };
+    AnyValRef getElement(Index index) const;
+};
 
-    Iterator begin() const { return Iterator(*this, 0); }
-    Iterator end() const { return Iterator(*this, getElementCount()); }
+
+template<>
+struct ValRef<FossilizedDictionaryObjBase> : ValRefBase<FossilizedDictionaryObjBase>
+{
+public:
+    using ValRefBase<FossilizedDictionaryObjBase>::ValRefBase;
+
+    Count getElementCount() const
+    {
+        auto data = this->getDataPtr();
+        if (!data)
+            return 0;
+        return data->getElementCount();
+    }
+
+    AnyValRef getElement(Index index) const;
+};
+template<>
+struct ValRef<FossilizedOptionalObjBase> : ValRefBase<FossilizedOptionalObjBase>
+{
+public:
+    using ValRefBase<FossilizedOptionalObjBase>::ValRefBase;
+
+    bool hasValue() const { return this->getDataPtr() != nullptr; }
+
+    AnyValRef getValue() const
+    {
+        SLANG_ASSERT(hasValue());
+        return AnyValRef(this->getDataPtr(), this->getLayout()->elementLayout.get());
+    }
 };
 
 template<>
-struct DynRef<FossilizedArrayObjBase> : DynRef<FossilizedContainerObjBase>
+struct ValRef<FossilizedRecordVal> : ValRefBase<FossilizedRecordVal>
 {
 public:
-    using DynRef<FossilizedContainerObjBase>::DynRef;
-};
+    using ValRefBase<FossilizedRecordVal>::ValRefBase;
 
-template<>
-struct DynRef<FossilizedDictionaryObjBase> : DynRef<FossilizedContainerObjBase>
-{
-public:
-    using DynRef<FossilizedContainerObjBase>::DynRef;
+    Count getFieldCount() const { return getLayout()->fieldCount; }
+
+    AnyValRef getField(Index index) const;
 };
 
 template<typename T>
-struct DynRef<FossilizedContainer<T>> : DynRefBase<FossilizedContainer<T>>
+struct ValRef<FossilizedPtr<T>> : ValRefBase<FossilizedPtr<T>>
 {
 public:
-    using DynRefBase<FossilizedContainer<T>>::DynRefBase;
+    using ValRefBase<FossilizedPtr<T>>::ValRefBase;
 
-    Count getElementCount() const { return this->getDataPtr()->getElementCount(); }
-
-    DynRef<T> getElement(Index index) const;
-
-    struct Iterator
+    ValRef<T> getTargetValRef() const
     {
-    public:
-        Iterator(DynRef<FossilizedContainer<T>> const& container, Index index)
-            : _container(container), _index(index)
-        {
-        }
-        bool operator!=(Iterator const& other) const { return _index != other._index; }
-        void operator++() { _index++; }
-        DynRef<T> operator*() const { return _container.getElement(_index); }
+        auto ptrPtr = this->getDataPtr();
+        return ValRef<T>(*ptrPtr, this->getLayout()->elementLayout.get());
+    }
 
-    private:
-        DynRef<FossilizedContainer<T>> const& _container;
-        Index _index;
-    };
+    ValPtr<T> getTargetValPtr() const { return ValPtr<T>(getTargetValRef()); }
 
-    Iterator begin() const { return Iterator(*this, 0); }
-    Iterator end() const { return Iterator(*this, getElementCount()); }
+    //    ValRef<T> operator*() const;
 };
 
+//
+// We support both static and dynamic casting of `ValPtr`s
+// to fossilized data. In the dynamic case, the layout
+// information associated with the pointer is used to
+// determine if the cast is allowed.
+//
+
+/// Statically cast a pointer to a fossilized value.
+///
 template<typename T>
-struct DynRef<FossilizedArray<T>> : DynRefBase<FossilizedArray<T>>
+ValPtr<T> cast(AnyValPtr valPtr)
 {
-public:
-    using DynRefBase<FossilizedArray<T>>::DynRefBase;
-};
+    if (!valPtr)
+        return ValPtr<T>();
+    return ValPtr<T>(
+        static_cast<T*>(valPtr.getDataPtr()),
+        (typename T::Layout*)(valPtr->getLayout()));
+}
 
-template<typename K, typename V>
-struct DynRef<FossilizedKeyValuePair<K, V>> : DynRef<FossilizedRecordVal>
+/// Dynamic cast of a pointer to a fossilized value.
+///
+template<typename T>
+ValPtr<T> as(AnyValPtr valPtr)
 {
-public:
-    using DynRef<FossilizedRecordVal>::DynRef;
+    if (!valPtr || !T::isMatchingKind(valPtr->getKind()))
+    {
+        return nullptr;
+    }
 
-    DynRef<K> getKey() const { return cast<K>(this->getField(0)); }
+    return ValPtr<T>(
+        static_cast<T*>(valPtr.getDataPtr()),
+        (typename T::Layout*)(valPtr->getLayout()));
+}
 
-    DynRef<V> getValue() const { return cast<V>(this->getField(1)); }
-};
+} // namespace Fossil
 
-template<typename K, typename V>
-struct DynRef<FossilizedDictionary<K, V>>
-    : DynRef<FossilizedContainer<FossilizedKeyValuePair<K, V>>>
-{
-public:
-    using DynRef<FossilizedContainer<FossilizedKeyValuePair<K, V>>>::DynRef;
-};
-#endif
-
-
-#if 0
-using FossilizedInt8Val = FossilizedSimpleVal<int8_t, FossilizedValKind::Int8>;
-using FossilizedInt16Val = FossilizedSimpleVal<int16_t, FossilizedValKind::Int16>;
-using FossilizedInt32Val = FossilizedSimpleVal<int32_t, FossilizedValKind::Int32>;
-using FossilizedInt64Val = FossilizedSimpleVal<int64_t, FossilizedValKind::Int64>;
-
-using FossilizedUInt8Val = FossilizedSimpleVal<uint8_t, FossilizedValKind::UInt8>;
-using FossilizedUInt16Val = FossilizedSimpleVal<uint16_t, FossilizedValKind::UInt16>;
-using FossilizedUInt32Val = FossilizedSimpleVal<uint32_t, FossilizedValKind::UInt32>;
-using FossilizedUInt64Val = FossilizedSimpleVal<uint64_t, FossilizedValKind::UInt64>;
-
-using FossilizedFloat32Val = FossilizedSimpleVal<float, FossilizedValKind::Float32>;
-using FossilizedFloat64Val = FossilizedSimpleVal<double, FossilizedValKind::Float64>;
-#endif
-
-#if 0
-struct FossilizedPtrVal : FossilizedVal
-{
-public:
-    using Layout = FossilizedPtrLikeLayout;
-
-    FossilizedVal* getTargetData() const { return _value.get(); }
-
-    /// Determine if a value with the given `kind` should be allowed to cast to this type.
-    static bool _isMatchingKind(Kind kind) { return kind == Kind::Ptr; }
-
-private:
-    FossilizedPtr<FossilizedVal> _value;
-};
-#endif
-
-
-//
-// Some of the following subtypes of `FossilizedVal` are
-// named as `Fossilized*Obj` rather than `Fossilized*Val`,
-// to indicate that they will only ever be located on the
-// other side of a pointer indirection.
-//
-// E.g., a field of a fossilized struct value should never
-// have a layout claiming it to be of kind `String`; instead
-// it should show as a field of kind `Ptr`, where the
-// pointed-to type is `String`. The same goes for `Optional`,
-// `Array`, and `Dictionary`.
-//
-// This distinction only matters when dealing with things like
-// an *optional* string, because instead of an in-memory
-// layout like `Ptr -> Optional -> Ptr -> String`, the fossilized
-// data will simply store `Ptr -> Optional -> String`.
-//
-
-// using FossilizedValPtr = DynPtr<FossilizedVal>;
-
-
-#if 0
-using FossilizedInt8ValRef = FossilizedValRef_<FossilizedInt8Val>;
-using FossilizedInt16ValRef = FossilizedValRef_<FossilizedInt16Val>;
-using FossilizedInt32ValRef = FossilizedValRef_<FossilizedInt32Val>;
-using FossilizedInt64ValRef = FossilizedValRef_<FossilizedInt64Val>;
-using FossilizedUInt8ValRef = FossilizedValRef_<FossilizedUInt8Val>;
-using FossilizedUInt16ValRef = FossilizedValRef_<FossilizedUInt16Val>;
-using FossilizedUInt32ValRef = FossilizedValRef_<FossilizedUInt32Val>;
-using FossilizedUInt64ValRef = FossilizedValRef_<FossilizedUInt64Val>;
-using FossilizedFloat32ValRef = FossilizedValRef_<FossilizedFloat32Val>;
-using FossilizedFloat64ValRef = FossilizedValRef_<FossilizedFloat64Val>;
-using FossilizedBoolValRef = FossilizedValRef_<FossilizedBoolVal>;
-using FossilizedStringObjRef = FossilizedValRef_<FossilizedStringObj>;
-using FossilizedPtrValRef = FossilizedValRef_<FossilizedPtrVal>;
-using FossilizedOptionalObjRef = FossilizedValRef_<FossilizedOptionalObj>;
-using FossilizedContainerObjRef = FossilizedValRef_<FossilizedContainerObj>;
-using FossilizedRecordValRef = FossilizedValRef_<FossilizedRecordVal>;
-using FossilizedVariantObjRef = FossilizedValRef_<FossilizedVariantObj>;
-#endif
-
-#if 0
-FossilizedValRef getPtrTarget(FossilizedPtrValRef ptrRef);
-
-bool hasValue(FossilizedOptionalObjRef optionalRef);
-FossilizedValRef getValue(FossilizedOptionalObjRef optionalRef);
-
-Count getElementCount(FossilizedContainerObjRef containerRef);
-FossilizedValRef getElement(FossilizedContainerObjRef containerRef, Index index);
-
-Count getFieldCount(FossilizedRecordValRef recordRef);
-FossilizedValRef getField(FossilizedRecordValRef recordRef, Index index);
-
-FossilizedValRef getVariantContent(FossilizedVariantObjRef variantRef);
-#endif
-FossilizedAnyValPtr getVariantContentPtr(FossilizedVariantObj* variantPtr);
+/// Get a dynamically-typed pointer to the content of a fossilized variant.
+///
+/// This operation does not require a dynamically-typed `Fossil::ValPtr`
+/// or `Fossil::ValRef` as input, because it makes use of the way that
+/// a fossilized variant stores a (relative) pointer to the layout of
+/// its content.
+///
+Fossil::AnyValPtr getVariantContentPtr(FossilizedVariantObj* variantPtr);
 
 namespace Fossil
 {
@@ -1587,7 +1165,7 @@ static_assert(sizeof(Header) == 32);
 /// ensure that it doesn't seem incorrectly sized or otherwise
 /// corrupted/malformed.
 ///
-FossilizedAnyValPtr getRootValue(ISlangBlob* blob);
+Fossil::AnyValPtr getRootValue(ISlangBlob* blob);
 
 /// Get the root object from a fossilized blob.
 ///
@@ -1595,7 +1173,7 @@ FossilizedAnyValPtr getRootValue(ISlangBlob* blob);
 /// ensure that it doesn't seem incorrectly sized or otherwise
 /// corrupted/malformed.
 ///
-FossilizedAnyValPtr getRootValue(void const* data, Size size);
+Fossil::AnyValPtr getRootValue(void const* data, Size size);
 } // namespace Fossil
 
 } // namespace Slang

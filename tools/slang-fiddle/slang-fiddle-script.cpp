@@ -54,42 +54,6 @@ int _handleLuaErrorRaised(lua_State* L)
     return 1;
 }
 
-void diagnoseLuaError(lua_State* L)
-{
-    String message;
-    {
-        size_t size = 0;
-        char const* buffer = lua_tolstring(L, -1, &size);
-        message = UnownedStringSlice(buffer, size);
-        message.append("\n");
-    }
-
-    {
-        luaL_traceback(L, L, nullptr, 0);
-
-        size_t size = 0;
-        char const* buffer = lua_tolstring(L, -1, &size);
-        message.append(UnownedStringSlice(buffer, size));
-        message.append("\n");
-    }
-
-    if (_sink)
-    {
-        _sink->diagnoseRaw(Severity::Error, message.getBuffer());
-    }
-    else
-    {
-        fprintf(stderr, "%s", message.getBuffer());
-    }
-}
-
-
-int _handleLuaError(lua_State* L)
-{
-    diagnoseLuaError(L);
-    return lua_error(L);
-}
-
 int _original(lua_State* L)
 {
     // We ignore the text that we want to just pass

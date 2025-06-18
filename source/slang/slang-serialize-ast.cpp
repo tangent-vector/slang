@@ -95,7 +95,6 @@ struct FossilizedTypeTraits<RefObject>
 //
 void serialize(Serializer const& serializer, MatrixCoord& value)
 {
-    TESS_TRACE("serialize(MatrixCoord)");
     // We start with one of the `SLANG_SCOPED_SERIALIZER_*`
     // macros, which basically just handles calling
     // `ISerializerImpl::beginTuple()` and the start of our
@@ -170,7 +169,6 @@ struct FossilizedTypeTraits<MatrixCoord>
 //
 void serialize(Serializer const& serializer, SemanticVersion& value)
 {
-    TESS_TRACE("serialize(SemanticVersion)");
     // This function is doing something a little "clever"
     // handle the fact that it might be used to either
     // *write* a `SemanticVersion` to the serialized format,
@@ -401,7 +399,6 @@ public:
 /// Serialize a `value` of type `$T`.
 void serialize(Serializer const& serializer, $T& value)
 {
-    TESS_TRACE("serialize($T)");
     serializeEnum(serializer, value);
 }
 
@@ -671,8 +668,6 @@ public:
     Decl* findExportedDeclByMangledName(UnownedStringSlice const& mangledName);
 
 private:
-    friend struct ASTSerialReader;
-
     Linkage* _linkage = nullptr;
     ASTBuilder* _astBuilder = nullptr;
     DiagnosticSink* _sink = nullptr;
@@ -690,40 +685,6 @@ private:
 
 #if SLANG_ENABLE_AST_DESERIALIZATION_STATS
     Count _deserializedTopLevelDeclCount = 0;
-#endif
-
-#if 0
-};
-/// Context for deserializing one or more AST objects.
-///
-/// This type only provides the contextual information needed
-/// to correctly read AST-related types, and delegates the
-/// lower-level serialization operations to an underlying
-/// `Fossil::SerialReader`.
-///
-struct ASTSerialReader : public ASTSerialContext
-{
-public:
-    /// Construct an AST reader.
-    ///
-    /// The `sharedContext` should be the `ASTDeserializationContext`
-    /// that is being used for the entire AST module that this
-    /// reader is being created to deserialize part of.
-    ///
-    /// The actual reading of serialized bits will be handled
-    /// by the `reader` that is passed in.
-    ///
-    ASTSerialReader(
-        ASTDeserializationContext* sharedContext,
-        Fossil::SerialReader* reader)
-        : _sharedContext(sharedContext)
-        , _reader(reader)
-    {
-    }
-
-private:
-    ASTDeserializationContext* _sharedContext = nullptr;
-    Fossil::SerialReader* _reader = nullptr;
 #endif
 
     //
@@ -750,8 +711,8 @@ private:
 };
 
 //
-// Let's look at a concrete example of how the `ASTSerialReader`
-// and `ASTSerialWriter` get applied to handle one of the types
+// Let's look at a concrete example of how the `ASTSerialReadContext`
+// and `ASTSerialWriteContext` get applied to handle one of the types
 // that needs them for additional context.
 //
 // The `serialize()` function for `SourceLoc` is declared to take
@@ -759,10 +720,9 @@ private:
 //
 void serialize(ASTSerializer const& serializer, SourceLoc& value)
 {
-    TESS_TRACE("serialize(SourceLoc)");
     // Its body is trivial, because the actual handling of `SourceLoc`
-    // serialization is delegated to the `ASTSerialWriter` and
-    // `ASTSerialReader`.
+    // serialization is delegated to the `ASTSerialWriteContext` and
+    // `ASTSerialReadContext`.
     //
     serializer.getContext()->handleSourceLoc(serializer, value);
 }
@@ -850,7 +810,6 @@ SLANG_DECLARE_FOSSILIZED_AS(Name, String);
 
 void serializeObject(ASTSerializer const& serializer, Name*& value, Name*)
 {
-    TESS_TRACE("serializeObject(Name)");
     serializer.getContext()->handleName(serializer, value);
 }
 
@@ -888,7 +847,6 @@ struct FossilizedTypeTraits<Token>
 
 void serialize(ASTSerializer const& serializer, Token& value)
 {
-    TESS_TRACE("serialize(Token)");
     serializer.getContext()->handleToken(serializer, value);
 }
 
@@ -964,16 +922,8 @@ void ASTSerialReadContext::handleToken(ASTSerializer const& serializer, Token& v
 //
 
 template<typename T>
-void serializeObject(ASTSerializer const& serializer, T*& value, NodeBase* unused)
+void serializeObject(ASTSerializer const& serializer, T*& value, NodeBase*)
 {
-    TESS_TRACE(
-        "serializeObject(NodeBase) impl:%p context:%p value:%p &value:%p unused:%p",
-        serializer.getImpl(),
-        serializer.getContext(),
-        value,
-        &value,
-        unused);
-
     // The general-purpose serialization layer defines
     // a variant as akin to a struct, but where the
     // specific number and type of fields that get written
@@ -988,10 +938,7 @@ void serializeObject(ASTSerializer const& serializer, T*& value, NodeBase* unuse
     // class hierarchy, we treat all pointers to `NodeBase`-derived
     // types as variants for serialization purposes.
     //
-    TESS_TRACE("SLANG_SCOPED_SERIALIZER_VARIANT(serializer);");
     SLANG_SCOPED_SERIALIZER_VARIANT(serializer);
-    TESS_TRACE(
-        "serializer.getContext()->handleASTNode(serializer, reinterpret_cast<NodeBase*&>(value));");
     serializer.getContext()->handleASTNode(serializer, reinterpret_cast<NodeBase*&>(value));
 }
 
@@ -1005,7 +952,6 @@ void serializeObject(ASTSerializer const& serializer, T*& value, NodeBase* unuse
 
 void serializeObjectContents(ASTSerializer const& serializer, NodeBase* value, NodeBase*)
 {
-    TESS_TRACE("serializeObjectContents(NodeBase)");
     serializer.getContext()->handleASTNodeContents(serializer, value);
 }
 
@@ -1024,7 +970,6 @@ SLANG_DECLARE_FOSSILIZED_AS(ContainerDeclDirectMemberDecls, ContainerDeclDirectM
 
 void serialize(ASTSerializer const& serializer, ContainerDeclDirectMemberDecls& value)
 {
-    TESS_TRACE("serialize(ContainerDeclDirectMemberDecls)");
     serializer.getContext()->handleContainerDeclDirectMemberDecls(serializer, value);
 }
 
@@ -1038,7 +983,6 @@ SLANG_DECLARE_FOSSILIZED_AS(DiagnosticInfo const*, Int32);
 
 void serializePtr(Serializer const& serializer, DiagnosticInfo const*& value, DiagnosticInfo const*)
 {
-    TESS_TRACE("serializePtr(DiagnosticInfo)");
     Int32 id = 0;
     if (isWriting(serializer))
     {
@@ -1061,7 +1005,6 @@ void serializePtr(Serializer const& serializer, DiagnosticInfo const*& value, Di
 template<typename T>
 void serialize(ASTSerializer const& serializer, DeclRef<T>& value)
 {
-    TESS_TRACE("serialize(DeclRef)");
     serialize(serializer, value.declRefBase);
 }
 
@@ -1084,7 +1027,6 @@ SLANG_DECLARE_FOSSILIZED_AS(SyntaxClass<NodeBase>, ASTNodeType);
 
 void serialize(Serializer const& serializer, SyntaxClass<NodeBase>& value)
 {
-    TESS_TRACE("serialize(SyntaxClass)");
     ASTNodeType raw = ASTNodeType(0);
     if (isWriting(serializer))
     {
@@ -1109,7 +1051,6 @@ SLANG_DECLARE_FOSSILIZED_AS(Modifiers, List<Modifier*>);
 
 void serialize(ASTSerializer const& serializer, Modifiers& value)
 {
-    TESS_TRACE("serialize(Modifiers)");
     SLANG_SCOPED_SERIALIZER_ARRAY(serializer);
 
     // Because we are dealing with a list, rather
@@ -1158,7 +1099,6 @@ SLANG_DECLARE_FOSSILIZED_AS_MEMBER(TypeExp, type);
 
 void serialize(ASTSerializer const& serializer, TypeExp& value)
 {
-    TESS_TRACE("serialize(TypeExp)");
     serialize(serializer, value.type);
 }
 
@@ -1171,7 +1111,6 @@ SLANG_DECLARE_FOSSILIZED_AS_MEMBER(CandidateExtensionList, candidateExtensions);
 
 void serialize(ASTSerializer const& serializer, CandidateExtensionList& value)
 {
-    TESS_TRACE("serialize(CandidateExtensionList)");
     serialize(serializer, value.candidateExtensions);
 }
 
@@ -1180,7 +1119,6 @@ SLANG_DECLARE_FOSSILIZED_AS_MEMBER(DeclAssociationList, associations);
 
 void serialize(ASTSerializer const& serializer, DeclAssociationList& value)
 {
-    TESS_TRACE("serialize(DeclAssociationList)");
     serialize(serializer, value.associations);
 }
 
@@ -1211,7 +1149,6 @@ SLANG_DECLARE_FOSSILIZED_AS(CapabilitySet, CapabilityTargetSets);
 
 void serialize(Serializer const& serializer, CapabilityAtomSet& value)
 {
-    TESS_TRACE("serialize(CapabilityAtomSet)");
     SLANG_SCOPED_SERIALIZER_ARRAY(serializer);
     if (isWriting(serializer))
     {
@@ -1234,13 +1171,11 @@ void serialize(Serializer const& serializer, CapabilityAtomSet& value)
 
 void serialize(Serializer const& serializer, CapabilityStageSet& value)
 {
-    TESS_TRACE("serialize(CapabilityStageSet)");
     serialize(serializer, value.atomSet);
 }
 
 void serialize(Serializer const& serializer, CapabilityTargetSet& value)
 {
-    TESS_TRACE("serialize(CapabilityTargetSet)");
     serialize(serializer, value.shaderStageSets);
 
     // The value for each entry in `shaderStageSets` have
@@ -1259,7 +1194,6 @@ void serialize(Serializer const& serializer, CapabilityTargetSet& value)
 
 void serialize(Serializer const& serializer, CapabilitySet& value)
 {
-    TESS_TRACE("serialize(CapabilitySet)");
     serialize(serializer, value.getCapabilityTargetSets());
 
     // The value for each entry in `getCapabilityTargetSets()` have
@@ -1296,7 +1230,6 @@ struct FossilizedTypeTraits<RequirementWitness>
 
 void serialize(ASTSerializer const& serializer, RequirementWitness& value)
 {
-    TESS_TRACE("serialize(RequirementWitness)");
     SLANG_SCOPED_SERIALIZER_VARIANT(serializer);
     serialize(serializer, value.m_flavor);
     switch (value.m_flavor)
@@ -1335,7 +1268,6 @@ struct FossilizedTypeTraits<ValNodeOperand>
 
 void serialize(ASTSerializer const& serializer, ValNodeOperand& value)
 {
-    TESS_TRACE("serialize(ValNodeOperand)");
     SLANG_SCOPED_SERIALIZER_VARIANT(serializer);
     serialize(serializer, value.kind);
     switch (value.kind)
@@ -1398,7 +1330,6 @@ struct Fossilized_$T
 /// Serialize a `value` of type `$T`
 void serialize(ASTSerializer const& serializer, $T& value)
 {
-    TESS_TRACE("serialize($T)");
     SLANG_UNUSED(value);
     SLANG_SCOPED_SERIALIZER_STRUCT(serializer);
 %   if T.directSuperClass then
@@ -1456,7 +1387,6 @@ struct Fossilized_$T
 /// Serialize the contents of an AST node of type `$T`
 void _serializeASTNodeContents(ASTSerializer const& serializer, $T* value)
 {
-    TESS_TRACE("_serializeASTNodeContents($T)");
     SLANG_UNUSED(serializer);
     SLANG_UNUSED(value);
 %   if T.directSuperClass then
@@ -1483,7 +1413,6 @@ void _serializeASTNodeContents(ASTSerializer const& serializer, $T* value)
 
 void serializeASTNodeContents(ASTSerializer const& serializer, NodeBase* node)
 {
-    TESS_TRACE("serializeASTNodeContents(NodeBase)");
     ASTNodeDispatcher<NodeBase, void>::dispatch(
         node,
         [&](auto n) { _serializeASTNodeContents(serializer, n); });
@@ -1593,7 +1522,6 @@ static ASTNodeType _getAsASTNodeType(PseudoASTNodeType type)
 
 void ASTSerialReadContext::handleASTNode(ASTSerializer const& serializer, NodeBase*& outNode)
 {
-    TESS_TRACE("handleASTNode(NodeBase)");
     // We start by reading the `ASTNodeType`, because
     // we will dispatch differently based on what
     // value we see there.
@@ -1989,8 +1917,6 @@ void ASTSerialReadContext::handleContainerDeclDirectMemberDecls(
     ASTSerializer const& serializer,
     ContainerDeclDirectMemberDecls& value)
 {
-    TESS_TRACE("ASTSerialReadContext::handleContainerDeclDirectMemberDecls");
-
     // In the reading direction, we will intentionally
     // *not* deserialize things the usual way, because
     // we want to support deserializing only a subset
@@ -2043,110 +1969,96 @@ void writeSerializedModuleAST(
     // TODO: we might want to have a more careful pass here,
     // where we only encode the public declarations.
 
+    // Rather than serialize the `ModuleDecl` directly, we instead
+    // collect the information we want to serialize into an intermediate
+    // `ASTModuleInfo` value, and then serialize *that*.
+    //
+    // This choice allows us to build up some data structures that will
+    // be very useful when reading the serialized data later, and that
+    // would not naturally "fall out" of serializing the module more
+    // directly.
 
     ASTModuleInfo moduleInfo;
     _collectASTModuleInfo(moduleDecl, moduleInfo);
 
+    // At the most basic, we are building a single "blob" of data
+    // (in the sense of the `ISlangBlob` interface).
+    //
     BlobBuilder blobBuilder;
     {
+        // The architecture of the serialization system means that
+        // we need a few steps to set up everything before we can
+        // actually call `serialize()`:
+        //
+        // * We need an implementation of `ISerializerImpl` to do
+        // the actual writing, which in this case will be a
+        // `Fossil::SerialWriter`.
+        //
+        // * We need the additional context information that many
+        // of the AST types require in their `serialize()` overloads,
+        // which will be an `ASTSerialWriteContext`.
+        //
+        // * We need to wrap those two values up in an `ASTSerializer`
+        // (which is more or less just a pair of pointers, to the two
+        // values described above).
+        //
         Fossil::SerialWriter writer(blobBuilder);
         ASTSerialWriteContext context(moduleDecl, sourceLocWriter);
         ASTSerializer serializer(&writer, &context);
 
+        // Once we have our `serializer`, we can finally invoke
+        // `serialize()` on the `ASTModuleInfo` to cause everything
+        // to be recursively written.
+        //
         serialize(serializer, moduleInfo);
+
+        // Note that we wrapped these steps in a scope, because
+        // it is the destructor for `Fossil::SerialWriter` that
+        // will actually "flush" any pending serialization operations
+        // and cause the full blob to be written.
     }
 
+    // We can now grab the serialized data as a single `ISlangBlob`.
+    //
     ComPtr<ISlangBlob> blob;
     blobBuilder.writeToBlob(blob.writeRef());
 
+    // While the AST serialization system is using fossil, the
+    // overall module serialization is still based on the RIFF
+    // container format, so we immediately turn around and
+    // add the blob we just created as a single data chunk in
+    // the RIFF hierarchy.
+    //
+    // TODO: This step copies the entire blob. If that copy
+    // operation ever becomes a performance concern, we should
+    // be able to tweak things so that the `BlobBuilder` uses
+    // the same memory arena that the RIFF builder is using,
+    // and then employ the `RIFF::BuildCursor::addUnownedData()`
+    // method to add the data without copying.
+    //
     void const* data = blob->getBufferPointer();
     size_t size = blob->getBufferSize();
-
     cursor.addDataChunk(PropertyKeys<Module>::ASTModule, data, size);
 }
 
-Decl* ASTSerialReadContext::readFossilizedDecl(Fossilized<Decl>* fossilizedDecl)
-{
-    TESS_TRACE("ASTSerialReadContext::readFossilizedDecl");
-
-    TESS_TRACE("auto contentValPtr = getVariantContentPtr(fossilizedDecl)");
-    auto contentValPtr = getVariantContentPtr(fossilizedDecl);
-
-    TESS_TRACE("Fossil::SerialReader reader");
-    Fossil::SerialReader reader(
-        _readContext,
-        contentValPtr,
-        Fossil::SerialReader::InitialStateType::PseudoPtr);
-    ASTSerializer serializer(&reader, this);
-
-    TESS_TRACE("serialize(serializer, decl)");
-    Decl* decl = nullptr;
-    serialize(serializer, decl);
-    return decl;
-}
-#if 0
-static void _dump(FossilizedAnyValPtr valPtr, int depth = 0)
-{
-    for (auto i = 0; i < depth; ++i)
-        fprintf(stderr, "  ");
-
-    if (!valPtr)
-    {
-        fprintf(stderr, "null");
-        return;
-    }
-
-    if (depth > 3)
-    {
-        fprintf(stderr, "...");
-        return;
-    }
-
-    switch (valPtr->getKind())
-    {
-    case FossilizedValKind::VariantObj:
-        fprintf(stderr, "variant\n");
-        _dump(getVariantContentPtr(as<FossilizedVariantObj>(valPtr)));
-        break;
-
-    default:
-        fprintf(stderr, "unhandled: %d\n", int(valPtr->getKind()));
-        return;
-    }
-}
-#endif
-
-// Hello, Future Tess -
 //
-// The assertions here are obviously incorrect, given how the C++
-// standard defines standard-layout types and the cases where the
-// empty base class optimization takes place. The central problem
-// is that you've made it so that *everything* inherits from
-// `FossilizedVal`, which means that the first field in anything
-// you've defined will be a `FossilizedVal`, within a type that
-// inherits from `FossilizedVal`, and the letter of the C++ spec
-// is that the empty base class optimization is not mandated in
-// that case (and a pedantic view of things would be that it's
-// a problem that the address of the `FossilizedVal` sub-object
-// for an aggregate is the same as the `FossilizedVal` sub-object
-// for its first field.
+// The reading direction is significantly more subtle than the
+// writing direction, because we will be traversing some of
+// the fossilized data structures without first deserializing
+// them into ordinary C++ objects.
 //
-// The fix is going to be getting rid of the inheritance-based
-// approach, and either using template traits to look up the
-// corresponding layout type, or clean up the whole approach
-// to dynamic references to values, since it all feels kind
-// of gross anyway...
+// In order for this code to work, we need to know that the
+// fossilized layout for the types we will access directly
+// (such as `ASTModuleInfo`) will exactly match what we expect.
 //
-// Note: no, Tess, you cannot just make user-defined things
-// inherit from something like `FossilizedRecordVal` either,
-// because that won't work if a record's first field is
-// itself a record...
+// As a small safety measure, we include some static assertions
+// about the key properties we expect of the fossilized `ASTModuleInfo`.
 //
 
-static_assert(sizeof(Fossilized_ASTModuleInfo) == 12);
-static_assert(offsetof(Fossilized_ASTModuleInfo, moduleDecl) == 0);
-static_assert(offsetof(Fossilized_ASTModuleInfo, declsToRegister) == 4);
-static_assert(offsetof(Fossilized_ASTModuleInfo, mapMangledNameToDecl) == 8);
+static_assert(sizeof(Fossilized<ASTModuleInfo>) == 12);
+static_assert(offsetof(Fossilized<ASTModuleInfo>, moduleDecl) == 0);
+static_assert(offsetof(Fossilized<ASTModuleInfo>, declsToRegister) == 4);
+static_assert(offsetof(Fossilized<ASTModuleInfo>, mapMangledNameToDecl) == 8);
 
 ModuleDecl* readSerializedModuleAST(
     Linkage* linkage,
@@ -2157,72 +2069,62 @@ ModuleDecl* readSerializedModuleAST(
     SerialSourceLocReader* sourceLocReader,
     SourceLoc requestingSourceLoc)
 {
-    TESS_TRACE("readSerializedModuleAST");
-
+    // We expect the `chunk` that was passed in to be a RIFF
+    // data chunk (matching what was written in `writeSerializedModuleAST()`,
+    // and to be proper fossil-format data.
+    //
     auto dataChunk = as<RIFF::DataChunk>(chunk);
+    if (!dataChunk)
+    {
+        SLANG_UNEXPECTED("invalid format for serialized module AST");
+    }
 
-    auto rootValPtr = Fossil::getRootValue(dataChunk->getPayload(), dataChunk->getPayloadSize());
-    //    _dump(rootValPtr);
+    Fossil::AnyValPtr rootValPtr = Fossil::getRootValue(dataChunk->getPayload(), dataChunk->getPayloadSize());
+    if (!rootValPtr)
+    {
+        SLANG_UNEXPECTED("invalid format for serialized module AST");
+    }
 
-    TESS_TRACE("rootVal: %p", rootValPtr.get());
-    auto fossilizedModuleInfoPtr = cast<Fossilized<ASTModuleInfo>>(rootValPtr);
-    TESS_TRACE("fossilizedModuleInfo: %p", fossilizedModuleInfoPtr.get());
+    // We don't want to simply mirror the `writeSerializedModuleAST()` logic
+    // here and deserialize an entire `ASTModuleInfo`. Instead, we will
+    // traverse the `Fossilized<ASTModuleInfo>` directly, and extract only
+    // the information we need.
+    //
+    // The `rootValPtr` above uses the `Fossil::AnyValPtr` type, which
+    // is basically a dynamically-typed pointer to fossilized data of
+    // any type, and carries around its own layout information. We could
+    // in principle traverse the structure using that type by making dynamic
+    // queries (and doing so would let us detect various error cases where
+    // the serialized format might not match what we expect), but instead
+    // we are going to simply perform an uncheckedcast on that dynamically-typed
+    // pointer to get out a statically-typed pointer to what we expect to
+    // find there.
+    //
+    Fossilized<ASTModuleInfo>* fossilizedModuleInfo = cast<Fossilized<ASTModuleInfo>>(rootValPtr);
 
-
+    // We now have enough information to construct an `ASTSerialReadContext`,
+    // which is the mirror to the `ASTSerialWriteContext`, but which has the
+    // important difference that the `ASTSerialReadContext` is allowed to
+    // persist past when this function returns. Thus we cannot allocte the
+    // read context on the stack like we did for the write context, and
+    // we instead allocate it as a reference-counted object.
+    //
     auto sharedDecodingContext = RefPtr(new ASTSerialReadContext(
         linkage,
         astBuilder,
         sink,
         sourceLocReader,
         requestingSourceLoc,
-        fossilizedModuleInfoPtr,
+        fossilizedModuleInfo,
         blobHoldingSerializedData));
 
-    // TODO: we want to be careful and not deserialize everything here.
+    // The `sharedDecodingContext` will allow us to deserialize individual
+    // `Decl`s from the AST one-by-one. One declaration that we *know*
+    // we need right away is the actual `ModuleDecl` (since we need to
+    // return it from this function).
     //
-    // Rather than simply deserialize an entire `ASTModuleInfo`, we
-    // should form a pointer to the `Fossilized<ASTModuleInfo>`, and
-    // then demand-deserialize the specific parts that we need right
-    // here and now.
-    //
-    // Basically that means extracting the `moduleDecl` field and
-    // making sure that gets deserialized (since that's what we've
-    // got to return anyway...), and then walking the list of decls
-    // that need to be registered because those need to be deserialized too.
-    //
-    // The `Fossil::SerialReader` needs to be split so that the part
-    // that maintains the mapping from fossilized object pointers to
-    // the live object pointers is retained across different deserialization
-    // steps (or we need to retain the reader itself... but that doesn't
-    // quite seem right).
-
-    // The `fossilizedModuleInfo` variable is a `DynPtr`, which carries
-    // layout information with it, but in this context we want to just
-    // go ahead and access its contents directly, without worrying about
-    // whether the layout matches what was in place when the data was
-    // written (we are assuming the format written matches what was compiled
-    // into this binary).
-    //
-    Fossilized<ASTModuleInfo>* rawFossilizedModuleInfo = fossilizedModuleInfoPtr;
-    TESS_TRACE("rawFossilizedModuleInfo: %p", rawFossilizedModuleInfo);
-    TESS_TRACE(
-        "rawFossilizedModuleInfo->moduleDecl: %p",
-        rawFossilizedModuleInfo->moduleDecl.get());
-    TESS_TRACE(
-        "rawFossilizedModuleInfo->declsToRegister.getBuffer(): %p",
-        rawFossilizedModuleInfo->declsToRegister.getBuffer());
-    TESS_TRACE(
-        "rawFossilizedModuleInfo->declsToRegister.getCount(): %d",
-        int(rawFossilizedModuleInfo->declsToRegister.getElementCount()));
-    TESS_TRACE(
-        "rawFossilizedModuleInfo->mapMangledNameToDecl.getBuffer(): %p",
-        rawFossilizedModuleInfo->mapMangledNameToDecl.getBuffer());
-    TESS_TRACE(
-        "rawFossilizedModuleInfo->mapMangledNameToDecl.getCount(): %d",
-        int(rawFossilizedModuleInfo->mapMangledNameToDecl.getElementCount()));
-
     ModuleDecl* moduleDecl = as<ModuleDecl>(
-        sharedDecodingContext->readFossilizedDecl(rawFossilizedModuleInfo->moduleDecl));
+        sharedDecodingContext->readFossilizedDecl(fossilizedModuleInfo->moduleDecl));
     SLANG_ASSERT(moduleDecl);
 
 #if SLANG_ENABLE_AST_DESERIALIZATION_STATS
@@ -2232,7 +2134,17 @@ ModuleDecl* readSerializedModuleAST(
         moduleDecl->getName()->text.getBuffer());
 #endif
 
-    for (Fossilized<Decl>* fossilizedDecl : rawFossilizedModuleInfo->declsToRegister)
+    // In the case where we are reading one of the builtin modules (e.g.
+    // the core module), there may be declarations inside that module
+    // that need to be registered with the `SharedASTBuilder`, because
+    // parts of the C++ compiler code need to be able to form references
+    // to those declarations.
+    //
+    // We will handle those here by traversing the fossilized equivalent
+    // of the `ASTModuleInfo::declsToRegister` array, then deserializing
+    // and registering each entry we find.
+    //
+    for (Fossilized<Decl>* fossilizedDecl : fossilizedModuleInfo->declsToRegister)
     {
         Decl* decl = sharedDecodingContext->readFossilizedDecl(fossilizedDecl);
         registerBuiltinDecl(astBuilder, decl);
@@ -2245,20 +2157,64 @@ ModuleDecl* readSerializedModuleAST(
         moduleDecl->getName()->text.getBuffer());
 #endif
 
+    //
+    // At this point any further data in the serialized AST can be read
+    // on-demand as needed, via the accessor methods on `ContainerDeclDirectMemberDecls`
+    // and `ModuleDecl` that are implemented below.
+    //
+
     return moduleDecl;
 }
 
-Decl* ModuleDecl::_findSerializedDeclByMangledExportName(UnownedStringSlice const& mangledName)
+//
+// A key facility that makes on-demand deserialization possible is
+// the ability to read individual serialized declarations out of
+// a module, just based on a pointer to their fossilized representation.
+//
+
+Decl* ASTSerialReadContext::readFossilizedDecl(Fossilized<Decl>* fossilizedDecl)
 {
-    TESS_TRACE("ModuleDecl::_findSerializedDeclByMangledExportName");
+    // AST nodes are all fossilized as variants, which means that they
+    // carrying their own layout information. We can exploit this fact
+    // to get from the raw pointer that was passed in to a `Fossil::AnyValPtr`
+    // that includes the layout information that a `Fossil::SerialReader`
+    // needs.
+    //
+    Fossil::AnyValPtr contentValPtr = getVariantContentPtr(fossilizedDecl);
 
-    SLANG_ASSERT(isUsingOnDemandDeserializationForExports());
+    // One subtle issue is that when we call `serialize()` below to read
+    // a `Decl*`, the `SerialReader` wants to *read* a pointer to the
+    // serialized object from its current cursor position. But what we have
+    // is a pointer to the object... not a pointer to a *pointer* to the object.
+    //
+    // We thus tweak the `InitialStateType` used for the `SerialReader` to
+    // tell it that it should treat our `contentValPtr` as if there was
+    // an additional level of pointer indirection above it.
+    //
+    Fossil::SerialReader reader(
+        _readContext,
+        contentValPtr,
+        Fossil::SerialReader::InitialStateType::PseudoPtr);
+    ASTSerializer serializer(&reader, this);
 
-    auto sharedContext =
-        as<ASTSerialReadContext>(_directMemberDecls.onDemandDeserialization.context);
-
-    return sharedContext->findExportedDeclByMangledName(mangledName);
+    Decl* decl = nullptr;
+    serialize(serializer, decl);
+    return decl;
 }
+
+//
+// We now turn our attention to the various accessors on AST types
+// that need to read from the serialized data on-demand.
+//
+// One key design choice in the current encoding is that the
+// fossilized dictionaries that we will use for lookup operations
+// are written as ordinary `FossilizedDictionary<K,V>` values (which
+// are ultimately just flat arrays of `K`,`V` pairs), but have their
+// keys sorted before being written out.
+//
+// We can thus look up entries in these fossilized dictionaries
+// using a binary search.
+//
 
 template<typename T>
 T const* _findEntryInFossilizedDictionaryWithSortedKeys(
@@ -2288,77 +2244,181 @@ T const* _findEntryInFossilizedDictionaryWithSortedKeys(
     return nullptr;
 }
 
+Decl* ModuleDecl::_findSerializedDeclByMangledExportName(UnownedStringSlice const& mangledName)
+{
+    // Each of the accessors defined in this file should only
+    // ever be invoked in the case where the corresponding
+    // AST node is using on-demand deserialization.
+    //
+    SLANG_ASSERT(isUsingOnDemandDeserializationForExports());
+
+    // The `context` pointer stored in the `ContainerDeclDirectMemberDecls` type is
+    // a raw `RefPtr<RefObject>`, so that the definition of the `ASTSerialReadContext`
+    // doesn't need to be exposed outside this file.
+    //
+    // In order to access the context pointer, we thus need to cast it.
+    //
+    auto sharedContext =
+        as<ASTSerialReadContext>(_directMemberDecls.onDemandDeserialization.context);
+
+    // The `sharedContext` has the information needed to do lookup
+    // based on mangled names, so we delegate the actual work to it.
+    //
+    return sharedContext->findExportedDeclByMangledName(mangledName);
+}
+
 Decl* ASTSerialReadContext::findExportedDeclByMangledName(UnownedStringSlice const& mangledName)
 {
-    TESS_TRACE("ASTSerialReadContext::findExportedDeclByMangledName");
-
+    // The read context has retained a pointer to the `Fossilized<ASTModuleInfo>`,
+    // which allows us to perform a lookup in the serialized `mapMangledNameToDecl`
+    // without ever deserializing it.
+    //
     auto found = _findEntryInFossilizedDictionaryWithSortedKeys(
         _fossilizedModuleInfo->mapMangledNameToDecl,
         mangledName);
     if (!found)
         return nullptr;
 
+    // If the given `mangledName` does indeed map to a pointer to
+    // a fossilized declaration, then we will read the declaration
+    // on-demand before returing it.
+    //
+    // Note that if we've seen the same declaration before (whether
+    // via a previous call to `findExportedDeclByMangledName()` or
+    // through some other path leading to `readFossilizedDecl()`,
+    // this will return the same `Decl*` that was previously
+    // deserialized).
+    //
     auto decl = readFossilizedDecl(*found);
-    return decl;
-}
-
-void ContainerDeclDirectMemberDecls::_readSerializedTransparentDecls() const
-{
-    TESS_TRACE("ContainerDeclDirectMemberDecls::_readSerializedTransparentDecls");
-
-    SLANG_ASSERT(isUsingOnDemandDeserialization());
-    SLANG_ASSERT(accelerators.filteredListOfTransparentDecls.getCount() == 0);
-
-    auto& fossilizedInfo =
-        *(Fossilized<ContainerDeclDirectMemberDeclsInfo>*)onDemandDeserialization.data;
-
-    if (fossilizedInfo.transparentDeclIndices.getElementCount() == 0)
-        return;
-
-    for (auto index : fossilizedInfo.transparentDeclIndices)
-    {
-        auto decl = getDecl(index);
-        accelerators.filteredListOfTransparentDecls.add(decl);
-    }
-}
-
-
-Decl* ContainerDeclDirectMemberDecls::_readSerializedDeclAtIndex(Index index) const
-{
-    TESS_TRACE("ContainerDeclDirectMemberDecls::_readSerializedDeclAtIndex");
-
-    SLANG_ASSERT(isUsingOnDemandDeserialization());
-
-    auto sharedContext = as<ASTSerialReadContext>(onDemandDeserialization.context);
-    auto& fossilizedInfo =
-        *(Fossilized<ContainerDeclDirectMemberDeclsInfo>*)onDemandDeserialization.data;
-
-    auto& fossilizedDecl = fossilizedInfo.decls[index];
-
-    auto decl = sharedContext->readFossilizedDecl(fossilizedDecl);
     return decl;
 }
 
 Decl* ContainerDeclDirectMemberDecls::_readSerializedDeclsOfName(Name* name) const
 {
-    TESS_TRACE("ContainerDeclDirectMemberDecls::_readSerializedDeclsOfName");
-
+    // All of these accessors on `ContainerDeclDirectMemberDecls` start with
+    // a similar pattern of asserting that they are only used when on-demand
+    // deserialization is active, and then casting the `void*` that is stored
+    // in the AST representation over to the correct fossilized type (a type
+    // that is only used/visible within this file).
+    //
     SLANG_ASSERT(isUsingOnDemandDeserialization());
-
-    if (name == nullptr)
-        return nullptr;
-
     auto& fossilizedInfo =
         *(Fossilized<ContainerDeclDirectMemberDeclsInfo>*)onDemandDeserialization.data;
 
+    // TODO: It isn't clear why the compiler will sometimes perform by-name
+    // lookup using a null name, but it happens and thus the code here
+    // needs to be defensive against that scenario.
+    //
+    if (name == nullptr)
+        return nullptr;
+
+    // Once we are sure that `name` is valid, the overall logic here
+    // is quite similar to `findExportedDeclByMangledName()` above:
+    // we do a lookup in the serialized dictionary by binary search.
+    //
     auto found = _findEntryInFossilizedDictionaryWithSortedKeys(
         fossilizedInfo.mapNameToDeclIndex,
         name->text.getUnownedSlice());
     if (!found)
         return nullptr;
 
+    // Unlike the case for `findExportedDeclByMangledName()`, the
+    // dictionary stored on a container declaration only holds indices
+    // rather than pointers. The reason for this is that we want to
+    // bottleneck deserialization of direct member declarations through
+    // the by-index accessor, when possilbe.
+    //
+    // One thing to note here is that this function is being called
+    // to get the list of *all* declarations with a given name, but
+    // it seems to only fetch one. In practice this works fine because
+    // the `_prevInContainerWithSameName` field in `Decl` is part of
+    // the state that gets serialized for a `Decl`, so that loading
+    // the head of the linked list will cause the rest to get
+    // deserialized eagerly.
+    //
+    // TODO: We could avoid serializing the `_prevInContainerWithSameName`
+    // field on every `Decl` (since it is almost always null), and instead
+    // use a more complicated lookup structure here. E.g., the dictionary
+    // entries could either refer to a single declaration by index (the
+    // common case, we hope) or to a sequence of two or more indices stored
+    // in some side-band structure (in the case where multiple declarations
+    // have the same name). For now we are sticking with the simpler
+    // representation; further complexity would need to be motivated by
+    // profiling information showing there's a problem to be solved.
+    //
     Index declIndex = *found;
     return getDecl(declIndex);
+}
+
+void ContainerDeclDirectMemberDecls::_readSerializedTransparentDecls() const
+{
+    SLANG_ASSERT(isUsingOnDemandDeserialization());
+    auto& fossilizedInfo =
+        *(Fossilized<ContainerDeclDirectMemberDeclsInfo>*)onDemandDeserialization.data;
+
+    // This particular function works by filling in the `filteredListOfTransparentDecls`
+    // part of the lookup accelerators. If it has been called once and put anything
+    // into that array, then `filteredListOfTransparentDecls` should be used instead
+    // of calling this method again. We enforce this invariant in an attempt to
+    // avoid overhead that might be associated with this method.
+    //
+    SLANG_ASSERT(accelerators.filteredListOfTransparentDecls.getCount() == 0);
+
+    // If this is the first time this method is being called (or, in the very common
+    // corner case, when there are no transparent decls at all...) we loop over the
+    // fossilized array holding the indices of the transparent members.
+    //
+    for (auto index : fossilizedInfo.transparentDeclIndices)
+    {
+        // For each index that is found, we do a by-index query for
+        // the member and then add it to the list. This is another
+        // case of us trying to bottleneck access to members through
+        // the by-index accessor as much as possible.
+        //
+        auto decl = getDecl(index);
+        accelerators.filteredListOfTransparentDecls.add(decl);
+    }
+}
+
+Decl* ContainerDeclDirectMemberDecls::_readSerializedDeclAtIndex(Index index) const
+{
+    SLANG_ASSERT(isUsingOnDemandDeserialization());
+    auto& fossilizedInfo =
+        *(Fossilized<ContainerDeclDirectMemberDeclsInfo>*)onDemandDeserialization.data;
+
+    //
+    // It isn't visible here, but `ContainerDeclDirectMemberDecls::getDecl(index)`
+    // will automatically cache the decl that we return, so that subsequent queries
+    // for the same index shouldn't call this method at all (unless we end up
+    // returning null, for some unexpected reason).
+    //
+
+    // The logic here is fairly simple: we directly read from the array of (fossilized)
+    // declaration pointers in the (fossilized) `ContainerDeclDirectMemberDeclsInfo`,
+    // to get a pointer to the (fossilized) declaration we want.
+    //
+    // Note that it is important that the variable here is *not* being declared
+    // with `auto`. If we were to simply write `auto fossilizedDecl` then the type
+    // that gets inferred would be `Fossilized<Decl*>` which is a `FossilizedPtr<...>`
+    // - a 32-bit relative pointer. On systems with a 64-bit address space, it is
+    // not guaranteed that a 32-bit offset is enough to refer to part of the serialized
+    // AST blob (in the heap) from this local variable (on the stack).
+    //
+    // The two options are to use `auto&` so that we capture a *reference* to the
+    // fossilized pointer (rather than try to copy it), or to declare the variable
+    // as an ordinary "live" pointer.
+    //
+    Fossilized<Decl>* fossilizedDecl = fossilizedInfo.decls[index];
+
+    // Once we have a pointer to the (fossilized) declaration that we want,
+    // we can use the `ASTSerialReadContext` to read it on-demand. Because
+    // the `context` pointer declared on the actual AST type is untyped
+    // (to avoid needing to expose `ASTSerialReadContext` outside this file),
+    // we need to cast the pointer before we can perform the read.
+    //
+    auto sharedContext = as<ASTSerialReadContext>(onDemandDeserialization.context);
+    auto decl = sharedContext->readFossilizedDecl(fossilizedDecl);
+    return decl;
 }
 
 } // namespace Slang

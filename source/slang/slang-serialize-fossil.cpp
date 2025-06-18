@@ -1139,7 +1139,7 @@ void SerialWriter::LayoutObjKey::hashInto(Hasher& hasher) const
 
 SerialReader::SerialReader(
     ReadContext& context,
-    FossilizedAnyValPtr valPtr,
+    Fossil::AnyValPtr valPtr,
     InitialStateType initialState)
     : _context(context)
 {
@@ -1207,7 +1207,7 @@ SerialReader::~SerialReader()
     _context._readerCount--;
 }
 
-FossilizedAnyValPtr SerialReader::readValPtr()
+Fossil::AnyValPtr SerialReader::readValPtr()
 {
     return _readValPtr();
 }
@@ -1351,18 +1351,12 @@ void SerialReader::endStruct()
 
 void SerialReader::beginVariant()
 {
-    TESS_TRACE("SerialReader::beginVariant this:%p _state.type:%d", this, _state.type);
-
     auto valPtr = _readPotentiallyIndirectValPtr();
-    TESS_TRACE("if (auto variantPtr = as<FossilizedVariantObj>(valPtr))");
     if (auto variantPtr = as<FossilizedVariantObj>(valPtr))
     {
-        TESS_TRACE("auto contentValPtr = getVariantContentPtr(variantPtr.get());");
         auto contentValPtr = getVariantContentPtr(variantPtr);
         valPtr = contentValPtr;
     }
-
-    TESS_TRACE("auto recordPtr = as<FossilizedRecordVal>(valPtr);");
     auto recordPtr = as<FossilizedRecordVal>(valPtr);
 
     _pushState();
@@ -1375,7 +1369,6 @@ void SerialReader::beginVariant()
 
 void SerialReader::endVariant()
 {
-    TESS_TRACE("SerialReader::endVariant this:%p _state.type:%d", this, _state.type);
     _popState();
 }
 
@@ -1425,7 +1418,7 @@ void SerialReader::endOptional()
 
 void SerialReader::handleSharedPtr(void*& value, Callback callback, void* context)
 {
-    FossilizedAnyValPtr targetValPtr;
+    Fossil::AnyValPtr targetValPtr;
 
     if (_state.type == State::Type::PseudoPtr)
     {
@@ -1611,9 +1604,8 @@ void SerialReader::_flush()
     }
 }
 
-FossilizedAnyValPtr SerialReader::_readValPtr()
+Fossil::AnyValPtr SerialReader::_readValPtr()
 {
-    TESS_TRACE("SerialReader::_readValPtr");
     switch (_state.type)
     {
     case State::Type::Root:
@@ -1649,7 +1641,7 @@ FossilizedAnyValPtr SerialReader::_readValPtr()
             auto index = _state.elementIndex++;
 
             auto containerPtr = as<FossilizedContainerObjBase>(_state.baseValPtr);
-            return DynPtr(containerPtr->getElement(index));
+            return Fossil::ValPtr(containerPtr->getElement(index));
         }
 
     default:
@@ -1658,7 +1650,7 @@ FossilizedAnyValPtr SerialReader::_readValPtr()
     }
 }
 
-FossilizedAnyValPtr SerialReader::_readIndirectValPtr()
+Fossil::AnyValPtr SerialReader::_readIndirectValPtr()
 {
     auto baseValPtr = _readValPtr();
     auto basePtrPtr = as<FossilizedPtr<void>>(baseValPtr);
@@ -1668,19 +1660,14 @@ FossilizedAnyValPtr SerialReader::_readIndirectValPtr()
 }
 
 
-FossilizedAnyValPtr SerialReader::_readPotentiallyIndirectValPtr()
+Fossil::AnyValPtr SerialReader::_readPotentiallyIndirectValPtr()
 {
-    TESS_TRACE("SerialReader::_readPotentiallyIndirectValPtr");
     auto baseValPtr = _readValPtr();
-    TESS_TRACE("if (auto basePtrPtr = as<FossilizedPtr<FossilizedVal>>(baseValPtr))");
     if (auto basePtrPtr = as<FossilizedPtr<void>>(baseValPtr))
     {
-        TESS_TRACE("auto targetValRef = basePtrPtr->getTarget()");
         auto targetValRef = basePtrPtr->getTargetValRef();
-        TESS_TRACE("FossilizedValPtr(targetValRef)");
-        return DynPtr(targetValRef);
+        return Fossil::ValPtr(targetValRef);
     }
-    TESS_TRACE("return baseValPtr");
     return baseValPtr;
 }
 
