@@ -128,6 +128,19 @@ int HelloWorldExample::createComputePipelineFromShader()
     sessionDesc.targetCount = 1;
     sessionDesc.compilerOptionEntryCount = 0;
 
+    std::vector<slang::CompilerOptionEntry> options;
+
+    {
+        slang::CompilerOptionEntry profileOption = {
+            slang::CompilerOptionName::ReportPerfBenchmark,
+        };
+        profileOption.value.intValue0 = 1;
+        options.push_back(profileOption);
+    }
+
+    sessionDesc.compilerOptionEntries = options.data();
+    sessionDesc.compilerOptionEntryCount = options.size();
+
     ComPtr<slang::ISession> session;
     RETURN_ON_FAIL(slangGlobalSession->createSession(sessionDesc, session.writeRef()));
 

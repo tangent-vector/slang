@@ -10,6 +10,8 @@
 #include "slang-serialize-fossil.h"
 #include "slang-serialize-riff.h"
 
+#include "core/slang-performance-profiler.h"
+
 //
 #include "slang-serialize-ast.cpp.fiddle"
 
@@ -1886,6 +1888,8 @@ void writeSerializedModuleAST(
     ModuleDecl* moduleDecl,
     SerialSourceLocWriter* sourceLocWriter)
 {
+    SLANG_PROFILE;
+
     // TODO: we might want to have a more careful pass here,
     // where we only encode the public declarations.
 
@@ -1989,6 +1993,8 @@ ModuleDecl* readSerializedModuleAST(
     SerialSourceLocReader* sourceLocReader,
     SourceLoc requestingSourceLoc)
 {
+    SLANG_PROFILE;
+
     // We expect the `chunk` that was passed in to be a RIFF
     // data chunk (matching what was written in `writeSerializedModuleAST()`,
     // and to be proper fossil-format data.
@@ -2095,6 +2101,8 @@ ModuleDecl* readSerializedModuleAST(
 
 Decl* ASTSerialReadContext::readFossilizedDecl(Fossilized<Decl>* fossilizedDecl)
 {
+    SLANG_PROFILE;
+
     // AST nodes are all fossilized as variants, which means that they
     // carrying their own layout information. We can exploit this fact
     // to get from the raw pointer that was passed in to a `Fossil::AnyValPtr`

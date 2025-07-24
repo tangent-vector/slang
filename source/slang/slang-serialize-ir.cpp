@@ -14,6 +14,8 @@
 #include "slang-tag-version.h"
 #include "slang.h"
 
+#include "core/slang-performance-profiler.h"
+
 //
 #include "slang-serialize-ir.cpp.fiddle"
 
@@ -848,6 +850,8 @@ Result readSerializedModuleIR(
     SerialSourceLocReader* sourceLocReader,
     RefPtr<IRModule>& outIRModule)
 {
+    SLANG_PROFILE;
+
     SLANG_RETURN_ON_FAIL(readSerializedModuleIR_(chunk, session, sourceLocReader, outIRModule));
 
     //
