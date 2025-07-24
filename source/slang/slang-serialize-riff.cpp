@@ -217,7 +217,7 @@ void RIFFSerialWriter::endOptional()
     _cursor.endChunk();
 }
 
-void RIFFSerialWriter::handleSharedPtr(void*& value, Callback callback, void* context)
+void RIFFSerialWriter::handleSharedPtr(void*& value, SerializerCallback callback, void* context)
 {
     // Because we are writing, we only care about the
     // pointer that is already present in `value`.
@@ -283,7 +283,7 @@ void RIFFSerialWriter::handleSharedPtr(void*& value, Callback callback, void* co
     _objects.add(objectInfo);
 }
 
-void RIFFSerialWriter::handleUniquePtr(void*& value, Callback callback, void* context)
+void RIFFSerialWriter::handleUniquePtr(void*& value, SerializerCallback callback, void* context)
 {
     // We treat all pointers as shared pointers, because there isn't really
     // an optimized representation we would want to use for the unique case.
@@ -293,7 +293,7 @@ void RIFFSerialWriter::handleUniquePtr(void*& value, Callback callback, void* co
 
 void RIFFSerialWriter::handleDeferredObjectContents(
     void* valuePtr,
-    Callback callback,
+    SerializerCallback callback,
     void* context)
 {
     // Because we are already deferring writing of the *entirety* of
@@ -572,7 +572,7 @@ RIFFSerialReader::ObjectIndex RIFFSerialReader::_readObjectReference()
     return objectIndex;
 }
 
-void RIFFSerialReader::handleSharedPtr(void*& value, Callback callback, void* context)
+void RIFFSerialReader::handleSharedPtr(void*& value, SerializerCallback callback, void* context)
 {
     // The logic here largely mirrors what appears in
     // `RIFFSerialWriter::handleSharedPtr`.
@@ -695,7 +695,7 @@ void RIFFSerialReader::handleSharedPtr(void*& value, Callback callback, void* co
     value = objectInfo.ptr;
 }
 
-void RIFFSerialReader::handleUniquePtr(void*& value, Callback callback, void* userData)
+void RIFFSerialReader::handleUniquePtr(void*& value, SerializerCallback callback, void* userData)
 {
     // We treat all pointers as shared pointers, because there isn't really
     // an optimized representation we would want to use for the unique case.
@@ -705,7 +705,7 @@ void RIFFSerialReader::handleUniquePtr(void*& value, Callback callback, void* us
 
 void RIFFSerialReader::handleDeferredObjectContents(
     void* valuePtr,
-    Callback callback,
+    SerializerCallback callback,
     void* context)
 {
     // Unlike the case in `RIFFSerialWriter::handleDeferredObjectContents()`,

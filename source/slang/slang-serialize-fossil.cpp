@@ -3,6 +3,8 @@
 
 #include "../core/slang-blob.h"
 
+#include "core/slang-performance-profiler.h"
+
 namespace Slang
 {
 namespace Fossil
@@ -82,19 +84,20 @@ SerializationMode SerialWriter::getMode()
 
 void SerialWriter::handleBool(bool& value)
 {
-    // A boolean value will be serialized as a full byte.
-    uint8_t v = value;
-    _writeSimpleValue(FossilizedValKind::Bool, v);
+    uint32_t v = value;
+    _writeSimpleValue(FossilizedValKind::UInt32, v);
 }
 
 void SerialWriter::handleInt8(int8_t& value)
 {
-    _writeSimpleValue(FossilizedValKind::Int8, value);
+    int32_t v = value;
+    _writeSimpleValue(FossilizedValKind::Int32, v);
 }
 
 void SerialWriter::handleInt16(int16_t& value)
 {
-    _writeSimpleValue(FossilizedValKind::Int16, value);
+    int32_t v = value;
+    _writeSimpleValue(FossilizedValKind::Int32, v);
 }
 
 void SerialWriter::handleInt32(Int32& value)
@@ -109,12 +112,14 @@ void SerialWriter::handleInt64(Int64& value)
 
 void SerialWriter::handleUInt8(uint8_t& value)
 {
-    _writeSimpleValue(FossilizedValKind::UInt8, value);
+    uint32_t v = value;
+    _writeSimpleValue(FossilizedValKind::UInt32, v);
 }
 
 void SerialWriter::handleUInt16(uint16_t& value)
 {
-    _writeSimpleValue(FossilizedValKind::UInt16, value);
+    uint32_t v = value;
+    _writeSimpleValue(FossilizedValKind::UInt32, v);
 }
 
 void SerialWriter::handleUInt32(UInt32& value)
@@ -164,7 +169,7 @@ void SerialWriter::handleString(String& value)
     _pushPotentiallyIndirectValueScope(FossilizedValKind::StringObj);
 
     auto data = value.getBuffer();
-    _writeValueRaw(ValInfo::rawData(data, size + 1, 1));
+    _writeValueRaw(ValInfo::rawData(data, size + 1));
 
     auto chunk = _popPotentiallyIndirectValueScope();
 
@@ -174,22 +179,22 @@ void SerialWriter::handleString(String& value)
     _mapStringToChunk.addIfNotExists(value, chunk);
 }
 
-void SerialWriter::beginArray()
+void SerialWriter::beginArray(Scope&)
 {
     _pushContainerScope(FossilizedValKind::ArrayObj);
 }
 
-void SerialWriter::endArray()
+void SerialWriter::endArray(Scope&)
 {
     _popContainerScope();
 }
 
-void SerialWriter::beginDictionary()
+void SerialWriter::beginDictionary(Scope&)
 {
     _pushContainerScope(FossilizedValKind::DictionaryObj);
 }
 
-void SerialWriter::endDictionary()
+void SerialWriter::endDictionary(Scope&)
 {
     _popContainerScope();
 }
@@ -216,23 +221,23 @@ bool SerialWriter::hasElements()
     return false;
 }
 
-void SerialWriter::beginStruct()
+void SerialWriter::beginStruct(Scope&)
 {
     _pushInlineValueScope(FossilizedValKind::Struct);
 }
 
-void SerialWriter::endStruct()
+void SerialWriter::endStruct(Scope&)
 {
     _popInlineValueScope();
 }
 
-void SerialWriter::beginVariant()
+void SerialWriter::beginVariant(Scope&)
 {
     _pushVariantScope();
     _pushInlineValueScope(FossilizedValKind::Struct);
 }
 
-void SerialWriter::endVariant()
+void SerialWriter::endVariant(Scope&)
 {
     _popInlineValueScope();
     _popVariantScope();
@@ -246,27 +251,27 @@ void SerialWriter::handleFieldKey(char const* name, Int index)
     SLANG_UNUSED(index);
 }
 
-void SerialWriter::beginTuple()
+void SerialWriter::beginTuple(Scope&)
 {
     _pushInlineValueScope(FossilizedValKind::Tuple);
 }
 
-void SerialWriter::endTuple()
+void SerialWriter::endTuple(Scope&)
 {
     _popInlineValueScope();
 }
 
-void SerialWriter::beginOptional()
+void SerialWriter::beginOptional(Scope&)
 {
     _pushIndirectValueScope(FossilizedValKind::OptionalObj);
 }
 
-void SerialWriter::endOptional()
+void SerialWriter::endOptional(Scope&)
 {
     _popIndirectValueScope();
 }
 
-void SerialWriter::handleSharedPtr(void*& value, Callback callback, void* context)
+void SerialWriter::handleSharedPtr(void*& value, SerializerCallback callback, void* context)
 {
     // Because we are writing, we only care about the
     // pointer that is already present in `value`.
@@ -313,7 +318,7 @@ void SerialWriter::handleSharedPtr(void*& value, Callback callback, void* contex
     _commitWrite(ValInfo::relativePtrTo(chunk));
 }
 
-void SerialWriter::handleUniquePtr(void*& value, Callback callback, void* context)
+void SerialWriter::handleUniquePtr(void*& value, SerializerCallback callback, void* context)
 {
     // We treat all pointers as shared pointers, because there isn't really
     // an optimized representation we would want to use for the unique case.
@@ -321,7 +326,7 @@ void SerialWriter::handleUniquePtr(void*& value, Callback callback, void* contex
     handleSharedPtr(value, callback, context);
 }
 
-void SerialWriter::handleDeferredObjectContents(void* valuePtr, Callback callback, void* context)
+void SerialWriter::handleDeferredObjectContents(void* valuePtr, SerializerCallback callback, void* context)
 {
     // Because we are already deferring writing of the *entirety* of
     // an object's members as part of how `handleSharedPtr()` works,
@@ -337,15 +342,6 @@ SerialWriter::LayoutObj* SerialWriter::_createSimpleLayout(FossilizedValKind kin
 {
     switch (kind)
     {
-    case FossilizedValKind::Bool:
-    case FossilizedValKind::Int8:
-    case FossilizedValKind::UInt8:
-        return new (_arena) SimpleLayoutObj(kind, 1);
-
-    case FossilizedValKind::Int16:
-    case FossilizedValKind::UInt16:
-        return new (_arena) SimpleLayoutObj(kind, 2);
-
     case FossilizedValKind::Int32:
     case FossilizedValKind::UInt32:
     case FossilizedValKind::Float32:
@@ -375,7 +371,7 @@ SerialWriter::LayoutObj* SerialWriter::_createLayout(FossilizedValKind kind)
         return new (_arena) ContainerLayoutObj(kind, nullptr);
 
     case FossilizedValKind::Ptr:
-        return new (_arena) ContainerLayoutObj(kind, nullptr, sizeof(FossilInt), sizeof(FossilInt));
+        return new (_arena) ContainerLayoutObj(kind, nullptr, sizeof(FossilInt));
 
     case FossilizedValKind::Struct:
     case FossilizedValKind::Tuple:
@@ -388,13 +384,8 @@ SerialWriter::LayoutObj* SerialWriter::_createLayout(FossilizedValKind kind)
         //
         return new (_arena) ContainerLayoutObj(kind, nullptr);
 
-    case FossilizedValKind::Bool:
-    case FossilizedValKind::Int8:
-    case FossilizedValKind::Int16:
     case FossilizedValKind::Int32:
     case FossilizedValKind::Int64:
-    case FossilizedValKind::UInt8:
-    case FossilizedValKind::UInt16:
     case FossilizedValKind::UInt32:
     case FossilizedValKind::UInt64:
     case FossilizedValKind::Float32:
@@ -525,12 +516,11 @@ SerialWriter::RecordLayoutObj::FieldInfo& SerialWriter::_getOrAddField(
     return recordLayout->fields[index];
 }
 
-SerialWriter::ValInfo SerialWriter::ValInfo::rawData(void const* data, Size size, Size alignment)
+SerialWriter::ValInfo SerialWriter::ValInfo::rawData(void const* data, Size size)
 {
     ValInfo val(Kind::RawData);
     val.data.ptr = data;
     val.data.size = size;
-    val.data.alignment = alignment;
     return val;
 }
 
@@ -546,25 +536,6 @@ SerialWriter::ValInfo SerialWriter::ValInfo::contentsOf(ChunkBuilder* chunk)
     ValInfo val(Kind::ContentsOfChunk);
     val.chunk = chunk;
     return val;
-}
-
-Size SerialWriter::ValInfo::getAlignment() const
-{
-    switch (kind)
-    {
-    case Kind::RelativePtr:
-        return sizeof(FossilInt);
-
-    case Kind::ContentsOfChunk:
-        return chunk->getAlignment();
-
-    case Kind::RawData:
-        return data.alignment;
-
-    default:
-        SLANG_UNEXPECTED("unhandled case");
-        break;
-    }
 }
 
 void SerialWriter::_pushInlineValueScope(FossilizedValKind kind)
@@ -717,7 +688,7 @@ void SerialWriter::_writeValueRaw(ValInfo const& val)
         if (val.data.size == 0)
             return;
         _ensureChunkExists();
-        _state.chunk->writePaddingToAlignTo(val.data.alignment);
+        _state.chunk->writePaddingToAlignTo(kFossilAlignment);
         _state.chunk->writeData(val.data.ptr, val.data.size);
         break;
 
@@ -821,7 +792,7 @@ void SerialWriter::_commitWrite(ValInfo const& val)
             if (elementIndex != 0)
             {
                 auto chunk = _state.chunk;
-                chunk->writePaddingToAlignTo(val.getAlignment());
+                chunk->writePaddingToAlignTo(kFossilAlignment);
 
                 fieldOffset = chunk->getContentSize();
             }
@@ -867,13 +838,11 @@ void SerialWriter::_commitWrite(ValInfo const& val)
 void SerialWriter::_writeSimpleValue(
     FossilizedValKind kind,
     void const* data,
-    size_t size,
-    size_t alignment)
+    size_t size)
 {
     auto layout = _reserveDestinationForWrite(kind);
     SLANG_ASSERT(layout->size == size);
-    SLANG_ASSERT(layout->alignment == alignment);
-    _commitWrite(ValInfo::rawData(data, size, alignment));
+    _commitWrite(ValInfo::rawData(data, size));
 }
 
 void SerialWriter::_writeNull()
@@ -969,8 +938,7 @@ ChunkBuilder* SerialWriter::_getOrCreateChunkForLayout(LayoutObj* layout)
             UInt32 elementStride = 0;
             if (elementLayout)
             {
-                elementStride =
-                    UInt32(roundUpToAlignment(elementLayout->size, elementLayout->alignment));
+                elementStride = UInt32(roundUpToAlignment(elementLayout->size, kFossilAlignment));
                 SLANG_ASSERT(elementStride != 0);
             }
             chunk->writeData(&elementStride, sizeof(elementStride));
@@ -1021,6 +989,9 @@ bool SerialWriter::LayoutObjKey::operator==(LayoutObjKey const& that) const
     SLANG_ASSERT(obj && that.obj);
 
     if (obj->kind != that.obj->kind)
+        return false;
+
+    if (obj->size != that.obj->size)
         return false;
 
     switch (obj->kind)
@@ -1152,17 +1123,23 @@ SerialReader::SerialReader(
     switch (initialState)
     {
     case InitialStateType::Root:
-        _state.type = State::Type::Root;
+        getState().type = State::Type::Object;
         break;
 
     case InitialStateType::PseudoPtr:
-        _state.type = State::Type::PseudoPtr;
+        getState().type = State::Type::PseudoPtr;
         break;
     }
 
-    _state.baseValPtr = valPtr;
-    _state.elementIndex = 0;
-    _state.elementCount = 1;
+    #if 0
+    getState().baseValPtr = valPtr;
+    getState().elementIndex = 0;
+    getState().elementCount = 1;
+    #else
+    getState().dataCursor = valPtr.getDataPtr();
+    getState().layoutCursor = valPtr.getLayout();
+    getState().remainingValueCount = 1;
+    #endif
 }
 
 SerialReader::~SerialReader()
@@ -1207,150 +1184,15 @@ SerialReader::~SerialReader()
     _context._readerCount--;
 }
 
-Fossil::AnyValPtr SerialReader::readValPtr()
-{
-    return _readValPtr();
-}
-
 void SerialReader::flush()
 {
     _flush();
 }
 
-SerializationMode SerialReader::getMode()
+
+void SerialReader::beginVariant(Scope& scope)
 {
-    return SerializationMode::Read;
-}
-
-void SerialReader::handleBool(bool& value)
-{
-    handleSimpleVal(value);
-}
-
-void SerialReader::handleInt8(int8_t& value)
-{
-    handleSimpleVal(value);
-}
-
-void SerialReader::handleInt16(int16_t& value)
-{
-    handleSimpleVal(value);
-}
-
-void SerialReader::handleInt32(Int32& value)
-{
-    handleSimpleVal(value);
-}
-
-void SerialReader::handleInt64(Int64& value)
-{
-    handleSimpleVal(value);
-}
-
-void SerialReader::handleUInt8(uint8_t& value)
-{
-    handleSimpleVal(value);
-}
-
-void SerialReader::handleUInt16(uint16_t& value)
-{
-    handleSimpleVal(value);
-}
-
-void SerialReader::handleUInt32(UInt32& value)
-{
-    handleSimpleVal(value);
-}
-
-void SerialReader::handleUInt64(UInt64& value)
-{
-    handleSimpleVal(value);
-}
-
-void SerialReader::handleFloat32(float& value)
-{
-    handleSimpleVal(value);
-}
-
-void SerialReader::handleFloat64(double& value)
-{
-    handleSimpleVal(value);
-}
-
-void SerialReader::handleString(String& value)
-{
-    auto valPtr = _readPotentiallyIndirectValPtr();
-    if (!valPtr)
-    {
-        value = String();
-    }
-    else
-    {
-        value = as<FossilizedStringObj>(valPtr)->get();
-    }
-}
-
-void SerialReader::beginArray()
-{
-    auto valPtr = _readPotentiallyIndirectValPtr();
-    auto arrayPtr = as<FossilizedArrayObjBase>(valPtr);
-
-    _pushState();
-
-    _state.type = State::Type::Array;
-    _state.baseValPtr = arrayPtr;
-    _state.elementIndex = 0;
-    _state.elementCount = arrayPtr->getElementCount();
-}
-
-void SerialReader::endArray()
-{
-    _popState();
-}
-
-void SerialReader::beginDictionary()
-{
-    auto valPtr = _readPotentiallyIndirectValPtr();
-    auto dictionaryPtr = as<FossilizedDictionaryObjBase>(valPtr);
-
-    _pushState();
-
-    _state.type = State::Type::Dictionary;
-    _state.baseValPtr = dictionaryPtr;
-    _state.elementIndex = 0;
-    _state.elementCount = dictionaryPtr->getElementCount();
-}
-
-void SerialReader::endDictionary()
-{
-    _popState();
-}
-
-bool SerialReader::hasElements()
-{
-    return _state.elementIndex < _state.elementCount;
-}
-
-void SerialReader::beginStruct()
-{
-    auto valPtr = _readValPtr();
-    auto recordPtr = as<FossilizedRecordVal>(valPtr);
-
-    _pushState();
-
-    _state.type = State::Type::Struct;
-    _state.baseValPtr = valPtr;
-    _state.elementIndex = 0;
-    _state.elementCount = recordPtr->getFieldCount();
-}
-
-void SerialReader::endStruct()
-{
-    _popState();
-}
-
-void SerialReader::beginVariant()
-{
+//    SLANG_PROFILE;
     auto valPtr = _readPotentiallyIndirectValPtr();
     if (auto variantPtr = as<FossilizedVariantObj>(valPtr))
     {
@@ -1359,95 +1201,60 @@ void SerialReader::beginVariant()
     }
     auto recordPtr = as<FossilizedRecordVal>(valPtr);
 
-    _pushState();
+    #if 0
+    _pushState(scope);
 
-    _state.type = State::Type::Struct;
-    _state.baseValPtr = recordPtr;
-    _state.elementIndex = 0;
-    _state.elementCount = recordPtr->getFieldCount();
+    getState().type = State::Type::Record;
+    getState().baseValPtr = recordPtr;
+    getState().elementIndex = 0;
+    getState().elementCount = recordPtr->getFieldCount();
+    #else
+    _pushRecordState(scope, recordPtr);
+    #endif
 }
 
-void SerialReader::endVariant()
+void SerialReader::handleSharedPtr(void*& value, SerializerCallback callback, void* context)
 {
-    _popState();
-}
-
-void SerialReader::handleFieldKey(char const* name, Int index)
-{
-    // For now we are ignoring field keys, and treating
-    // structs as basically equivalent to tuples.
-    SLANG_UNUSED(name);
-    SLANG_UNUSED(index);
-}
-
-void SerialReader::beginTuple()
-{
-    auto valPtr = _readValPtr();
-    auto recordPtr = as<FossilizedRecordVal>(valPtr);
-
-    _pushState();
-
-    _state.type = State::Type::Tuple;
-    _state.baseValPtr = recordPtr;
-    _state.elementIndex = 0;
-    _state.elementCount = recordPtr->getFieldCount();
-}
-
-void SerialReader::endTuple()
-{
-    _popState();
-}
-
-void SerialReader::beginOptional()
-{
-    auto valPtr = _readIndirectValPtr();
-    auto optionalPtr = as<FossilizedOptionalObjBase>(valPtr);
-
-    _pushState();
-
-    _state.type = State::Type::Optional;
-    _state.baseValPtr = optionalPtr;
-    _state.elementIndex = 0;
-    _state.elementCount = Count(optionalPtr->hasValue());
-}
-
-void SerialReader::endOptional()
-{
-    _popState();
-}
-
-void SerialReader::handleSharedPtr(void*& value, Callback callback, void* context)
-{
+//    SLANG_PROFILE;
     Fossil::AnyValPtr targetValPtr;
 
-    if (_state.type == State::Type::PseudoPtr)
     {
-        _state.type = State::Type::Root;
-        targetValPtr = _readValPtr();
-    }
-    else
-    {
-        auto valPtr = _readValPtr();
-        auto ptrPtr = as<FossilizedPtr<void>>(valPtr);
-        targetValPtr = ptrPtr->getTargetValPtr();
-    }
+        //SLANG_PROFILE_SECTION(handleSharedPtr_ReadingPtrValAndHandlingNull);
 
-    // The logic here largely mirrors what appears in
-    // `SerialWriter::handleSharedPtr`.
-    //
-    // We first check for an explicitly written null pointer.
-    // If we find one our work is very easy.
-    //
-    if (!targetValPtr)
-    {
-        value = nullptr;
-        return;
+        if (getState().type == State::Type::PseudoPtr)
+        {
+            getState().type = State::Type::Object;
+            targetValPtr = _readValPtr();
+        }
+        else
+        {
+            auto valPtr = _readValPtr();
+            auto ptrPtr = as<FossilizedPtr<void>>(valPtr);
+            targetValPtr = ptrPtr->getTargetValPtr();
+        }
+
+        // The logic here largely mirrors what appears in
+        // `SerialWriter::handleSharedPtr`.
+        //
+        // We first check for an explicitly written null pointer.
+        // If we find one our work is very easy.
+        //
+        if (!targetValPtr)
+        {
+            value = nullptr;
+            return;
+        }
     }
 
     // Now we need to check if we've previously read in
     // a reference to the same object.
     //
-    if (auto found = _context.mapFossilizedObjectPtrToObjectInfo.tryGetValue(targetValPtr.get()))
+    RefPtr<ObjectInfo>* found = nullptr;
+    {
+        //SLANG_PROFILE_SECTION(handleSharedPtr_LookingUpInDictionary);
+        found = _context.mapFossilizedObjectPtrToObjectInfo.tryGetValue(targetValPtr.get());
+    }
+    if (found)
     {
         auto objectInfo = *found;
 
@@ -1485,6 +1292,7 @@ void SerialReader::handleSharedPtr(void*& value, Callback callback, void* contex
         value = objectInfo->resurrectedObjectPtr;
         return;
     }
+    //SLANG_PROFILE_SECTION(handleSharedPtr_FailurePath);
 
     // At this point we are reading a reference to an
     // object index that has not yet been read at all.
@@ -1521,11 +1329,18 @@ void SerialReader::handleSharedPtr(void*& value, Callback callback, void* contex
     // reading whatever comes after the pointer
     // we were invoked to read.
     //
-    _pushState();
-    _state.type = State::Type::Object;
-    _state.baseValPtr = objectInfo->fossilizedObjectPtr;
-    _state.elementIndex = 0;
-    _state.elementCount = 1;
+    Scope tempScope;
+    _pushState(tempScope);
+    getState().type = State::Type::Object;
+    #if 0
+    getState().baseValPtr = objectInfo->fossilizedObjectPtr;
+    getState().elementIndex = 0;
+    getState().elementCount = 1;
+    #else
+    getState().dataCursor = objectInfo->fossilizedObjectPtr.getDataPtr();
+    getState().layoutCursor = objectInfo->fossilizedObjectPtr.getLayout();
+    getState().remainingValueCount = 1;
+    #endif
 
     // Note that we are passing the address of `objectInfo.ptr`,
     // and `objectInfo` is a reference to an element of the
@@ -1541,25 +1356,21 @@ void SerialReader::handleSharedPtr(void*& value, Callback callback, void* contex
     // that objects and stores a pointer to it into the output
     // parameter.
     //
-    callback(&objectInfo->resurrectedObjectPtr, this, context);
+    {
+        //SLANG_PROFILE_SECTION(handleSharedPtr_InvokingSerializerCallback);
+        callback(&objectInfo->resurrectedObjectPtr, this, context);
+    }
 
-    _popState();
+    _popState(tempScope);
 
     objectInfo->state = ObjectState::ReadingComplete;
 
     value = objectInfo->resurrectedObjectPtr;
 }
 
-void SerialReader::handleUniquePtr(void*& value, Callback callback, void* context)
+void SerialReader::handleDeferredObjectContents(void* valuePtr, SerializerCallback callback, void* context)
 {
-    // We treat all pointers as shared pointers, because there isn't really
-    // an optimized representation we would want to use for the unique case.
-    //
-    handleSharedPtr(value, callback, context);
-}
-
-void SerialReader::handleDeferredObjectContents(void* valuePtr, Callback callback, void* context)
-{
+    //SLANG_PROFILE;
     // Unlike the case in `SerialWriter::handleDeferredObjectContents()`,
     // we very much *do* want to delay invoking the callback until later.
     //
@@ -1575,7 +1386,7 @@ void SerialReader::handleDeferredObjectContents(void* valuePtr, Callback callbac
     // the callbak in `_flush()`.
 
     DeferredAction deferredAction;
-    deferredAction.savedState = _state;
+    deferredAction.savedState = getState();
     deferredAction.resurrectedObjectPtr = valuePtr;
     deferredAction.callback = callback;
     deferredAction.context = context;
@@ -1585,6 +1396,7 @@ void SerialReader::handleDeferredObjectContents(void* valuePtr, Callback callbac
 
 void SerialReader::_flush()
 {
+//    SLANG_PROFILE;
     // We need to flush any actions that were deferred
     // and are still pending.
     //
@@ -1606,55 +1418,111 @@ void SerialReader::_flush()
 
 Fossil::AnyValPtr SerialReader::_readValPtr()
 {
-    switch (_state.type)
+    // This is the primary bottleneck function that all
+    // deserialization flows through, so it is important
+    // to try to minimize the number of cycles spent here.
+    //
+    // The primary task of this function is to return a
+    // pair of data and layout pointer for the next value
+    // read from the input, and it just so happens that
+    // these values are already stored directly in the
+    // current state.
+    //
+    auto dataPtr = _state.dataCursor;
+    auto layoutPtr = _state.layoutCursor;
+
+    // The state also tracks the number of values that
+    // can still be read in the current scope. This value
+    // is used both to drive the loop when an application
+    // is reading a collection, and as a validation check
+    // here.
+    //
+    auto remainingValueCount = _state.remainingValueCount;
+    SLANG_SERIALIZE_FOSSIL_VALIDATE(remainingValueCount > 0);
+
+    // At minimum, we need to update the state to reflect
+    // the new number of values that remain.
+    //
+    remainingValueCount--;
+    _state.remainingValueCount = remainingValueCount;
+
+    // At this point, there is no need to update the
+    // state further, unless values remain. While
+    // we expect the "no values remain" case to be
+    // the less common one, we still guard all of
+    // this logic because we already need to branch
+    // to handle the case of record fields.
+    //
+    if (remainingValueCount != 0)
     {
-    case State::Type::Root:
-    case State::Type::Object:
-    case State::Type::PseudoPtr:
-        SLANG_ASSERT(_state.elementCount == 1);
-        SLANG_ASSERT(_state.elementIndex == 0);
-        _state.elementIndex++;
-        return _state.baseValPtr;
+        // The primary task in this case is to update
+        // the data pointer to point to the next value
+        // in the stream.
+        //
+        auto nextDataPtr = (char*)dataPtr;
 
-    case State::Type::Struct:
-    case State::Type::Tuple:
+        // If we are reading from a record (struct or tuple)
+        // then we will have an additional piece of state
+        // indicating the field that the data cursor was
+        // pointing at.
+        //
+        if (auto fieldInfoPtr = _state.fieldCursor)
         {
-            SLANG_ASSERT(_state.elementIndex < _state.elementCount);
-            auto index = _state.elementIndex++;
+            // We know, because `remainingValueCount` is non-zero,
+            // that there is at least one more field after this
+            // one, so we can increment the `fieldInfoPtr` to
+            // get a pointer to the next field layout in the
+            // record layout.
+            //
+            auto nextFieldInfoPtr = fieldInfoPtr + 1;
 
-            auto recordPtr = as<FossilizedRecordVal>(_state.baseValPtr);
-            return getAddress(recordPtr->getField(index));
+            // The layout information for a record type stores
+            // the offset of each field, so we can compute
+            // the relative offset between two fields as the
+            // difference between their offsets in the layout.
+            //
+            auto offsetToNextField = nextFieldInfoPtr->offset - fieldInfoPtr->offset;
+
+            // Adding that relative offset to the data pointer
+            // will navigate us to the next field.
+            //
+            nextDataPtr += offsetToNextField;
+            _state.fieldCursor = nextFieldInfoPtr;
+
+            // The info for the next field stores a (relative)
+            // pointer to its data layout, so we can write
+            // that into our state so that it is available
+            // for the next read operation.
+
+            _state.layoutCursor = nextFieldInfoPtr->layout;
+        }
+        else
+        {
+            // The other case where more than one value can
+            // be read in the same state is when a collection
+            // is being read. In that case the setup logic
+            // will have already stored the stride between
+            // elements into the state, and we can use that
+            // to increment the data pointer.
+            //
+            // (In the container case the layout pointer doesn't
+            // need to change, since all of the elements are
+            // required to have the same layout).
+            //
+            auto dataStride = _state.dataStride;
+            nextDataPtr += dataStride;
         }
 
-    case State::Type::Optional:
-        {
-            SLANG_ASSERT(_state.elementCount == 1);
-            SLANG_ASSERT(_state.elementIndex == 0);
-
-            auto optionalPtr = as<FossilizedOptionalObjBase>(_state.baseValPtr);
-            return getAddress(optionalPtr->getValue());
-        }
-
-    case State::Type::Array:
-    case State::Type::Dictionary:
-        {
-            SLANG_ASSERT(_state.elementIndex < _state.elementCount);
-            auto index = _state.elementIndex++;
-
-            auto containerPtr = as<FossilizedContainerObjBase>(_state.baseValPtr);
-            return Fossil::ValPtr(containerPtr->getElement(index));
-        }
-
-    default:
-        SLANG_UNEXPECTED("unhandled case");
-        break;
+        _state.dataCursor = nextDataPtr;
     }
+
+    return AnyValPtr(dataPtr, layoutPtr);
 }
 
-Fossil::AnyValPtr SerialReader::_readIndirectValPtr()
+SLANG_FORCE_INLINE Fossil::AnyValPtr SerialReader::_readIndirectValPtr()
 {
     auto baseValPtr = _readValPtr();
-    auto basePtrPtr = as<FossilizedPtr<void>>(baseValPtr);
+    auto basePtrPtr = as_assumingNonNull<FossilizedPtr<void>>(baseValPtr);
 
     auto targetValPtr = basePtrPtr->getTargetValPtr();
     return targetValPtr;
@@ -1663,26 +1531,220 @@ Fossil::AnyValPtr SerialReader::_readIndirectValPtr()
 
 Fossil::AnyValPtr SerialReader::_readPotentiallyIndirectValPtr()
 {
+    #if 0
+    static uint32_t mapStateTypeToFlags[8] = {0};
+    auto stateTypeIndex = (int)getState().type;
+    auto& flags = mapStateTypeToFlags[stateTypeIndex];
+    auto oldFlags = flags;
+    #endif
+
+    auto stateType = getState().type;
     auto baseValPtr = _readValPtr();
-    if (auto basePtrPtr = as<FossilizedPtr<void>>(baseValPtr))
+    switch (stateType)
     {
-        auto targetValRef = basePtrPtr->getTargetValRef();
-        return Fossil::ValPtr(targetValRef);
+    default:
+        //    if (auto basePtrPtr = as_assumingNonNull<FossilizedPtr<void>>(baseValPtr))
+        {
+        #if 0
+            flags |= 1;
+            if (flags != oldFlags)
+            {
+                fprintf(stderr, "***\n");
+                for (int i = 0; i < 8; ++i)
+                {
+                    fprintf(stderr, "state[%d] flags = %d\n", i, mapStateTypeToFlags[i]);
+                }
+            }
+            #endif
+
+            auto basePtrPtr = cast<FossilizedPtr<void>>(baseValPtr);
+            auto targetValRef = basePtrPtr->getTargetValRef();
+            return Fossil::ValPtr(targetValRef);
+        }
+        //    else
+    case State::Type::Object:
+    case State::Type::Optional:
+        {
+        #if 0
+            flags |= 2;
+            if (flags != oldFlags)
+            {
+                fprintf(stderr, "***\n");
+                for (int i = 0; i < 8; ++i)
+                {
+                    fprintf(stderr, "state[%d] flags = %d\n", i, mapStateTypeToFlags[i]);
+                }
+            }
+            #endif
+            return baseValPtr;
+        }
     }
-    return baseValPtr;
 }
 
-void SerialReader::_pushState()
+void SerialReader::beginTuple(Scope& scope)
 {
-    _stack.add(_state);
+    //    SLANG_PROFILE;
+    auto valPtr = _readValPtr();
+    auto recordPtr = cast<FossilizedRecordVal>(valPtr);
+
+    #if 0
+    _pushState(scope);
+
+    getState().type = State::Type::Record;
+    getState().baseValPtr = recordPtr;
+    getState().elementIndex = 0;
+    getState().elementCount = recordPtr->getFieldCount();
+    #else
+    _pushRecordState(scope, recordPtr);
+    #endif
 }
 
-void SerialReader::_popState()
+void SerialReader::beginOptional(Scope& scope)
 {
-    SLANG_ASSERT(_stack.getCount() != 0);
-    _state = _stack.getLast();
-    _stack.removeLast();
+    //    SLANG_PROFILE;
+    auto valPtr = _readIndirectValPtr();
+    auto optionalPtr = cast<FossilizedOptionalObjBase>(valPtr);
+
+    _pushState(scope);
+
+    getState().type = State::Type::Optional;
+    #if 0
+    getState().baseValPtr = optionalPtr;
+    getState().elementIndex = 0;
+    getState().elementCount = Count(optionalPtr->hasValue());
+    #else
+    bool hasValue = optionalPtr->hasValue();
+    if (hasValue)
+    {
+        auto heldValPtr = getAddress(optionalPtr->getValue());
+
+        getState().remainingValueCount = 1;
+        getState().dataCursor = heldValPtr.getDataPtr();
+        getState().layoutCursor = heldValPtr.getLayout();
+    }
+    else
+    {
+        getState().remainingValueCount = 0;
+        getState().dataCursor = nullptr;
+        getState().layoutCursor = nullptr;
+    }
+
+    #endif
 }
+
+void SerialReader::handleString(String& value)
+{
+    //    SLANG_PROFILE;
+    auto valPtr = _readPotentiallyIndirectValPtr();
+    if (!valPtr)
+    {
+        value = String();
+    }
+    else
+    {
+        value = as<FossilizedStringObj>(valPtr)->get();
+    }
+}
+
+void SerialReader::_pushContainerState(
+    Scope& scope,
+    Fossil::ValPtr<FossilizedContainerObjBase> containerObjPtr)
+{
+    // The elements of a container object start immediately
+    // at its in-memory address, so we can use the pointer
+    // to the container object as the pointer to its data.
+    //
+    auto containerDataPtr = containerObjPtr.getDataPtr();
+    auto containerLayout = containerObjPtr.getLayout();
+
+    auto elementCount = (uint32_t) containerObjPtr->getElementCount();
+
+    FossilizedValLayout const* elementLayout = containerLayout->elementLayout;
+    auto elementStride = containerLayout->elementStride;
+
+    _pushState(scope);
+
+    _state.type = State::Type::Container;
+    _state.dataCursor = containerDataPtr;
+    _state.layoutCursor = elementLayout;
+    _state.dataStride = elementStride;
+    _state.remainingValueCount = elementCount;
+}
+
+void SerialReader::_pushRecordState(Scope& scope, Fossil::ValPtr<FossilizedRecordVal> recordPtr)
+{
+    auto recordDataPtr = recordPtr.getDataPtr();
+    auto recordLayout = recordPtr.getLayout();
+
+    auto fieldCount = recordLayout->fieldCount;
+
+    _pushState(scope);
+    _state.type = State::Type::Record;
+    _state.dataCursor = recordDataPtr;
+    _state.remainingValueCount = fieldCount;
+    if (fieldCount != 0)
+    {
+        auto fieldInfo = recordLayout->getField(0);
+        _state.layoutCursor = fieldInfo->layout;
+        _state.fieldCursor = fieldInfo;
+    }
+}
+
+
+void SerialReader::beginArray(Scope& scope)
+{
+    //    SLANG_PROFILE;
+    auto valPtr = _readPotentiallyIndirectValPtr();
+    auto arrayPtr = cast<FossilizedArrayObjBase>(valPtr);
+
+    #if 0
+    _pushState(scope);
+
+    getState().type = State::Type::Container;
+    getState().baseValPtr = arrayPtr;
+    getState().elementIndex = 0;
+    getState().elementCount = arrayPtr->getElementCount();
+    #else
+    _pushContainerState(scope, arrayPtr);
+    #endif
+}
+
+void SerialReader::beginDictionary(Scope& scope)
+{
+    //    SLANG_PROFILE;
+    auto valPtr = _readPotentiallyIndirectValPtr();
+    auto dictionaryPtr = cast<FossilizedDictionaryObjBase>(valPtr);
+
+#if 0
+    _pushState(scope);
+
+    getState().type = State::Type::Container;
+    getState().baseValPtr = dictionaryPtr;
+    getState().elementIndex = 0;
+    getState().elementCount = dictionaryPtr->getElementCount();
+#else
+    _pushContainerState(scope, dictionaryPtr);
+#endif
+}
+
+void SerialReader::beginStruct(Scope& scope)
+{
+    //    SLANG_PROFILE;
+    auto valPtr = _readValPtr();
+    auto recordPtr = cast<FossilizedRecordVal>(valPtr);
+
+    #if 0
+    _pushState(scope);
+
+    getState().type = State::Type::Record;
+    getState().baseValPtr = valPtr;
+    getState().elementIndex = 0;
+    getState().elementCount = recordPtr->getFieldCount();
+    #else
+    _pushRecordState(scope, recordPtr);
+    #endif
+}
+
 
 } // namespace Fossil
 } // namespace Slang
