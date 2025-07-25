@@ -65,4 +65,125 @@ const char* getBuildTagString()
     return SLANG_TAG_VERSION;
 }
 
+Profile getEffectiveProfile(EntryPoint* entryPoint, TargetRequest* target)
+{
+    auto entryPointProfile = entryPoint->getProfile();
+    auto targetProfile = target->getOptionSet().getProfile();
+
+    // Depending on the target *format* we might have to restrict the
+    // profile family to one that makes sense.
+    //
+    // TODO: Some of this should really be handled as validation at
+    // the front-end. People shouldn't be allowed to ask for SPIR-V
+    // output with Shader Model 5.0...
+    switch (target->getTarget())
+    {
+    default:
+        break;
+
+    case CodeGenTarget::GLSL:
+    case CodeGenTarget::SPIRV:
+    case CodeGenTarget::SPIRVAssembly:
+        if (targetProfile.getFamily() != ProfileFamily::GLSL)
+        {
+            targetProfile.setVersion(ProfileVersion::GLSL_150);
+        }
+        break;
+
+    case CodeGenTarget::HLSL:
+    case CodeGenTarget::DXBytecode:
+    case CodeGenTarget::DXBytecodeAssembly:
+    case CodeGenTarget::DXIL:
+    case CodeGenTarget::DXILAssembly:
+        if (targetProfile.getFamily() != ProfileFamily::DX)
+        {
+            targetProfile.setVersion(ProfileVersion::DX_5_1);
+        }
+        break;
+    case CodeGenTarget::Metal:
+    case CodeGenTarget::MetalLib:
+    case CodeGenTarget::MetalLibAssembly:
+        if (targetProfile.getFamily() != ProfileFamily::METAL)
+        {
+            targetProfile.setVersion(ProfileVersion::METAL_2_3);
+        }
+        break;
+    }
+
+    auto entryPointProfileVersion = entryPointProfile.getVersion();
+    auto targetProfileVersion = targetProfile.getVersion();
+
+    // Default to the entry point profile, since we know that has the right stage.
+    Profile effectiveProfile = entryPointProfile;
+
+    // Ignore the input from the target profile if it is missing.
+    if (targetProfile.getFamily() != ProfileFamily::Unknown)
+    {
+        // If the target comes from a different profile family, *or* it is from
+        // the same family but has a greater version number, then use the target's version.
+        if (targetProfile.getFamily() != entryPointProfile.getFamily() ||
+            (targetProfileVersion > entryPointProfileVersion))
+        {
+            effectiveProfile.setVersion(targetProfileVersion);
+        }
+    }
+
+    // Now consider the possibility that the chosen stage might force an "upgrade"
+    // to the profile level.
+    ProfileVersion stageMinVersion = ProfileVersion::Unknown;
+    switch (effectiveProfile.getFamily())
+    {
+    case ProfileFamily::DX:
+        switch (effectiveProfile.getStage())
+        {
+        default:
+            break;
+
+        case Stage::RayGeneration:
+        case Stage::Intersection:
+        case Stage::ClosestHit:
+        case Stage::AnyHit:
+        case Stage::Miss:
+        case Stage::Callable:
+            // The DirectX ray tracing stages implicitly
+            // require Shader Model 6.3 or later.
+            //
+            stageMinVersion = ProfileVersion::DX_6_3;
+            break;
+
+            //  TODO: Add equivalent logic for geometry, tessellation, and compute stages.
+        }
+        break;
+
+    case ProfileFamily::GLSL:
+        switch (effectiveProfile.getStage())
+        {
+        default:
+            break;
+
+        case Stage::RayGeneration:
+        case Stage::Intersection:
+        case Stage::ClosestHit:
+        case Stage::AnyHit:
+        case Stage::Miss:
+        case Stage::Callable:
+            stageMinVersion = ProfileVersion::GLSL_460;
+            break;
+
+            //  TODO: Add equivalent logic for geometry, tessellation, and compute stages.
+        }
+        break;
+
+    default:
+        break;
+    }
+
+    if (stageMinVersion > effectiveProfile.getVersion())
+    {
+        effectiveProfile.setVersion(stageMinVersion);
+    }
+
+    return effectiveProfile;
+}
+
 } // namespace Slang
