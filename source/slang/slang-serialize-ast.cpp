@@ -680,6 +680,18 @@ public:
         , _fossilizedModuleInfo(fossilizedModuleInfo)
         , _blobHoldingSerializedData(blobHoldingSerializedData)
     {
+        fprintf(stderr, "DEBUG: ASTSerialReadContext constructor\n");
+        fprintf(stderr, "- blobHoldingSerializedData: %p\n", _blobHoldingSerializedData.get());
+        fprintf(stderr, "- blobHoldingSerializedData.bufferPtr: %p\n", _blobHoldingSerializedData->getBufferPointer());
+        fprintf(stderr, "- blobHoldingSerializedData.bufferSize: %lld\n", (long long)_blobHoldingSerializedData->getBufferSize());
+    }
+
+    ~ASTSerialReadContext()
+    {
+        fprintf(stderr, "DEBUG: ASTSerialReadContext destructor\n");
+        fprintf(stderr, "- blobHoldingSerializedData: %p\n", _blobHoldingSerializedData.get());
+        fprintf(stderr, "- blobHoldingSerializedData.bufferPtr: %p\n", _blobHoldingSerializedData->getBufferPointer());
+        fprintf(stderr, "- blobHoldingSerializedData.bufferSize: %lld\n", (long long)_blobHoldingSerializedData->getBufferSize());
     }
 
     /// Translate a fossilized declaration into a live `Decl*`.
