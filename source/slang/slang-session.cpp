@@ -169,6 +169,10 @@ slang::IModule* Linkage::loadModuleFromBlob(
     ModuleBlobType blobType,
     slang::IBlob** outDiagnostics)
 {
+    fprintf(stderr, "DEBUG: Linkage::loadModuleFromBlob\n");
+    fprintf(stderr, "- moduleName: '%s'\n", moduleName ? moduleName : "<nullptr>");
+    fprintf(stderr, "- blob: %p\n", source);
+
     SLANG_AST_BUILDER_RAII(getASTBuilder());
 
     DiagnosticSink sink(getSourceManager(), Lexer::sourceLocationLexer);
@@ -242,6 +246,10 @@ SLANG_NO_THROW slang::IModule* SLANG_MCALL Linkage::loadModuleFromSource(
     slang::IBlob* source,
     slang::IBlob** outDiagnostics)
 {
+    fprintf(stderr, "DEBUG: Linkage::loadModuleFromSource\n");
+    fprintf(stderr, "- moduleName: '%s'\n", moduleName ? moduleName : "<nullptr>");
+    fprintf(stderr, "- sourceBlob: %p\n", source);
+
     return loadModuleFromBlob(moduleName, path, source, ModuleBlobType::Source, outDiagnostics);
 }
 
@@ -261,6 +269,10 @@ SLANG_NO_THROW slang::IModule* SLANG_MCALL Linkage::loadModuleFromIRBlob(
     slang::IBlob* source,
     slang::IBlob** outDiagnostics)
 {
+    fprintf(stderr, "DEBUG: Linkage::loadModuleFromIRBlob\n");
+    fprintf(stderr, "- moduleName: '%s'\n", moduleName ? moduleName : "<nullptr>");
+    fprintf(stderr, "- blob: %p\n", source);
+
     return loadModuleFromBlob(moduleName, path, source, ModuleBlobType::IR, outDiagnostics);
 }
 
@@ -1015,6 +1027,9 @@ RefPtr<Module> Linkage::findOrLoadSerializedModuleForModuleLibrary(
     RIFF::ListChunk const* libraryChunk,
     DiagnosticSink* sink)
 {
+    fprintf(stderr, "DEBUG: Linkage::findOrLoadSerializedModuleForModuleLibrary\n");
+    fprintf(stderr, "- blobHoldingSerializedData: %p\n", blobHoldingSerializedData);
+
     RefPtr<Module> resultModule;
 
     // We will attempt things in a few different steps, trying to
@@ -1129,6 +1144,9 @@ RefPtr<Module> Linkage::loadBinaryModuleImpl(
     SourceLoc const& requestingLoc,
     DiagnosticSink* sink)
 {
+    fprintf(stderr, "DEBUG: Linkage::loadBinaryModuleImpl\n");
+    fprintf(stderr, "- moduleFileContents: %p\n", moduleFileContents);
+
     auto astBuilder = getASTBuilder();
     SLANG_AST_BUILDER_RAII(astBuilder);
 
