@@ -641,6 +641,10 @@ SlangResult Session::_readBuiltinModule(
     // Next, we set about deserializing the AST representation
     // of the module.
     //
+    fprintf(stderr, "DEBUG: Session::_readBuiltinModule\n");
+    fprintf(stderr, "moduleName: '%s'\n", moduleName.getBuffer());
+    fprintf(stderr, "fileContents: %p\n", fileContents.get());
+
     auto moduleDecl = readSerializedModuleAST(
         linkage,
         astBuilder,

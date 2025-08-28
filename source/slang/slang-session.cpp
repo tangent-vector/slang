@@ -1974,6 +1974,9 @@ SlangResult Linkage::loadSerializedModuleContents(
         serializedModuleLoc = sourceView->getRange().begin;
     }
 
+    fprintf(stderr, "DEBUG: Linkage::loadSerializedModuleContents\n");
+    fprintf(stderr, "moduleFilePathInfo.name: '%s'\n", moduleFilePathInfo.getName().getBuffer());
+    fprintf(stderr, "blobHoldingSerializedData: %p\n", blobHoldingSerializedData);
     auto moduleDecl = readSerializedModuleAST(
         this,
         astBuilder,

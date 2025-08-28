@@ -2123,6 +2123,8 @@ ModuleDecl* readSerializedModuleAST(
         as<ModuleDecl>(sharedDecodingContext->readFossilizedDecl(fossilizedModuleInfo->moduleDecl));
     SLANG_ASSERT(moduleDecl);
 
+    fprintf(stderr, "DEBUG: moduleName: '%s'\n", moduleDecl->getName()->text.getBuffer());
+
 #if SLANG_ENABLE_AST_DESERIALIZATION_STATS
     fprintf(
         stderr,
