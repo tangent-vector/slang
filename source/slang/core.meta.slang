@@ -969,7 +969,7 @@ matrix<T,N,M> select(matrix<bool,N,M> condition, matrix<T,N,M> ifTrue, matrix<T,
     case hlsl:
         return __hlsl_select(condition, ifTrue, ifFalse);
     default:
-        matrix<T,N,M> result;
+        matrix<T,N,M> result = __UNDEFINED__;
         [[unroll]]
         for (uint32_t i = 0; i < N; i++)
             result[i] = select(condition[i], ifTrue[i], ifFalse[i]);

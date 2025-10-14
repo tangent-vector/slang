@@ -14,7 +14,7 @@
 
 namespace Slang
 {
-
+#if 0
     static bool isDifferentiableFunc(IRInst* func)
     {
         for (auto decor = func->getFirstDecoration(); decor; decor = decor->getNextDecoration())
@@ -34,6 +34,7 @@ namespace Slang
 
         return false;
     }
+#endif
 
     static bool isReturnedValue(IRInst* inst)
     {
@@ -375,16 +376,20 @@ namespace Slang
 
             // First, we'll do the easy part.
             //
-            // Early passes that optimized the IR will have generated
-            // `LoadUninitialized` instructions to represent places where
-            // the code could be statically determined to read from
-            // a storage location that had not been initialized.
+            // Earlier IR passes will have tried to optimize the code, and one part
+            // of that is translating variables to SSA form when possible. If, during
+            // the SSA conversion, the pass runs into a case where a `load` instruction
+            // refers to a not-yet-initialized variable, it will emit a
+            // `LoadFromUninitializedMemory` instruction to represent that operation.
+            //
+            // We can quickly scan for such instructions here, since they represent
+            // cases where we statically *know* that uninitialized memory is being read.
             //
             for (auto block : func->getBlocks())
             {
                 for (auto inst : block->getChildren())
                 {
-                    auto loadUninitialized = as<IRLoadUninitialized>(inst);
+                    auto loadUninitialized = as<IRLoadFromUninitializedMemory>(inst);
                     if (!loadUninitialized)
                         continue;
 
@@ -616,11 +621,11 @@ namespace Slang
             auto paramType = param->getDataType();
             switch (paramType->getOp())
             {
-            case kIROp_OutType:
+            case kIROp_OutParamType:
                 info.stateOfStorageLocationsAtEndOfBlock[param] = InitializationState::knownFullyUninitialized();
                 break;
 
-            case kIROp_InOutType:
+            case kIROp_BorrowInOutParamType:
                 info.stateOfStorageLocationsAtEndOfBlock[param] = InitializationState::knownFullyInitialized();
                 break;
 
@@ -664,20 +669,30 @@ namespace Slang
 
         void updateInitializationInfoBasedOnCallArg(BlockInfo& info, IRInst* initiatingInst, IRInst* argInst, IRType* paramType)
         {
-            switch (paramType->getOp())
+            auto ptrType = as<IRPtrTypeBase>(paramType);
+            if(!ptrType)
+                return;
+
+            switch (ptrType->getOp())
             {
-            case kIROp_OutType:
+            case kIROp_OutParamType:
                 handleWrite(info, initiatingInst, argInst);
                 break;
 
-            case kIROp_InOutType:
-            case kIROp_RefType:
+            case kIROp_BorrowInOutParamType:
+            case kIROp_RefParamType:
                 handleModify(info, initiatingInst, argInst);
                 break;
 
-            case kIROp_ConstRefType:
+            case kIROp_BorrowInParamType:
                 handleRead(info, initiatingInst, argInst);
                 break;
+
+            case kIROp_PtrType:
+                break;
+
+            default:
+                SLANG_UNIMPLEMENTED_X("missing case in `updateInitializationInfoBasedOnCallArg`");
             }
         }
 
@@ -936,7 +951,7 @@ namespace Slang
             for (auto param : _func->getParams())
             {
                 auto paramType = param->getDataType();
-                auto paramOutType = as<IROutType>(paramType);
+                auto paramOutType = as<IROutParamType>(paramType);
                 if (!paramOutType)
                     continue;
 
