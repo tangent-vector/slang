@@ -9531,6 +9531,7 @@ void SemanticsDeclHeaderVisitor::visitParamDecl(ParamDecl* paramDecl)
         checkMeshOutputDecl(paramDecl);
     }
 
+#if 0
     if (auto declRefType = as<DeclRefType>(paramDecl->type.type))
     {
         if (declRefType->getDeclRef().getDecl()->findModifier<NonCopyableTypeAttribute>())
@@ -9574,7 +9575,9 @@ void SemanticsDeclHeaderVisitor::visitParamDecl(ParamDecl* paramDecl)
             }
         }
     }
-    else if (isTypePack(paramDecl->type.type))
+    else
+#endif
+    if (isTypePack(paramDecl->type.type))
     {
         // For now, we only allow parameter packs to be `const`.
         bool hasConstModifier = false;

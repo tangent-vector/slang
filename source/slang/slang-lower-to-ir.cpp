@@ -3292,7 +3292,7 @@ void maybeAddReturnDestinationParam(ParameterLists* ioParameterLists, Type* resu
         IRLoweringParameterInfo info;
         info.type = resultType;
         info.decl = nullptr;
-        info.direction = ParamPassingMode::Ref;
+        info.direction = ParamPassingMode::Out;
         info.declaredDirection = info.direction;
         info.isReturnDestination = true;
         ioParameterLists->params.add(info);
