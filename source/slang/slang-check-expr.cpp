@@ -1926,6 +1926,18 @@ Expr* SemanticsExprVisitor::visitStringLiteralExpr(StringLiteralExpr* expr)
     return expr;
 }
 
+Expr* SemanticsExprVisitor::visitDefaultLiteralExpr(DefaultLiteralExpr* expr)
+{
+    expr->type = getASTBuilder()->getSharedASTBuilder()->getDefaultLiteralType();
+    return expr;
+}
+
+Expr* SemanticsExprVisitor::visitUndefinedLiteralExpr(UndefinedLiteralExpr* expr)
+{
+    expr->type = getASTBuilder()->getSharedASTBuilder()->getUndefinedLiteralType();
+    return expr;
+}
+
 IntVal* SemanticsVisitor::getIntVal(IntegerLiteralExpr* expr)
 {
     return m_astBuilder->getIntVal(expr->type.type, expr->value);

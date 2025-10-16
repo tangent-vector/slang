@@ -969,7 +969,7 @@ matrix<T,N,M> select(matrix<bool,N,M> condition, matrix<T,N,M> ifTrue, matrix<T,
     case hlsl:
         return __hlsl_select(condition, ifTrue, ifFalse);
     default:
-        matrix<T,N,M> result = __UNDEFINED__;
+        matrix<T,N,M> result = __undefined;
         [[unroll]]
         for (uint32_t i = 0; i < N; i++)
             result[i] = select(condition[i], ifTrue[i], ifFalse[i]);
@@ -1867,7 +1867,7 @@ __generic<T>
 [__unsafeForceInlineEarly]
 T __attachToNativeRef(NativeRef<T> nativeVal)
 {
-    T result;
+    T result = __undefined;
     __managed_ptr_attach(result, nativeVal);
     return result;
 }
@@ -3152,6 +3152,7 @@ __generic<T>
 __intrinsic_op($(kIROp_BitfieldExtract))
 T bitfieldExtract(T value, uint offset, uint bits);
 
+/*
 /// Use an otherwise unused value
 /// This can be used to silence the warning about returning before initializing an out paramter.
 __generic<T>
@@ -3165,7 +3166,8 @@ __generic<T>
 [__readNone]
 [ForceInline]
 __intrinsic_op($(kIROp_Unmodified))
-void unmodified(out T){}
+void unmodified(out T value){}
+*/
 
 // Specialized function
 

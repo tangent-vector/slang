@@ -4267,6 +4267,7 @@ public:
     IRInst* emitGpuForeach(List<IRInst*> args);
 
     IRLoadFromUninitializedMemory* emitLoadFromUninitializedMemory(IRType* type);
+    IRDeliberatelyUninitialized* emitDeliberatelyUninitialized(IRType* type);
     IRPoison* emitPoison(IRType* type);
 
     IRInst* emitReinterpret(IRInst* type, IRInst* value);

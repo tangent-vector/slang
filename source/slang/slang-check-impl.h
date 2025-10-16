@@ -3013,6 +3013,8 @@ public:
     Expr* visitIntegerLiteralExpr(IntegerLiteralExpr* expr);
     Expr* visitFloatingPointLiteralExpr(FloatingPointLiteralExpr* expr);
     Expr* visitStringLiteralExpr(StringLiteralExpr* expr);
+    Expr* visitDefaultLiteralExpr(DefaultLiteralExpr* expr);
+    Expr* visitUndefinedLiteralExpr(UndefinedLiteralExpr* expr);
 
     Expr* visitIndexExpr(IndexExpr* subscriptExpr);
 

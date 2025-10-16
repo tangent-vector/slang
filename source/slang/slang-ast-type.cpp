@@ -1420,4 +1420,24 @@ bool isNonCopyableType(Type* type)
     return false;
 }
 
+void DefaultLiteralType::_toTextOverride(StringBuilder& out)
+{
+    out.append("default-value literal");
+}
+
+Type* DefaultLiteralType::_createCanonicalTypeOverride()
+{
+    return this;
+}
+
+void UndefinedLiteralType::_toTextOverride(StringBuilder& out)
+{
+    out.append("undefined-value literal");
+}
+
+Type* UndefinedLiteralType::_createCanonicalTypeOverride()
+{
+    return this;
+}
+
 } // namespace Slang

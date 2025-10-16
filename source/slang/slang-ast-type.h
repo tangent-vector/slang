@@ -1162,6 +1162,26 @@ class ModifiedType : public Type
     Val* _substituteImplOverride(ASTBuilder* astBuilder, SubstitutionSet subst, int* ioDiff);
 };
 
+// The type of a `__default` literal expression.
+FIDDLE()
+class DefaultLiteralType : public Type
+{
+    FIDDLE(...)
+
+    void _toTextOverride(StringBuilder& out);
+    Type* _createCanonicalTypeOverride();
+};
+
+// The type of an `__undefined` literal expression.
+FIDDLE()
+class UndefinedLiteralType : public Type
+{
+    FIDDLE(...)
+
+    void _toTextOverride(StringBuilder& out);
+    Type* _createCanonicalTypeOverride();
+};
+
 Type* removeParamDirType(Type* type);
 bool isNonCopyableType(Type* type);
 

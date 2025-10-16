@@ -4444,6 +4444,51 @@ struct ExprLoweringVisitorBase : public ExprVisitor<Derived, LoweredValInfo>
         UNREACHABLE_RETURN(LoweredValInfo());
     }
 
+    LoweredValInfo visitDefaultLiteralExpr(DefaultLiteralExpr* /*expr*/)
+    {
+        SLANG_UNEXPECTED("a default-value literal expression should not occur in a checked AST");
+        UNREACHABLE_RETURN(LoweredValInfo());
+    }
+
+    LoweredValInfo visitUndefinedLiteralExpr(UndefinedLiteralExpr* expr)
+    {
+        // We will lower an undefined-value literal to an
+        // `deliberatelyUninitialized` value of the corresponding type
+        // (the `IRDeliberatelyUninitialized` instruction type
+        // is a subtype of the more general `IRUndefined`).
+        //
+        // The main thing to note is that there could be a disconnect
+        // between how a programmer using Slang wants to think about
+        // an undefined-value literal and what such a literal will
+        // actually *mean* once it hits the compiler back-end.
+        //
+        // Initializing a variable to `__undefined` doesn't just
+        // "turn off" diagnostics from the Slang compiler about
+        // the initialization state of that variable. In a case
+        // where the Slang compiler can prove that the undefined
+        // value in the variable would actually be loaded/used,
+        // we still reserve the right to diagnose an error (and
+        // *want* to diagnose such errors, whenever we can).
+        // Despite the fact that the lack of initialization was
+        // deliberate, it is still undefined behavior to *use*
+        // that value.
+        //
+        // The only distinction, in practice, is that in cases
+        // where the compiler cannot prove that a load/use would
+        // see a fully-initialized value, but also can't prove
+        // that it would definitely see this deliberately undefined
+        // value, we will presume that the programmer did fully
+        // initialize the location, and thus not diagnose a
+        // problem.
+
+        auto builder = context->irBuilder;
+
+        auto type = lowerType(context, expr->type);
+        auto undefinedValue = builder->emitDeliberatelyUninitialized(type);
+
+        return LoweredValInfo::simple(undefinedValue);
+    }
+
     LoweredValInfo visitSPIRVAsmExpr(SPIRVAsmExpr* expr)
     {
         // Although the surface syntax can have an empty ASM block, the IR asm

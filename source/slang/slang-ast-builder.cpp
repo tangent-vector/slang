@@ -164,6 +164,16 @@ Type* SharedASTBuilder::getOverloadedType()
     return m_overloadedType;
 }
 
+Type* SharedASTBuilder::getDefaultLiteralType()
+{
+    return m_astBuilder->getOrCreate<DefaultLiteralType>();
+}
+
+Type* SharedASTBuilder::getUndefinedLiteralType()
+{
+    return m_astBuilder->getOrCreate<UndefinedLiteralType>();
+}
+
 void SharedASTBuilder::registerBuiltinDecl(Decl* decl, BuiltinTypeModifier* modifier)
 {
     auto type = DeclRefType::create(m_astBuilder, makeDeclRef<Decl>(decl));

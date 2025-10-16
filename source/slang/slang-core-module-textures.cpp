@@ -72,7 +72,8 @@ void TextureTypeInfo::writeFuncBody(
     const String& spirvRWDefault,
     const String& spirvCombined,
     const String& metal,
-    const String& wgsl)
+    const String& wgsl,
+    const String& spirvPrefixBeforeASMBlocks)
 {
     BraceScope funcScope{i, sb};
     {
@@ -102,6 +103,7 @@ void TextureTypeInfo::writeFuncBody(
         if (spirvDefault.getLength() && spirvCombined.getLength())
         {
             sb << i << "case spirv:\n";
+            sb << i << spirvPrefixBeforeASMBlocks << "\n";
             sb << i << "if (access == " << kCoreModule_ResourceAccessReadWrite
                << " || access == " << kCoreModule_ResourceAccessWriteOnly << ")\n";
             sb << i << "return spirv_asm\n";
@@ -138,6 +140,7 @@ void TextureTypeInfo::writeFuncWithSig(
     const char* funcName,
     const String& sig,
     const String& glsl,
+    const String& spirvPrefixBeforeASMBlocks,
     const String& spirvDefault,
     const String& spirvRWDefault,
     const String& spirvCombined,
@@ -150,7 +153,7 @@ void TextureTypeInfo::writeFuncWithSig(
         sb << i << "[__readNone]\n";
     sb << i << "[ForceInline]\n";
     sb << i << sig << "\n";
-    writeFuncBody(funcName, glsl, cuda, spirvDefault, spirvRWDefault, spirvCombined, metal, wgsl);
+    writeFuncBody(funcName, glsl, cuda, spirvDefault, spirvRWDefault, spirvCombined, metal, wgsl, spirvPrefixBeforeASMBlocks);
     sb << "\n";
 }
 
@@ -159,6 +162,7 @@ void TextureTypeInfo::writeFunc(
     const char* funcName,
     const String& params,
     const String& glsl,
+    const String& spirvPrefixBeforeASMBlocks,
     const String& spirvDefault,
     const String& spirvRWDefault,
     const String& spirvCombined,
@@ -171,6 +175,7 @@ void TextureTypeInfo::writeFunc(
         funcName,
         cat(returnType, " ", funcName, "(", params, ")"),
         glsl,
+        spirvPrefixBeforeASMBlocks,
         spirvDefault,
         spirvRWDefault,
         spirvCombined,
@@ -264,6 +269,24 @@ void TextureTypeInfo::writeGetDimensionFunctions()
             StringBuilder wgsl;
             wgsl << "{";
 
+            // Note: The implementation of the `spirv_asm` construct is incomplete,
+            // and does not provide a way for a block of inline SPIR-V to indicate
+            // what storage locations in the surrounding scope it writes to (whether
+            // conditionally or unconditionally) or reads from. As a result, it is
+            // impossible for the rest of the Slang compiler code to reason about
+            // the impact of SPIR-V assembly blocks on the initialization state of variables.
+            //
+            // A concrete example of where this causes problems is in the definitions
+            // of the various `GetDimensions` functions, since they have multiple
+            // `out` parameters that need to be set. Any attempt to turn on a rigorous
+            // validation pass that makes sure functions actually initialize their `out`
+            // parameters will yields a masive number of error diagnostics on the core
+            // module declarations of these queries, unless we emit *something* to
+            // help the rest of the compiler see that things are actually being
+            // initialized.
+            //
+            StringBuilder spirvPrefixBeforeASMBlocks;
+
             if (includeMipInfo)
             {
                 ++paramCount;
@@ -273,11 +296,22 @@ void TextureTypeInfo::writeGetDimensionFunctions()
                     metalMipLevel = "$1";
             }
 
+            // TODO: We should change the naming conventions used for all of these
+            // parameters so that they are more consistent about what they actually
+            // indicate. While `width`, `height`, and `depth` are folksy informal
+            // names, it is better to be clear that these measure the *extent* of
+            // an image (or texture level) along the X, Y, and Z axes.
+            //
+            // It is already bad enough that we are stuck calling many of these functions
+            // `GetDimensions`, which uses the horribly overloaded term "dimension".
+
+
             switch (baseShape)
             {
             case SLANG_TEXTURE_1D:
                 ++paramCount;
                 params << t << "width";
+                spirvPrefixBeforeASMBlocks << "width = __undefined;\n";
                 metal << "(*($" << String(paramCount) << ") = $0.get_width("
                       << String(metalMipLevel) << ")),";
                 cuda << "uint32_t width; asm(\\\"txq.width.b32 %0, [%1];\\\" : \\\"=r\\\"(width) : "
@@ -296,6 +330,7 @@ void TextureTypeInfo::writeGetDimensionFunctions()
             case SLANG_TEXTURE_CUBE:
                 ++paramCount;
                 params << t << "width,";
+                spirvPrefixBeforeASMBlocks << "width = __undefined;\n";
                 metal << "(*($" << String(paramCount) << ") = $0.get_width("
                       << String(metalMipLevel) << ")),";
                 cuda << "uint32_t w, h; asm(\\\"txq.width.b32 %0, [%2]; txq.height.b32 %1, "
@@ -307,6 +342,7 @@ void TextureTypeInfo::writeGetDimensionFunctions()
 
                 ++paramCount;
                 params << t << "height";
+                spirvPrefixBeforeASMBlocks << "height = __undefined;\n";
                 metal << "(*($" << String(paramCount) << ") = $0.get_height("
                       << String(metalMipLevel) << ")),";
                 if (cuda.getLength() > 1 && cuda[cuda.getLength() - 1] != ';')
@@ -321,6 +357,7 @@ void TextureTypeInfo::writeGetDimensionFunctions()
             case SLANG_TEXTURE_3D:
                 ++paramCount;
                 params << t << "width,";
+                spirvPrefixBeforeASMBlocks << "width = __undefined;\n";
                 metal << "(*($" << String(paramCount) << ") = $0.get_width("
                       << String(metalMipLevel) << ")),";
                 cuda << "uint32_t w, h, d; asm(\\\"txq.width.b32 %0, [%3]; txq.height.b32 %1, "
@@ -333,6 +370,7 @@ void TextureTypeInfo::writeGetDimensionFunctions()
 
                 ++paramCount;
                 params << t << "height,";
+                spirvPrefixBeforeASMBlocks << "height = __undefined;\n";
                 metal << "(*($" << String(paramCount) << ") = $0.get_height("
                       << String(metalMipLevel) << ")),";
                 if (cuda.getLength() > 1 && cuda[cuda.getLength() - 1] != ';')
@@ -343,6 +381,7 @@ void TextureTypeInfo::writeGetDimensionFunctions()
 
                 ++paramCount;
                 params << t << "depth";
+                spirvPrefixBeforeASMBlocks << "depth = __undefined;\n";
                 metal << "(*($" << String(paramCount) << ") = $0.get_depth("
                       << String(metalMipLevel) << ")),";
                 if (cuda.getLength() > 1 && cuda[cuda.getLength() - 1] != ';')
@@ -361,9 +400,15 @@ void TextureTypeInfo::writeGetDimensionFunctions()
 
             if (isArray)
             {
+                // TODO: similar to the concerns about the coloquial names
+                // `width`, `height`, etc. above, the term `elements` here is
+                // not appropriate for what the parameter represents. It is
+                // the *element count* or *array element count* of the texture.
+
                 ++sizeDimCount;
                 ++paramCount;
                 params << ", " << t << "elements";
+                spirvPrefixBeforeASMBlocks << "elements = __undefined;\n";
                 metal << "(*($" << String(paramCount) << ") = $0.get_array_size()),";
 
                 // For cube map arrays, CUDA should include all 6 faces in the array size count
@@ -382,6 +427,7 @@ void TextureTypeInfo::writeGetDimensionFunctions()
             {
                 ++paramCount;
                 params << ", " << t << "sampleCount";
+                spirvPrefixBeforeASMBlocks << "sampleCount = __undefined;\n";
                 metal << "(*($" << String(paramCount) << ") = $0.get_num_samples()),";
                 if (cuda.getLength() > 1 && cuda[cuda.getLength() - 1] != ';')
                     cuda << "; ";
@@ -394,8 +440,12 @@ void TextureTypeInfo::writeGetDimensionFunctions()
 
             if (includeMipInfo)
             {
+                // TODO: Another case where renaming is required. This parameter should be
+                // `levelCount` or `mipLevelCount`.
+
                 ++paramCount;
                 params << ", " << t << "numberOfLevels";
+                spirvPrefixBeforeASMBlocks << "numberOfLevels = __undefined;\n";
                 metal << "(*($" << String(paramCount) << ") = $0.get_num_mip_levels()),";
                 if (cuda.getLength() > 1 && cuda[cuda.getLength() - 1] != ';')
                     cuda << "; ";
@@ -577,6 +627,7 @@ void TextureTypeInfo::writeGetDimensionFunctions()
                     convertAndStore(UnownedStringSlice("_levelCount"), "numberOfLevels");
                 }
             };
+
             StringBuilder spirvCombined;
             {
                 spirvCombined << "OpCapability ImageQuery; ";
@@ -617,6 +668,7 @@ void TextureTypeInfo::writeGetDimensionFunctions()
                 "GetDimensions",
                 params,
                 glsl,
+                spirvPrefixBeforeASMBlocks,
                 spirvDefault,
                 spirvRWDefault,
                 spirvCombined,

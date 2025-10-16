@@ -1102,6 +1102,7 @@ extension _Texture<T,Shape,isArray,isMS,sampleCount,0,isShadow,1,format>
                 , "HLSL supports only float and half type textures");
             __intrinsic_asm ".Sample";
         case spirv:
+            status = __undefined;
             return spirv_asm
             {
                 OpCapability MinLod;
@@ -1194,6 +1195,7 @@ extension _Texture<T,Shape,isArray,isMS,sampleCount,0,isShadow,1,format>
                 , "HLSL supports only float and half type textures");
             return __getTexture().SampleBias(__getSampler(), location, bias, offset, clamp, status);
         case spirv:
+            status = __undefined;
             return spirv_asm
             {
                 OpCapability SparseResidency;
@@ -1315,6 +1317,7 @@ extension _Texture<T,Shape,isArray,isMS,sampleCount,0,isShadow,1,format>
                 , "HLSL supports only float and half type textures");
             return __getTexture().SampleCmp(__getComparisonSampler(), location, compareValue, offset, clamp, status);
         case spirv:
+            status = __undefined;
             return spirv_asm
             {
                 OpCapability MinLod;
@@ -1441,6 +1444,7 @@ extension _Texture<T,Shape,isArray,isMS,sampleCount,0,isShadow,1,format>
                 , "HLSL supports only float and half type textures");
             return __getTexture().SampleCmpLevel(__getComparisonSampler(), location, compareValue, level, offset, status);
         case spirv:
+            status = __undefined;
             return spirv_asm
             {
                 OpCapability SparseResidency;
@@ -1552,6 +1556,7 @@ extension _Texture<T,Shape,isArray,isMS,sampleCount,0,isShadow,1,format>
                 , "HLSL supports only float and half type textures");
             return __getTexture().SampleGrad(__getSampler(), location, gradX, gradY, offset, lodClamp, status);
         case spirv:
+            status = __undefined;
             return spirv_asm
             {
                 OpCapability MinLod;
@@ -1668,6 +1673,7 @@ extension _Texture<T,Shape,isArray,isMS,sampleCount,0,isShadow,1,format>
                 , "HLSL supports only float and half type textures");
             return __getTexture().SampleLevel(__getSampler(), location, level, offset, status);
         case spirv:
+            status = __undefined;
             return spirv_asm
             {
                 OpCapability SparseResidency;
@@ -2103,6 +2109,7 @@ extension _Texture<T,Shape,isArray,isMS,sampleCount,0,isShadow,0,format>
                 , "HLSL supports only float and half type textures");
             __intrinsic_asm ".Sample";
         case spirv:
+            status = __undefined;
             return spirv_asm
             {
                 OpCapability MinLod;
@@ -2266,6 +2273,7 @@ extension _Texture<T,Shape,isArray,isMS,sampleCount,0,isShadow,0,format>
                 , "HLSL supports only float and half type textures");
             __intrinsic_asm ".SampleBias";
         case spirv:
+            status = __undefined;
             return spirv_asm
             {
                 OpCapability MinLod;
@@ -2432,6 +2440,7 @@ extension _Texture<T,Shape,isArray,isMS,sampleCount,0,isShadow,0,format>
                 , "HLSL supports only float and half type textures");
             __intrinsic_asm ".SampleCmp";
         case spirv:
+            status = __undefined;
             return spirv_asm
             {
                 OpCapability MinLod;
@@ -2575,6 +2584,7 @@ extension _Texture<T,Shape,isArray,isMS,sampleCount,0,isShadow,0,format>
                 , "HLSL supports only float and half type textures");
             __intrinsic_asm ".SampleCmpLevel";
         case spirv:
+            status = __undefined;
             return spirv_asm
             {
                 OpCapability SparseResidency;
@@ -2783,6 +2793,7 @@ extension _Texture<T,Shape,isArray,isMS,sampleCount,0,isShadow,0,format>
                 , "HLSL supports only float and half type textures");
             __intrinsic_asm ".SampleGrad";
         case spirv:
+            status = __undefined;
             return spirv_asm
             {
                 OpCapability MinLod;
@@ -2977,6 +2988,7 @@ extension _Texture<T,Shape,isArray,isMS,sampleCount,0,isShadow,0,format>
                 , "HLSL supports only float and half type textures");
             __intrinsic_asm ".SampleLevel";
         case spirv:
+            status = __undefined;
             return spirv_asm
             {
                 OpCapability SparseResidency;

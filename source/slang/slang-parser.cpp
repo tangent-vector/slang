@@ -7094,18 +7094,12 @@ static NodeBase* parseTreatAsDifferentiableExpr(Parser* parser, void* /*userData
 static NodeBase* parseDefaultLiteralExpr(Parser* parser, void* /*userData*/)
 {
     auto noDiffExpr = parser->astBuilder->create<DefaultLiteralExpr>();
-    noDiffExpr->innerExpr = parser->ParseLeafExpression();
-    noDiffExpr->scope = parser->currentScope;
-    noDiffExpr->flavor = TreatAsDifferentiableExpr::Flavor::NoDiff;
     return noDiffExpr;
 }
 
 static NodeBase* parseUndefinedLiteralExpr(Parser* parser, void* /*userData*/)
 {
     auto noDiffExpr = parser->astBuilder->create<UndefinedLiteralExpr>();
-    noDiffExpr->innerExpr = parser->ParseLeafExpression();
-    noDiffExpr->scope = parser->currentScope;
-    noDiffExpr->flavor = TreatAsDifferentiableExpr::Flavor::NoDiff;
     return noDiffExpr;
 }
 
@@ -9708,8 +9702,8 @@ static const SyntaxParseInfo g_parseSyntaxEntries[] = {
     _makeParseExpr("alignof", parseAlignOfExpr),
     _makeParseExpr("countof", parseCountOfExpr),
     _makeParseExpr("__getAddress", parseAddressOfExpr),
-    _makeParseExpr("__default", parseDefaultExpr),
-    _makeParseExpr("__undefined", parseUndefinedExpr),
+    _makeParseExpr("__default", parseDefaultLiteralExpr),
+    _makeParseExpr("__undefined", parseUndefinedLiteralExpr),
 };
 
 ConstArrayView<SyntaxParseInfo> getSyntaxParseInfos()
