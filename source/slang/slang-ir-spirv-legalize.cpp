@@ -17,6 +17,7 @@
 #include "slang-ir-legalize-mesh-outputs.h"
 #include "slang-ir-loop-unroll.h"
 #include "slang-ir-lower-buffer-element-type.h"
+#include "slang-ir-lower-copy-logical.h"
 #include "slang-ir-peephole.h"
 #include "slang-ir-redundancy-removal.h"
 #include "slang-ir-sccp.h"
@@ -184,13 +185,7 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
     //
     OrderedHashSet<IRInst*> workList;
 
-    void addToWorkList(IRInst* inst)
-    {
-        if (workList.add(inst))
-        {
-            addUsersToWorkList(inst);
-        }
-    }
+    void addToWorkList(IRInst* inst) { workList.add(inst); }
 
     void addUsersToWorkList(IRInst* inst)
     {
@@ -1526,7 +1521,8 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
         {
             IRBuilder builder(inst);
             builder.setInsertBefore(inst);
-            IRType* intType = i.isSigned ? builder.getIntType() : builder.getUIntType();
+            IRType* intType = i.isSigned ? static_cast<IRType*>(builder.getIntType())
+                                         : static_cast<IRType*>(builder.getUIntType());
             auto targetType = vectorType
                                   ? builder.getVectorType(intType, vectorType->getElementCount())
                                   : intType;
@@ -1692,8 +1688,6 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
         }
     };
 
-    void processBranch(IRInst* branch) { addToWorkList(branch->getOperand(0)); }
-
     void processPtrLit(IRInst* inst)
     {
         IRBuilder builder(inst);
@@ -1844,9 +1838,11 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
             case kIROp_PtrLit:
                 processPtrLit(inst);
                 break;
-            case kIROp_UnconditionalBranch:
-                processBranch(inst);
-                break;
+            // kIROp_UnconditionalBranch is handled in default case that only
+            // adds children inst and not target inst to work list.
+            // Branch target should be added to work list via its parent,
+            // to avoid cycle when branch target block has branch to the block
+            // that's parent of this branch inst.
             case kIROp_SPIRVAsm:
                 processSPIRVAsm(as<IRSPIRVAsm>(inst));
                 break;
@@ -2293,6 +2289,19 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
             t->replaceUsesWith(lowered);
         }
 
+        // If older than spirv 1.4, we need more legalization steps due to lack of opcodes.
+        if (!m_sharedContext->isSpirv14OrLater())
+        {
+            // Legalize OpSelect returning non-vector-composites.
+            if (m_codeGenContext->getRequiredLoweringPassSet().nonVectorCompositeSelect)
+                legalizeNonVectorCompositeSelect(m_module);
+
+            // Lower OpCopyLogical to element-wise stores.
+            // Note that it is important to run this pass before processing functions, since we may
+            // introduce new loops that needs to be legalized.
+            lowerCopyLogical(m_module);
+        }
+
         for (auto globalInst : m_module->getGlobalInsts())
         {
             if (auto func = as<IRFunc>(globalInst))
@@ -2337,11 +2346,6 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
         // invalid SPIR-V.
         bool skipFuncParamValidation = false;
         validateAtomicOperations(skipFuncParamValidation, m_sink, m_module->getModuleInst());
-
-        // If older than spirv 1.4, legalize OpSelect returning non-vector-composites
-        if (m_codeGenContext->getRequiredLoweringPassSet().nonVectorCompositeSelect &&
-            !m_sharedContext->isSpirv14OrLater())
-            legalizeNonVectorCompositeSelect(m_module);
     }
 
     void updateFunctionTypes()

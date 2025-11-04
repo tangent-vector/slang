@@ -1227,7 +1227,7 @@ IRInst* emitLoopBlocks(
     auto ifBreakBlock = loopBuilder.emitBlock();
     loopBreakBlock = loopBuilder.emitBlock();
     auto loopContinueBlock = loopBuilder.emitBlock();
-    builder->emitLoop(loopHeadBlock, loopBreakBlock, loopHeadBlock, 1, &initVal);
+    builder->emitLoop(loopHeadBlock, loopBreakBlock, loopContinueBlock, 1, &initVal);
     loopBuilder.setInsertInto(loopHeadBlock);
     auto loopParam = loopBuilder.emitParam(initVal->getFullType());
     auto cmpResult = loopBuilder.emitLess(loopParam, finalVal);
@@ -1969,7 +1969,7 @@ List<IRBlock*> collectBlocksInRegion(
                 continue;
             if (!dom->dominates(firstBlock, succ))
                 continue;
-            if (!as<IRUnreachable>(breakBlock->getTerminator()))
+            if (!as<IRUnreachableBase>(breakBlock->getTerminator()))
             {
                 if (dom->dominates(breakBlock, succ))
                     continue;
@@ -2386,6 +2386,22 @@ IRType* getElementType(IRBuilder& builder, IRType* valueType)
     else if (auto hlslInputPatchType = as<IRHLSLInputPatchType>(valueType))
     {
         return hlslInputPatchType->getElementType();
+    }
+    return nullptr;
+}
+
+IRType* getFieldType(IRType* valueType, IRStructKey* key)
+{
+    valueType = (IRType*)unwrapAttributedType(valueType);
+    if (auto structType = as<IRStructType>(valueType))
+    {
+        for (auto field : structType->getFields())
+        {
+            if (field->getKey() == key)
+            {
+                return field->getFieldType();
+            }
+        }
     }
     return nullptr;
 }
