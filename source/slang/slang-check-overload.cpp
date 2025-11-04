@@ -2689,8 +2689,7 @@ void SemanticsVisitor::AddHigherOrderOverloadCandidates(
             List<QualType> paramTypes;
 
             for (Index ii = 0; ii < diffFuncType->getParamCount(); ii++)
-                paramTypes.add(
-                    getParamQualType(diffFuncType->getParamTypeWithModeWrapper(ii)));
+                paramTypes.add(getParamQualType(diffFuncType->getParamTypeWithModeWrapper(ii)));
 
             // Try to infer generic arguments, based on the updated context.
             OverloadResolveContext subContext = context;

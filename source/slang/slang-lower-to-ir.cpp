@@ -2787,9 +2787,9 @@ void addArg(
     List<IRInst*>* ioArgs,            //< The argument list being built
     List<OutArgumentFixup>* ioFixups, //< "Fixup" logic to apply for `out` or `inout` arguments
     LoweredValInfo argVal,            //< The lowered value of the argument to add
-    ParamPassingMode actualParamPassingMode,  //< The direction of the parameter (`in`, `out`, etc.)
-    Type* argType,                    //< The AST-level type of the argument
-    SourceLoc loc)                    //< A location to use if we need to report an error
+    ParamPassingMode actualParamPassingMode, //< The direction of the parameter (`in`, `out`, etc.)
+    Type* argType,                           //< The AST-level type of the argument
+    SourceLoc loc)                           //< A location to use if we need to report an error
 {
     switch (actualParamPassingMode)
     {
@@ -2829,12 +2829,10 @@ void addArg(
                 //
                 // Just to keep the arguments and parameters correctly lined up,
                 // we will synthesize a null pointer that we can pass instead.
-                // 
-                auto placeholderArg = LoweredValInfo::simple(context->irBuilder->getNullVoidPtrValue());
-                addSimpleArg(
-                    context,
-                    ioArgs,
-                    placeholderArg);
+                //
+                auto placeholderArg =
+                    LoweredValInfo::simple(context->irBuilder->getNullVoidPtrValue());
+                addSimpleArg(context, ioArgs, placeholderArg);
             }
         }
         break;
@@ -2962,7 +2960,10 @@ void addArg(
         break;
 
     default:
-        SLANG_DIAGNOSE_UNEXPECTED(context->getSink(), loc, "unhandled parameter-passing mode in `addArg()`");
+        SLANG_DIAGNOSE_UNEXPECTED(
+            context->getSink(),
+            loc,
+            "unhandled parameter-passing mode in `addArg()`");
         break;
     }
 }
@@ -3166,7 +3167,9 @@ static const ParamPassingMode kDefaultModeForImplicitThisParam = ParamPassingMod
 /// and pass the result of an inner invocation to the next outer one,
 /// to accumulate a mode based on all the contextual information available.
 ///
-ParamPassingMode getNominalParamPassingModeForImplicitThisParam(Decl* declWithImplicitThisParam, ParamPassingMode defaultModeFromContext = kDefaultModeForImplicitThisParam)
+ParamPassingMode getNominalParamPassingModeForImplicitThisParam(
+    Decl* declWithImplicitThisParam,
+    ParamPassingMode defaultModeFromContext = kDefaultModeForImplicitThisParam)
 {
     // If this declaration of the function/property/whatever is nested
     // under a type declaration such as a `struct`, then that declaration
@@ -3280,7 +3283,9 @@ ParamPassingMode getNominalParamPassingModeForImplicitThisParam(Decl* declWithIm
     return kDefaultModeForImplicitThisParam;
 }
 
-ParamPassingMode getActualParamPassingModeForImplicitThisParam(Decl* declWithImplicitThisParam, Type* thisParamType)
+ParamPassingMode getActualParamPassingModeForImplicitThisParam(
+    Decl* declWithImplicitThisParam,
+    Type* thisParamType)
 {
     //
     // TODO(tfoley): This logic largely mirrors what was in place when I factored out this
@@ -3483,7 +3488,8 @@ IRLoweringParameterInfo getParameterInfo(
     auto paramType = getParamType(context->astBuilder, paramDeclRef);
 
     auto nominalParamPassingMode = getNominalParamPassingMode(paramDecl);
-    auto actualParamPassingMode = adjustParamPassingModeBasedOnParamType(nominalParamPassingMode, paramType);
+    auto actualParamPassingMode =
+        adjustParamPassingModeBasedOnParamType(nominalParamPassingMode, paramType);
 
     IRLoweringParameterInfo info;
     info.type = paramType;
@@ -3533,9 +3539,13 @@ ParameterListCollectMode getModeForCollectingParentParameters(Decl* decl, Contai
 /// as well as its lexical context, but does *not* take into account the
 /// type of the `this` parameter.
 ///
-void addThisParameter(ParamPassingMode nominalParamPassingMode, Type* type, ParameterLists* ioParameterLists)
+void addThisParameter(
+    ParamPassingMode nominalParamPassingMode,
+    Type* type,
+    ParameterLists* ioParameterLists)
 {
-    auto actualParamPassingMode = adjustParamPassingModeBasedOnParamType(nominalParamPassingMode, type);
+    auto actualParamPassingMode =
+        adjustParamPassingModeBasedOnParamType(nominalParamPassingMode, type);
 
     IRLoweringParameterInfo info;
     info.type = type;
@@ -3575,7 +3585,7 @@ void maybeAddReturnDestinationParam(ParameterLists* ioParameterLists, Type* resu
 bool doesDeclAppearToBeAnEntryPoint(DeclRef<CallableDecl> const& declRef)
 {
     auto decl = declRef.getDecl();
-    if(decl->hasModifier<EntryPointAttribute>())
+    if (decl->hasModifier<EntryPointAttribute>())
         return true;
     if (decl->hasModifier<NumThreadsAttribute>())
         return true;
@@ -3797,7 +3807,9 @@ void collectParameterLists(
         // a `class` declaration, then it should use `in` instead).
         //
         ParamPassingMode nominalParamPassingModeForImplicitThisParam =
-            getNominalParamPassingModeForImplicitThisParam(declRef.getDecl(), defaultParamPassingModeForImplicitThisParam);
+            getNominalParamPassingModeForImplicitThisParam(
+                declRef.getDecl(),
+                defaultParamPassingModeForImplicitThisParam);
 
         // Once we've computed the mode(s) to use, we can recurse on
         // the outer declaration and work our way further up the chain.
@@ -3866,7 +3878,10 @@ void collectParameterLists(
                     nominalParamPassingModeForImplicitThisParam = ParamPassingMode::BorrowInOut;
                 }
 
-                addThisParameter(nominalParamPassingModeForImplicitThisParam, thisType, ioParameterLists);
+                addThisParameter(
+                    nominalParamPassingModeForImplicitThisParam,
+                    thisType,
+                    ioParameterLists);
             }
         }
     }
@@ -4307,12 +4322,7 @@ struct ExprLoweringContext
                 subContext,
                 argExpr.getSubsts() ? argExpr.getSubsts().declRef : nullptr);
 
-            addCallArgsForParam(
-                subContext,
-                paramDirection,
-                argExpr.getExpr(),
-                ioArgs,
-                ioFixups);
+            addCallArgsForParam(subContext, paramDirection, argExpr.getExpr(), ioArgs, ioFixups);
 
             // TODO: The approach we are taking here to default arguments
             // is simplistic, and has consequences for the front-end as
@@ -4345,13 +4355,7 @@ struct ExprLoweringContext
         for (Index i = 0; i < argCount; ++i)
         {
             auto paramInfo = funcType->getParamInfo(i);
-            addDirectCallArgs(
-                expr,
-                i,
-                paramInfo.direction,
-                DeclRef<ParamDecl>(),
-                ioArgs,
-                ioFixups);
+            addDirectCallArgs(expr, i, paramInfo.direction, DeclRef<ParamDecl>(), ioArgs, ioFixups);
         }
     }
 
@@ -4368,13 +4372,7 @@ struct ExprLoweringContext
             auto paramDirection = getActualParamPassingMode(paramDecl);
 
             Index argIndex = argCounter++;
-            addDirectCallArgs(
-                expr,
-                argIndex,
-                paramDirection,
-                paramDeclRef,
-                ioArgs,
-                ioFixups);
+            addDirectCallArgs(expr, argIndex, paramDirection, paramDeclRef, ioArgs, ioFixups);
         }
     }
 
@@ -4576,14 +4574,10 @@ struct ExprLoweringContext
             if (baseExpr)
             {
                 auto thisType = getThisParamTypeForCallable(context, funcDeclRef);
-                auto thisParamMode = getActualParamPassingModeForImplicitThisParam(funcDeclRef.getDecl(), thisType);
+                auto thisParamMode =
+                    getActualParamPassingModeForImplicitThisParam(funcDeclRef.getDecl(), thisType);
 
-                addCallArgsForParam(
-                    context,
-                    thisParamMode,
-                    baseExpr,
-                    &irArgs,
-                    &argFixups);
+                addCallArgsForParam(context, thisParamMode, baseExpr, &irArgs, &argFixups);
             }
 
             // Then we have the "direct" arguments to the call.
@@ -11339,8 +11333,7 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
     /// that we need to explicitly allocate that variable as part of
     /// lowering the function body to IR.
     ///
-    static bool doesInParamNeedAMutableTempCreated(
-        IRLoweringParameterInfo const& paramInfo)
+    static bool doesInParamNeedAMutableTempCreated(IRLoweringParameterInfo const& paramInfo)
     {
         // Some parameters at the IR level are created to corespond
         // to AST-level declarations, and some aren't. We need to
@@ -11647,8 +11640,8 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
                             // made in how to represent debug information in the Slang IR,
                             // we need to attach information to the local variable
                             // identifying its role as a temporary for the given
-                            // parameter, so that the pass in `slang-ir-insert-debug-value-store.cpp`
-                            // can handle it appropriately.
+                            // parameter, so that the pass in
+                            // `slang-ir-insert-debug-value-store.cpp` can handle it appropriately.
                             //
                             // TODO(tfoley): Integrate debug information generation
                             // more cleanly into IR lowering so that this step feels
@@ -11728,7 +11721,6 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
                         }
                     }
                     break;
-
                 }
 
                 //
