@@ -1162,7 +1162,7 @@ class ModifiedType : public Type
     Val* _substituteImplOverride(ASTBuilder* astBuilder, SubstitutionSet subst, int* ioDiff);
 };
 
-//Type* removeParamDirType(Type* type);
+// Type* removeParamDirType(Type* type);
 
 bool isCopyableType(Type* type);
 bool isNonCopyableType(Type* type);
