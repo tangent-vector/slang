@@ -3017,13 +3017,14 @@ void addCallArgsForParam(
 
 //
 
-/// Get the nominal parameter-passing mode of a parameter.
+/// Get the parameter-passing mode explicitly declared for a parameter.
 ///
-/// The *nominal* parameter-passing mode is the one implied by
-/// the modifiers on the declaration, without consideration of
-/// the type of the parameter or any other context.
+/// The paramter-passing mode this function computes is the one
+/// that is superficially implied by the modifiers on the parameters
+/// alone, without consideration of the type of the parameter, or
+/// any other context.
 ///
-ParamPassingMode getNominalParamPassingMode(ParamDecl* paramDecl)
+ParamPassingMode getExplicitlyDeclaredParamPassingMode(ParamDecl* paramDecl)
 {
     if (paramDecl->hasModifier<RefModifier>())
     {
@@ -3061,8 +3062,8 @@ ParamPassingMode getNominalParamPassingMode(ParamDecl* paramDecl)
 
 /// Adjust a parameter-passing mode to account for the type of a parameter.
 ///
-/// The `nominalMode` should be the mode that would be used by default;
-/// usually this is a mode returned by `getNominalParamPassingMode()`
+/// The `originalMode` should be the mode that would be used by default;
+/// usually this is a mode returned by `getExplicitlyDeclaredParamPassingMode()`
 /// or something similar.
 ///
 /// The `paramType` should be the declared type of the parameter, not including
@@ -3073,21 +3074,21 @@ ParamPassingMode getNominalParamPassingMode(ParamDecl* paramDecl)
 /// than a copyable type.
 ///
 ParamPassingMode adjustParamPassingModeBasedOnParamType(
-    ParamPassingMode nominalMode,
+    ParamPassingMode originalMode,
     Type* paramType)
 {
     // If the type is copyable, then the default mode is appropriate to use.
     //
     if (isCopyableType(paramType))
-        return nominalMode;
+        return originalMode;
 
     // If we have a non-copyable parameter type, we will inspect
     // the default mode and see whether it needs adjustting.
     //
-    switch (nominalMode)
+    switch (originalMode)
     {
     default:
-        return nominalMode;
+        return originalMode;
 
     case ParamPassingMode::In:
         // We will adjust the `in` parameter-passing mode over
@@ -3101,15 +3102,16 @@ ParamPassingMode adjustParamPassingModeBasedOnParamType(
 
 /// Get the actual parameter-passing mode to use for a parameter.
 ///
-/// The actual mode takes into account both the nominal mode, determined
-/// by the explicit modifiers on the parameter declaration, as well as the
-/// type of the parameter. In cases where the parameter's type is not copyable,
-/// the nominal mode may be adjusted to something else.
+/// The actual mode takes into account both the mode as derived
+/// from the declaration (e.g., from explicit modifiers), as well
+/// as the type of the parameter. In cases where the parameter's type
+/// is not copyable, the mode implied by its declaration may be adjusted
+/// to something else.
 ///
 ParamPassingMode getActualParamPassingMode(ParamDecl* paramDecl)
 {
-    auto nominalMode = getNominalParamPassingMode(paramDecl);
-    auto actualMode = adjustParamPassingModeBasedOnParamType(nominalMode, paramDecl->getType());
+    auto declaredMode = getExplicitlyDeclaredParamPassingMode(paramDecl);
+    auto actualMode = adjustParamPassingModeBasedOnParamType(declaredMode, paramDecl->getType());
     return actualMode;
 }
 
@@ -3119,7 +3121,7 @@ ParamPassingMode getActualParamPassingMode(ParamDecl* paramDecl)
 ///
 static const ParamPassingMode kDefaultModeForImplicitThisParam = ParamPassingMode::In;
 
-/// Compute the nominal direction for an implicit `this` parameter,
+/// Compute the "declared" direction for an implicit `this` parameter,
 ///
 /// This function doesn't take the type of the `this` parameter into
 /// account; the chosen mode is based only on the declarations
@@ -3163,11 +3165,11 @@ static const ParamPassingMode kDefaultModeForImplicitThisParam = ParamPassingMod
 /// have an influence on what mode will be used for the `get`.
 ///
 /// Currently, the lowering logic in this file will walk up the
-/// hierarchy calling `getNominalParamPassingModeOfImplicitThisParam()`,
+/// hierarchy calling `getDeclaredParamPassingModeForImplicitThisParam()`,
 /// and pass the result of an inner invocation to the next outer one,
 /// to accumulate a mode based on all the contextual information available.
 ///
-ParamPassingMode getNominalParamPassingModeForImplicitThisParam(
+ParamPassingMode getDeclaredParamPassingModeForImplicitThisParam(
     Decl* declWithImplicitThisParam,
     ParamPassingMode defaultModeFromContext = kDefaultModeForImplicitThisParam)
 {
@@ -3297,8 +3299,8 @@ ParamPassingMode getActualParamPassingModeForImplicitThisParam(
     // we are emitting a declaration and where we are invoking it.
     //
 
-    auto nominalMode = getNominalParamPassingModeForImplicitThisParam(declWithImplicitThisParam);
-    auto actualMode = adjustParamPassingModeBasedOnParamType(nominalMode, thisParamType);
+    auto declaredMode = getDeclaredParamPassingModeForImplicitThisParam(declWithImplicitThisParam);
+    auto actualMode = adjustParamPassingModeBasedOnParamType(declaredMode, thisParamType);
     return actualMode;
 }
 
@@ -3451,21 +3453,31 @@ struct IRLoweringParameterInfo
     // This AST-level type of the parameter
     Type* type = nullptr;
 
-    /// The parameter-passing mode that was declared in user code
-    /// (or that was implied by the declaration context).
+    /// The parameter-passing mode that was derived from the parameter's
+    /// declaration and the surrounding context of that declaration, but
+    /// which does not take the type of the parameter into consideration.
     ///
-    /// This mode does not consider the type of the parameter.
-    ///
-    ParamPassingMode nominalParamPassingMode = ParamPassingMode::In;
+    ParamPassingMode declaredParamPassingMode = ParamPassingMode::In;
 
-    /// The actual parameter-passing mode that has been chosen as part of lowering.
+    /// The parameter-passing mode that was derived from the parameter's
+    /// declaration and the surrounding context, and that might also
+    /// have been adjusted based on the type of the parameters (notably,
+    /// whether or not the parameter's type is copyable).
     ///
-    /// Depending on the type of the parameter, we might choose to lower
-    /// a parameter declared with one mode to use a different mode. The
-    /// difference between the two modes may affect code generation at
-    /// call sites or in the callee.
+    /// This is in most respects the "correct" parameter-passing mode for
+    /// the parameter.
     ///
-    ParamPassingMode actualParamPassingMode = ParamPassingMode::In;
+    ParamPassingMode adjustedParamPassingMode = ParamPassingMode::In;
+
+    /// The final parameter-passing mode that is actually being used
+    /// as part of lowering.
+    ///
+    /// This mode might have been changed as a result of some outright
+    /// hackery being committed in this file, such as changing the
+    /// parameter-passing mode of entry-point varying parameters away
+    /// from what they were declared as without informing the user.
+    ///
+    ParamPassingMode hackedParamPassingMode = ParamPassingMode::In;
 
     // The variable/parameter declaration for
     // this parameter (if any)
@@ -3487,15 +3499,14 @@ IRLoweringParameterInfo getParameterInfo(
     auto paramDecl = paramDeclRef.getDecl();
     auto paramType = getParamType(context->astBuilder, paramDeclRef);
 
-    auto nominalParamPassingMode = getNominalParamPassingMode(paramDecl);
-    auto actualParamPassingMode =
-        adjustParamPassingModeBasedOnParamType(nominalParamPassingMode, paramType);
+    auto declaredParamPassingMode = getExplicitlyDeclaredParamPassingMode(paramDecl);
+    auto adjustedParamPassingMode = adjustParamPassingModeBasedOnParamType(declaredParamPassingMode, paramType);
 
     IRLoweringParameterInfo info;
     info.type = paramType;
     info.decl = paramDecl;
-    info.nominalParamPassingMode = nominalParamPassingMode;
-    info.actualParamPassingMode = actualParamPassingMode;
+    info.adjustedParamPassingMode = adjustedParamPassingMode;
+    info.hackedParamPassingMode = adjustedParamPassingMode;
     info.isThisParam = false;
     return info;
 }
@@ -3534,24 +3545,24 @@ ParameterListCollectMode getModeForCollectingParentParameters(Decl* decl, Contai
 
 /// Add a suitable `this` parameter to a parameter list being constructed.
 ///
-/// The `nominalParamPassingMode` is the parameter-passing mode that has
+/// The `impliedParamPassingMode` is the parameter-passing mode that has
 /// been determined based on the declaration that needs a `this` parameter,
 /// as well as its lexical context, but does *not* take into account the
 /// type of the `this` parameter.
 ///
 void addThisParameter(
-    ParamPassingMode nominalParamPassingMode,
+    ParamPassingMode impliedParamPassingMode,
     Type* type,
     ParameterLists* ioParameterLists)
 {
-    auto actualParamPassingMode =
-        adjustParamPassingModeBasedOnParamType(nominalParamPassingMode, type);
+    auto adjustedParamPassingMode = adjustParamPassingModeBasedOnParamType(impliedParamPassingMode, type);
 
     IRLoweringParameterInfo info;
     info.type = type;
     info.decl = nullptr;
-    info.nominalParamPassingMode = nominalParamPassingMode;
-    info.actualParamPassingMode = actualParamPassingMode;
+    info.declaredParamPassingMode = impliedParamPassingMode;
+    info.adjustedParamPassingMode = adjustedParamPassingMode;
+    info.hackedParamPassingMode = adjustedParamPassingMode;
     info.isThisParam = true;
 
     ioParameterLists->params.add(info);
@@ -3568,8 +3579,9 @@ void maybeAddReturnDestinationParam(ParameterLists* ioParameterLists, Type* resu
         IRLoweringParameterInfo info;
         info.type = resultType;
         info.decl = nullptr;
-        info.nominalParamPassingMode = paramPassingMode;
-        info.actualParamPassingMode = paramPassingMode;
+        info.declaredParamPassingMode = paramPassingMode;
+        info.adjustedParamPassingMode = paramPassingMode;
+        info.hackedParamPassingMode = paramPassingMode;
         info.isReturnDestination = true;
         ioParameterLists->params.add(info);
     }
@@ -3613,10 +3625,10 @@ bool doesParamAppearToBeAnEntryPointVaryingInput(
     if (!doesDeclAppearToBeAnEntryPoint(funcDeclRef))
         return false;
 
-    // We are only intereste in parameters that were declared
-    // (implicitly or explicitly) as `in`.
+    // We are only intereste in parameters that would otherwise
+    // be lowered to just use `in`.
     //
-    if (paramInfo.nominalParamPassingMode != ParamPassingMode::In)
+    if (paramInfo.adjustedParamPassingMode != ParamPassingMode::In)
         return false;
 
     // We are only concerned with varying parameters, so `uniform`
@@ -3635,6 +3647,9 @@ bool doesParamAppearToBeAnEntryPointVaryingInput(
     // of types, that might change over time.
     //
     if (as<HLSLPatchType>(paramInfo.type))
+        return false;
+
+    if (as<MeshOutputType>(paramInfo.type))
         return false;
 
     return true;
@@ -3667,7 +3682,9 @@ void maybeModifyParamPassingModeForDetectedEntryPointVaryingInput(
     // We basically just want to change the parameter from `in`
     // to `borrow in`, so that it is an immutable by-reference parameter.
     //
-    ioParamInfo.actualParamPassingMode = ParamPassingMode::BorrowIn;
+    auto mode = ParamPassingMode::BorrowIn;
+    ioParamInfo.adjustedParamPassingMode = mode;
+    ioParamInfo.hackedParamPassingMode = mode;
 }
 
 //
@@ -3806,8 +3823,8 @@ void collectParameterLists(
         // information (if that accessor was nested under a property of
         // a `class` declaration, then it should use `in` instead).
         //
-        ParamPassingMode nominalParamPassingModeForImplicitThisParam =
-            getNominalParamPassingModeForImplicitThisParam(
+        ParamPassingMode impliedParamPassingModeForImplicitThisParam =
+            getDeclaredParamPassingModeForImplicitThisParam(
                 declRef.getDecl(),
                 defaultParamPassingModeForImplicitThisParam);
 
@@ -3830,7 +3847,7 @@ void collectParameterLists(
             outerDeclRef,
             ioParameterLists,
             outerMode,
-            nominalParamPassingModeForImplicitThisParam);
+            impliedParamPassingModeForImplicitThisParam);
 
         // Now we will check to see if the `outerDeclRef` is one that would
         // indicate that an implicit `this` parameter is needed and, if so,
@@ -3871,15 +3888,15 @@ void collectParameterLists(
                     thisType = bwdDerivDeclRef.getDecl()->diffThisType;
 
                     // TODO(tfoley): It isn't clear why this logic shouldn't be folded
-                    // into `getNominalParamPassingModeForImplicitThisParam()`, since that
+                    // into `getDeclaredParamPassingModeForImplicitThisParam()`, since that
                     // subroutine already has checks for a few different cases of declarations
                     // that override the default parameter-passing mode.
                     //
-                    nominalParamPassingModeForImplicitThisParam = ParamPassingMode::BorrowInOut;
+                    impliedParamPassingModeForImplicitThisParam = ParamPassingMode::BorrowInOut;
                 }
 
                 addThisParameter(
-                    nominalParamPassingModeForImplicitThisParam,
+                    impliedParamPassingModeForImplicitThisParam,
                     thisType,
                     ioParameterLists);
             }
@@ -4008,7 +4025,7 @@ void _lowerFuncDeclBaseTypeInfo(
         // might include a wrapper to represent that mode as a
         // specific case of pointer type.
         //
-        switch (paramInfo.actualParamPassingMode)
+        switch (paramInfo.hackedParamPassingMode)
         {
         case ParamPassingMode::In:
             // The default `in` parameter-passing mode required no wrapping.
@@ -4130,7 +4147,7 @@ static LoweredValInfo _emitCallToAccessor(
             &allArgs,
             &fixups,
             base,
-            thisParam.actualParamPassingMode,
+            thisParam.hackedParamPassingMode,
             thisParam.type,
             SourceLoc());
     }
@@ -11581,7 +11598,7 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
                 //
                 LoweredValInfo paramVal;
 
-                switch (paramInfo.actualParamPassingMode)
+                switch (paramInfo.hackedParamPassingMode)
                 {
                 case ParamPassingMode::In:
                     {
@@ -11696,7 +11713,7 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
                         // lowering of entry points to Slang IR, this hackery can be
                         // removed.
                         //
-                        if (paramInfo.nominalParamPassingMode == ParamPassingMode::In)
+                        if (paramInfo.adjustedParamPassingMode == ParamPassingMode::In)
                         {
                             if (auto irBorrowInParamType = as<IRBorrowInParamType>(irParamType))
                             {

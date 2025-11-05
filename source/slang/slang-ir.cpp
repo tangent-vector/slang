@@ -1761,7 +1761,7 @@ void IRBuilder::_maybeSetSourceLoc(IRInst* inst)
 }
 
 #if SLANG_ENABLE_IR_BREAK_ALLOC
-uint32_t _slangIRAllocBreak = 0xFFFFFFFF;
+uint32_t _slangIRAllocBreak = 126;
 bool _slangIRPrintStackAtBreak = false;
 static bool _slangIRAllocBreakFirst = true;
 static uint32_t _slangInstBeingCloned = 0xFFFFFFFF;
