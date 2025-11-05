@@ -405,8 +405,8 @@ struct ResourceOutputSpecializationPass
         if (as<IRSamplerStateTypeBase>(type))
             return true;
 
-        if (as<IRRayQueryType>(type))
-            return true;
+//        if (as<IRRayQueryType>(type))
+//            return true;
 
         if (as<IRHitObjectType>(type))
             return true;

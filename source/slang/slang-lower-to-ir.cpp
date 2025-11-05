@@ -4637,6 +4637,12 @@ struct ExprLoweringContext
                     irArgs.add(tempVar);
                     result = LoweredValInfo::ptr(tempVar);
                 }
+
+                // In this case we also need to change the `type` that was
+                // computed earlier, since that is the IR-level type corresponding
+                // to the AST-level call expression, but the actual IR-level call
+                // in this case will return the unit type (`void`).
+                type = context->irBuilder->getVoidType();
             }
 
             auto callResult =
