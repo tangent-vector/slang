@@ -1947,10 +1947,14 @@ ScalarizedVal createSimpleGLSLGlobalVarying(
         // in all the relevant layers corresponding to the
         // declarators that surrounded it.
         //
+        SLANG_ASSERT(leafPretendType);
         auto pretendType = wrapTypeUsingDeclarators(builder, leafPretendType, declarator);
         auto actualType = legalizedParamType;
+        SLANG_ASSERT(actualType);
+        SLANG_ASSERT(pretendType);
         if (!isTypeEqual(actualType, pretendType))
         {
+
             // If the types don't match, we create an adapter to represent
             // the need to deal with the mismatch.
             //
@@ -2490,6 +2494,8 @@ ScalarizedVal adaptType(
     case ScalarizedVal::Flavor::address:
         {
             RefPtr<ScalarizedTypeAdapterValImpl> impl = new ScalarizedTypeAdapterValImpl;
+            SLANG_ASSERT(fromType);
+            SLANG_ASSERT(toType);
             impl->actualType = fromType;
             impl->pretendType = toType;
             impl->val = val;
@@ -2669,6 +2675,8 @@ ScalarizedVal getSubscriptVal(
             auto subscriptVal = getSubscriptVal(builder, actualType, inputAdapter->val, indexVal);
             if (pretendType != actualType)
             {
+                SLANG_ASSERT(pretendType);
+                SLANG_ASSERT(actualType);
                 RefPtr<ScalarizedTypeAdapterValImpl> resultAdapter =
                     new ScalarizedTypeAdapterValImpl();
                 resultAdapter->pretendType = pretendType;
@@ -2852,9 +2860,14 @@ ScalarizedVal getPtrToVal(
             // then wrap the result back up.
             //
             auto inputAdapterInfo = as<ScalarizedTypeAdapterValImpl>(val.impl);
+            SLANG_ASSERT(inputAdapterInfo->pretendType);
+            SLANG_ASSERT(inputAdapterInfo->actualType);
+
             auto outputAdapterInfo = new ScalarizedTypeAdapterValImpl();
 
             outputAdapterInfo->val = getPtrToVal(builder, inputAdapterInfo->val);
+            outputAdapterInfo->pretendType = builder->getPtrType(inputAdapterInfo->pretendType);
+            outputAdapterInfo->actualType = builder->getPtrType(inputAdapterInfo->actualType);
 
             return ScalarizedVal::typeAdapter(outputAdapterInfo);
         }
@@ -2939,6 +2952,19 @@ ScalarizedVal dereferenceVal(
             return ScalarizedVal::tuple(valTupleInfo);
         }
         break;
+
+    case ScalarizedVal::Flavor::typeAdapter:
+        {
+            auto ptrAdapterInfo = as<ScalarizedTypeAdapterValImpl>(ptr.impl);
+
+            auto valAdapterInfo = new ScalarizedTypeAdapterValImpl();
+
+            valAdapterInfo->val = dereferenceVal(builder, ptrAdapterInfo->val);
+            valAdapterInfo->pretendType = tryGetPointedToType(builder, ptrAdapterInfo->pretendType);
+            valAdapterInfo->actualType = tryGetPointedToType(builder, ptrAdapterInfo->actualType);
+
+            return ScalarizedVal::typeAdapter(valAdapterInfo);
+        }
 
     default:
         SLANG_UNEXPECTED("unimplemented");
