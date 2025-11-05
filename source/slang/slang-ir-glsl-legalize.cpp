@@ -3431,9 +3431,11 @@ static void replaceAllUsesOfMeshOutputParamWithLegalizedVal(
     ScalarizedVal const& replacement)
 {
     // Because the mesh output types are declared to be non-copyable, they
-    // will be passed into an entry point as a `borrow in` parameter.
+    // will be passed into an entry point as a pointer-typed parameter.
+    // That is, even if they are declared with no modifier and are thus
+    // implicitly treated as `in`, they will be lowered to use `borrow in`.
     //
-    if (!as<IRBorrowInParamType>(meshOutputGlobalParam->getDataType()))
+    if (!as<IRPtrTypeBase>(meshOutputGlobalParam->getDataType()))
     {
         SLANG_UNEXPECTED("expected mesh output parameter of entry point to use `borrow in` parameter-passing mode");
         return;
