@@ -2146,7 +2146,7 @@ struct ValLoweringVisitor : ValVisitor<ValLoweringVisitor, LoweredValInfo, Lower
         List<IRType*> paramTypes;
         for (Index pp = 0; pp < paramCount; ++pp)
         {
-            paramTypes.add(lowerType(context, type->getParamTypeWithModeWrapper(pp)));
+            paramTypes.add(lowerType(context, type->getParamTypeWithDeclaredModeWrapper(pp)));
         }
         if (type->getErrorType()->equals(context->astBuilder->getBottomType()))
         {
@@ -3017,13 +3017,6 @@ void addCallArgsForParam(
 
 //
 
-/// Get the parameter-passing mode explicitly declared for a parameter.
-///
-/// The paramter-passing mode this function computes is the one
-/// that is superficially implied by the modifiers on the parameters
-/// alone, without consideration of the type of the parameter, or
-/// any other context.
-///
 ParamPassingMode getExplicitlyDeclaredParamPassingMode(ParamDecl* paramDecl)
 {
     if (paramDecl->hasModifier<RefModifier>())
@@ -3060,19 +3053,6 @@ ParamPassingMode getExplicitlyDeclaredParamPassingMode(ParamDecl* paramDecl)
 }
 
 
-/// Adjust a parameter-passing mode to account for the type of a parameter.
-///
-/// The `originalMode` should be the mode that would be used by default;
-/// usually this is a mode returned by `getExplicitlyDeclaredParamPassingMode()`
-/// or something similar.
-///
-/// The `paramType` should be the declared type of the parameter, not including
-/// any of the wrapper types that are used to represent parameter-passing modes.
-///
-/// This function is primarily concerned with adjusting a parameter-passing
-/// mode to account for non-copyable types, which may need different defaults
-/// than a copyable type.
-///
 ParamPassingMode adjustParamPassingModeBasedOnParamType(
     ParamPassingMode originalMode,
     Type* paramType)
@@ -3497,7 +3477,7 @@ IRLoweringParameterInfo getParameterInfo(
     DeclRef<ParamDecl> const& paramDeclRef)
 {
     auto paramDecl = paramDeclRef.getDecl();
-    auto paramType = getParamType(context->astBuilder, paramDeclRef);
+    auto paramType = getParamValueType(context->astBuilder, paramDeclRef);
 
     auto declaredParamPassingMode = getExplicitlyDeclaredParamPassingMode(paramDecl);
     auto adjustedParamPassingMode = adjustParamPassingModeBasedOnParamType(declaredParamPassingMode, paramType);
@@ -4295,7 +4275,7 @@ struct ExprLoweringContext
     void addDirectCallArgs(
         InvokeExpr* expr,
         Index argIndex,
-        ParamPassingMode paramDirection,
+        ParamPassingMode actualParamPassingMode,
         DeclRef<ParamDecl> paramDeclRef,
         List<IRInst*>* ioArgs,
         List<OutArgumentFixup>* ioFixups)
@@ -4304,7 +4284,7 @@ struct ExprLoweringContext
         if (argIndex < argCount)
         {
             auto argExpr = expr->arguments[argIndex];
-            addCallArgsForParam(context, paramDirection, argExpr, ioArgs, ioFixups);
+            addCallArgsForParam(context, actualParamPassingMode, argExpr, ioArgs, ioFixups);
         }
         else
         {
@@ -4337,7 +4317,7 @@ struct ExprLoweringContext
                 subContext,
                 argExpr.getSubsts() ? argExpr.getSubsts().declRef : nullptr);
 
-            addCallArgsForParam(subContext, paramDirection, argExpr.getExpr(), ioArgs, ioFixups);
+            addCallArgsForParam(subContext, actualParamPassingMode, argExpr.getExpr(), ioArgs, ioFixups);
 
             // TODO: The approach we are taking here to default arguments
             // is simplistic, and has consequences for the front-end as
@@ -4370,7 +4350,7 @@ struct ExprLoweringContext
         for (Index i = 0; i < argCount; ++i)
         {
             auto paramInfo = funcType->getParamInfo(i);
-            addDirectCallArgs(expr, i, paramInfo.direction, DeclRef<ParamDecl>(), ioArgs, ioFixups);
+            addDirectCallArgs(expr, i, paramInfo.declaredMode, DeclRef<ParamDecl>(), ioArgs, ioFixups);
         }
     }
 

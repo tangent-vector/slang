@@ -9553,58 +9553,6 @@ void SemanticsDeclHeaderVisitor::visitParamDecl(ParamDecl* paramDecl)
         checkMeshOutputDecl(paramDecl);
     }
 
-    // Note(tfoley): Changing up the actual modifiers on parameters is a Bad Idea,
-    // because it could lead to us reporting parameters as something other than
-    // what they are in other parts of the code. The relevant distinctions in how
-    // parameters are *actually* passed based on copyability should be made during
-    // lowering.
-    //
-#if 0
-    if (auto declRefType = as<DeclRefType>(paramDecl->type.type))
-    {
-        if (declRefType->getDeclRef().getDecl()->findModifier<NonCopyableTypeAttribute>())
-        {
-            // Always pass a non-copyable type by reference.
-            // Remove all existing direction modifiers, and replace them with a single Ref modifier.
-            List<Modifier*> newModifiers;
-            bool hasRefModifier = false;
-            bool isMutable = false;
-            for (auto modifier : paramDecl->modifiers)
-            {
-                if (as<InModifier>(modifier))
-                {
-                    continue;
-                }
-                else if (as<InOutModifier>(modifier) || as<OutModifier>(modifier))
-                {
-                    isMutable = true;
-                    continue;
-                }
-                if (as<RefModifier>(modifier) || as<BorrowModifier>(modifier))
-                {
-                    hasRefModifier = true;
-                }
-                newModifiers.add(modifier);
-            }
-            if (!hasRefModifier)
-            {
-                if (isMutable)
-                    newModifiers.add(this->getASTBuilder()->create<RefModifier>());
-                else
-                    newModifiers.add(this->getASTBuilder()->create<BorrowModifier>());
-            }
-            paramDecl->modifiers.first = newModifiers.getFirst();
-            for (Index i = 0; i < newModifiers.getCount(); i++)
-            {
-                if (i < newModifiers.getCount() - 1)
-                    newModifiers[i]->next = newModifiers[i + 1];
-                else
-                    newModifiers[i]->next = nullptr;
-            }
-        }
-    }
-    else
-#endif
     if (isTypePack(paramDecl->type.type))
     {
         // For now, we only allow parameter packs to be `const`.
@@ -10115,7 +10063,7 @@ void SemanticsDeclHeaderVisitor::setFuncTypeIntoRequirementDecl(
     {
         auto paramInfo = funcType->getParamInfo(i);
         auto paramType = paramInfo.type;
-        auto paramDir = paramInfo.direction;
+        auto paramDir = paramInfo.declaredMode;
 
         auto param = m_astBuilder->create<ParamDecl>();
         param->type.type = paramType;
@@ -12742,14 +12690,14 @@ void checkDerivativeAttributeImpl(
                 //
                 if (resolvedInvoke->arguments[ii]->type.type->equals(
                         ctx.getASTBuilder()->getErrorType()) ||
-                    funcType->getParamPassingMode(ii) != paramDirections[ii])
+                    funcType->getDeclaredParamPassingMode(ii) != paramDirections[ii])
                 {
                     visitor->getSink()->diagnose(
                         attr,
                         Diagnostics::customDerivativeSignatureMismatchAtPosition,
                         ii,
                         qualTypeToString(argList[ii]->type),
-                        funcType->getParamTypeWithModeWrapper(ii)->toString());
+                        funcType->getParamTypeWithDeclaredModeWrapper(ii)->toString());
                 }
             }
             // The `imaginaryArguments` list does not include the `this` parameter.

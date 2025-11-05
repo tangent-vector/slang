@@ -1491,18 +1491,6 @@ ScalarizedVal createSimpleGLSLGlobalVarying(
 
     }
 
-#if 0
-    // Unrelated to 
-
-    // Another case where we need to declare the global variable with a different type is when
-    // the global varying is a user pointer. In that case we must declare it as a uint64_t, and
-    // translate it to a pointer at use sites.
-    if (!requiredType && isUserPointerType(type))
-    {
-        requiredType = maybeWrapIntoArray(builder, builder->getUInt64Type(), declarator);
-    }
-#endif
-
     // The recursive walk that lead us to this function has already "peeled"
     // away any array types that were wrapping the `leafUserDeclaredType`,
     // but it is possible that the `requiredType` is itself an array type.
@@ -1547,35 +1535,6 @@ ScalarizedVal createSimpleGLSLGlobalVarying(
         //
         break;
     }
-
-#if 0
-    {
-
-        type = requiredType;
-        peeledRequiredType = type;
-        peeledRequiredArrayLevelMatchesUserDeclaredType = true;
-        // Unpeel `type` using declarators so that it matches `inType`.
-        for (auto dd = declarator; dd; dd = dd->next)
-        {
-            switch (dd->flavor)
-            {
-            case GlobalVaryingDeclarator::Flavor::array:
-                {
-                    if (auto arrayType = as<IRArrayTypeBase>(type))
-                    {
-                        type = arrayType->getElementType();
-                        peeledRequiredType = type;
-                    }
-                    else
-                    {
-                        peeledRequiredArrayLevelMatchesUserDeclaredType = false;
-                    }
-                    break;
-                }
-            }
-        }
-    }
-#endif
 
     // Now that we've computed the required type (if any) and tried to
     // peel it so taht it aligns it with the array layers (if any) of
@@ -1857,28 +1816,6 @@ ScalarizedVal createSimpleGLSLGlobalVarying(
             indexingInfo->elementType = legalizedParamType;
             legalizedParamVal = ScalarizedVal::scalarizedArrayIndex(indexingInfo);
         }
-
-    #if 0
-        // We need to make this access, an array access to the global
-        if (auto fromType = systemValueInfo->requiredType)
-        {
-            // We may need to adapt from the declared type to/from
-            // the actual type of the GLSL global.
-            auto toType = inType;
-
-            if (!isTypeEqual(fromType, toType))
-            {
-                RefPtr<ScalarizedTypeAdapterValImpl> typeAdapter = new ScalarizedTypeAdapterValImpl;
-                typeAdapter->actualType = systemValueInfo->requiredType;
-                typeAdapter->pretendType = inType;
-                typeAdapter->val = val;
-
-                val = ScalarizedVal::typeAdapter(typeAdapter);
-            }
-        }
-
-        return val;
-    #endif
     }
     else
     {
@@ -3375,22 +3312,8 @@ static void replaceAllUsesOfMeshOutputValWithLegalizedVal(
         {
             SLANG_ASSERT(instToReplace == load->getPtr());
 
-            //auto srcPtr = load->getPtr();
-            //auto srcPtrType = cast<IRPtrTypeBase>(srcPtr->getDataType());
-            //auto srcValType = srcPtrType->getValueType();
-
             auto replacementSrcVal = dereferenceVal(builder, replacement);
             replaceAllUsesOfMeshOutputValWithLegalizedVal(context, load, replacementSrcVal);
-
-        #if 0
-            // Handles the case where a `this` points to a IRMeshOutputRef.
-            auto t = as<IRPtrTypeBase>(load->getPtr()->getDataType())->getValueType();
-            auto tmp = builder->emitVar(t);
-            assign(builder, ScalarizedVal::address(tmp), d);
-
-            s->replaceUsesWith(builder->emitLoad(tmp));
-            s->removeAndDeallocate();
-        #endif
         }
         else if (const auto swiz = as<IRSwizzledStore>(user))
         {
@@ -3483,25 +3406,6 @@ static void replaceAllUsesOfMeshOutputParamWithLegalizedVal(
     //
     auto replacementPtr = getPtrToVal(context->getBuilder(), replacement);
     replaceAllUsesOfMeshOutputValWithLegalizedVal(context, meshOutputGlobalParam, replacementPtr);
-
-#if 0
-    traverseUsers(
-        meshOutputGlobalParam,
-        [&](IRInst* user)
-    {
-        if (auto load = as<IRLoad>(user))
-        {
-            replaceAllUsesOfMeshOutputValWithLegalizedVal(
-                context,
-                load,
-                replacementVal);
-        }
-        else
-        {
-            SLANG_UNEXPECTED("unhandled case for use of mesh output parameter in Slang IR");
-        }
-    });
-#endif
 }
 
 static void legalizeMeshOutputParam(
@@ -3594,126 +3498,6 @@ static void legalizeMeshOutputParam(
     // be writes at all (i.e. being passed as an out paramter).
     //
     replaceAllUsesOfMeshOutputParamWithLegalizedVal(context, placeholderGlobalParam, globalOutputVal);
-#if 0
-    std::function<void(ScalarizedVal&, IRInst*)> assignUses = [&](ScalarizedVal& d, IRInst* a)
-    {
-        // If we're just writing to an address, we can seamlessly
-        // replace it with the address to the SOA representation.
-        // GLSL's `out` function parameters have copy-out semantics, so
-        // this is all above board.
-        if (d.flavor == ScalarizedVal::Flavor::address)
-        {
-            IRBuilderInsertLocScope locScope{builder};
-            builder->setInsertBefore(a);
-            a->replaceUsesWith(d.irValue);
-            a->removeAndDeallocate();
-            return;
-        }
-        // Otherwise, go through the uses one by one and see what we can do
-        traverseUsers(
-            a,
-            [&](IRInst* s)
-            {
-                IRBuilderInsertLocScope locScope{builder};
-                builder->setInsertBefore(s);
-                if (auto m = as<IRFieldAddress>(s))
-                {
-                    auto key = as<IRStructKey>(m->getField());
-                    SLANG_ASSERT(key && "Result of getField wasn't a struct key");
-
-                    auto d_ = extractField(builder, d, kMaxUInt, key);
-                    assignUses(d_, m);
-                }
-                else if (auto ref = as<IRMeshOutputRef>(s))
-                {
-                    auto elemType = composeGetters<IRType>(
-                        ref,
-                        &IRInst::getFullType,
-                        &IRPtrTypeBase::getValueType);
-                    auto d_ = getSubscriptVal(builder, elemType, d, ref->getIndex());
-                    assignUses(d_, ref);
-                }
-                else if (auto set = as<IRMeshOutputSet>(s))
-                {
-                    auto elemType =
-                        composeGetters<IRType>(set->getElementValue(), &IRInst::getFullType);
-                    auto d_ = getSubscriptVal(builder, elemType, d, set->getIndex());
-                    assign(builder, d_, ScalarizedVal::value(set->getElementValue()));
-                    set->removeAndDeallocate();
-                }
-                else if (auto g = as<IRGetElementPtr>(s))
-                {
-                    // Writing to something like `struct Vertex{ Foo foo[10]; }`
-                    // This case is also what's taken in the initial
-                    // traversal, as every mesh output is an array.
-                    auto elemType = composeGetters<IRType>(
-                        g,
-                        &IRInst::getFullType,
-                        &IRPtrTypeBase::getValueType);
-                    auto d_ = getSubscriptVal(builder, elemType, d, g->getIndex());
-                    assignUses(d_, g);
-                }
-                else if (auto store = as<IRStore>(s))
-                {
-                    // Store using the SOA representation
-
-                    assign(builder, d, ScalarizedVal::value(store->getVal()));
-
-                    // Stores aren't used, safe to remove here without checking
-                    store->removeAndDeallocate();
-                }
-                else if (auto c = as<IRCall>(s))
-                {
-                    // Translate
-                    //   foo(vertices[n])
-                    // to
-                    //   tmp
-                    //   foo(tmp)
-                    //   vertices[n] = tmp;
-                    //
-                    // This has copy-out semantics, which is really the
-                    // best we can hope for without going and
-                    // specializing foo.
-                    auto ptr = as<IRPtrTypeBase>(a->getFullType());
-                    SLANG_ASSERT(ptr && "Mesh output parameter was passed by value");
-                    auto t = ptr->getValueType();
-                    auto tmp = builder->emitVar(t);
-                    for (UInt i = 0; i < c->getOperandCount(); i++)
-                    {
-                        if (c->getOperand(i) == a)
-                        {
-                            c->setOperand(i, tmp);
-                        }
-                    }
-                    builder->setInsertAfter(c);
-                    assign(builder, d, ScalarizedVal::value(builder->emitLoad(tmp)));
-                }
-                else if (const auto load = as<IRLoad>(s))
-                {
-                    // Handles the case where a `this` points to a IRMeshOutputRef.
-                    auto t = as<IRPtrTypeBase>(load->getPtr()->getDataType())->getValueType();
-                    auto tmp = builder->emitVar(t);
-                    assign(builder, ScalarizedVal::address(tmp), d);
-
-                    s->replaceUsesWith(builder->emitLoad(tmp));
-                    s->removeAndDeallocate();
-                }
-                else if (const auto swiz = as<IRSwizzledStore>(s))
-                {
-                    SLANG_UNEXPECTED("Swizzled store to a non-address ScalarizedVal");
-                }
-                else
-                {
-                    SLANG_UNEXPECTED(
-                        "Unhandled use of mesh output parameter during GLSL legalization");
-                }
-            });
-
-        SLANG_ASSERT(!a->hasUses());
-        a->removeAndDeallocate();
-    };
-    assignUses(globalOutputVal, g);
-#endif
 
     //
     // GLSL requires that builtins are written to a block named

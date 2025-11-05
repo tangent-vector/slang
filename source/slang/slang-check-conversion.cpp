@@ -2103,8 +2103,8 @@ bool SemanticsVisitor::tryCoerceLambdaToFuncType(
     Index paramId = 0;
     for (auto param : invokeFunc->getParameters())
     {
-        auto paramType = getParamTypeWithModeWrapper(m_astBuilder, param);
-        auto toParamType = toFuncType->getParamTypeWithModeWrapper(paramId);
+        auto paramType = getParamTypeWithActualModeWrapper(m_astBuilder, param);
+        auto toParamType = toFuncType->getParamTypeWithDeclaredModeWrapper(paramId);
         if (!paramType->equals(toParamType))
         {
             return false;

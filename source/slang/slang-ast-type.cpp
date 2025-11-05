@@ -610,15 +610,15 @@ ParamPassingMode getParamPassingModeFromPossiblyWrappedParamType(Type* paramType
     }
 }
 
-ParamPassingMode FuncType::getParamPassingMode(Index index)
+ParamPassingMode FuncType::getDeclaredParamPassingMode(Index index)
 {
-    auto paramType = getParamTypeWithModeWrapper(index);
+    auto paramType = getParamTypeWithDeclaredModeWrapper(index);
     return getParamPassingModeFromPossiblyWrappedParamType(paramType);
 }
 
 Type* FuncType::getParamValueType(Index index)
 {
-    auto paramType = getParamTypeWithModeWrapper(index);
+    auto paramType = getParamTypeWithDeclaredModeWrapper(index);
     if (auto wrappedParamType = as<ParamPassingModeType>(paramType))
         return wrappedParamType->getValueType();
     return paramType;
@@ -635,7 +635,7 @@ void FuncType::_toTextOverride(StringBuilder& out)
         {
             out << toSlice(", ");
         }
-        out << getParamTypeWithModeWrapper(pp);
+        out << getParamTypeWithDeclaredModeWrapper(pp);
     }
     out << ") -> " << getResultType();
 
@@ -660,7 +660,7 @@ Val* FuncType::_substituteImplOverride(ASTBuilder* astBuilder, SubstitutionSet s
     for (Index pp = 0; pp < getParamCount(); pp++)
     {
         auto substParamType =
-            as<Type>(getParamTypeWithModeWrapper(pp)->substituteImpl(astBuilder, subst, &diff));
+            as<Type>(getParamTypeWithDeclaredModeWrapper(pp)->substituteImpl(astBuilder, subst, &diff));
         if (auto typePack = as<ConcreteTypePack>(substParamType))
         {
             // Unwrap the ConcreteTypePack and add each element as a parameter
@@ -695,7 +695,7 @@ Type* FuncType::_createCanonicalTypeOverride()
     List<Type*> canParamTypes;
     for (Index pp = 0; pp < getParamCount(); pp++)
     {
-        canParamTypes.add(getParamTypeWithModeWrapper(pp)->getCanonicalType());
+        canParamTypes.add(getParamTypeWithDeclaredModeWrapper(pp)->getCanonicalType());
     }
 
     FuncType* canType = getCurrentASTBuilder()->getFuncType(
@@ -1405,18 +1405,6 @@ Val* TextureTypeBase::getFormat()
 {
     return as<Type>(_getGenericTypeArg(this, 8));
 }
-
-/*
-Type* removeParamDirType(Type* type)
-{
-    for (auto paramDirType = as<ParamPassingModeType>(type); paramDirType;)
-    {
-        type = paramDirType->getValueType();
-        paramDirType = as<ParamPassingModeType>(type);
-    }
-    return type;
-}
-*/
 
 bool isCopyableType(Type* type)
 {

@@ -814,6 +814,23 @@ class NamedExpressionType : public Type
     NamedExpressionType(DeclRef<TypeDefDecl> inDeclRef) { setOperands(inDeclRef); }
 };
 
+/// Adjust a parameter-passing mode to account for the type of a parameter.
+///
+/// The `originalMode` should be the mode that would be used by default;
+/// usually this is a mode returned by `FuncType::getDeclaredParamPassingMode()`
+/// or something similar.
+///
+/// The `paramType` should be the declared type of the parameter, not including
+/// any of the wrapper types that are used to represent parameter-passing modes.
+///
+/// This function is primarily concerned with adjusting a parameter-passing
+/// mode to account for non-copyable types, which may need different defaults
+/// than a copyable type.
+///
+ParamPassingMode adjustParamPassingModeBasedOnParamType(
+    ParamPassingMode originalMode,
+    Type* paramType);
+
 // A function type is defined by its parameter types
 // and its result type.
 FIDDLE()
@@ -851,7 +868,7 @@ class FuncType : public Type
     /// the possibility of encountering these wrappers, and handle
     /// them accordingly.
     ///
-    Type* getParamTypeWithModeWrapper(Index index) { return as<Type>(getOperand(index)); }
+    Type* getParamTypeWithDeclaredModeWrapper(Index index) { return as<Type>(getOperand(index)); }
 
     /// Get the type of one of the function's parameters, by index.
     ///
@@ -872,14 +889,17 @@ class FuncType : public Type
 
     /// Get the parameter-passing mode of one of the function's parameters, by index.
     ///
-    ParamPassingMode getParamPassingMode(Index index);
+    ParamPassingMode getDeclaredParamPassingMode(Index index);
 
     /// Combined information on the type and parameter-passing mode of a parameter.
     ///
     struct ParamInfo
     {
-        /// The parameter-passing mode used for the parameter.
-        ParamPassingMode direction = ParamPassingMode::In;
+        /// The parameter-passing mode declared for the parameter.
+        ParamPassingMode declaredMode = ParamPassingMode::In;
+
+        /// The actual parameter-passing mode, which may take into account whether the parameter's type is non-copyable.
+        ParamPassingMode actualMode = ParamPassingMode::In;
 
         /// The user-perceived type of the parameter.
         Type* type = nullptr;
@@ -890,8 +910,9 @@ class FuncType : public Type
     ParamInfo getParamInfo(Index index)
     {
         ParamInfo info;
-        info.direction = getParamPassingMode(index);
+        info.declaredMode = getDeclaredParamPassingMode(index);
         info.type = getParamValueType(index);
+        info.actualMode = adjustParamPassingModeBasedOnParamType(info.declaredMode, info.type);
         return info;
     }
 
@@ -1161,8 +1182,6 @@ class ModifiedType : public Type
     Type* _createCanonicalTypeOverride();
     Val* _substituteImplOverride(ASTBuilder* astBuilder, SubstitutionSet subst, int* ioDiff);
 };
-
-// Type* removeParamDirType(Type* type);
 
 bool isCopyableType(Type* type);
 bool isNonCopyableType(Type* type);

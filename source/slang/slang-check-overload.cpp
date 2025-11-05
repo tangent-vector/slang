@@ -29,7 +29,7 @@ SemanticsVisitor::ParamCounts SemanticsVisitor::CountParameters(
     for (auto param : params)
     {
         Index allowedArgCountToAdd = 1;
-        auto paramType = unwrapModifiedType(getParamType(m_astBuilder, param));
+        auto paramType = unwrapModifiedType(getParamValueType(m_astBuilder, param));
         if (isTypePack(paramType))
         {
             if (auto typePack = as<ConcreteTypePack>(paramType))
@@ -696,7 +696,7 @@ bool SemanticsVisitor::TryCheckOverloadCandidateTypes(
             Count paramCount = funcType->getParamCount();
             for (Index i = 0; i < paramCount; ++i)
             {
-                auto paramType = getParamQualType(funcType->getParamTypeWithModeWrapper(i));
+                auto paramType = getParamQualType(funcType->getParamTypeWithDeclaredModeWrapper(i));
                 paramTypes.add(paramType);
             }
         }
@@ -2689,7 +2689,7 @@ void SemanticsVisitor::AddHigherOrderOverloadCandidates(
             List<QualType> paramTypes;
 
             for (Index ii = 0; ii < diffFuncType->getParamCount(); ii++)
-                paramTypes.add(getParamQualType(diffFuncType->getParamTypeWithModeWrapper(ii)));
+                paramTypes.add(getParamQualType(diffFuncType->getParamTypeWithDeclaredModeWrapper(ii)));
 
             // Try to infer generic arguments, based on the updated context.
             OverloadResolveContext subContext = context;
@@ -3035,7 +3035,7 @@ Expr* SemanticsVisitor::ResolveInvoke(InvokeExpr* expr)
         {
             for (Index i = 0; i < funcType->getParamCount(); i++)
             {
-                paramDirections.add(funcType->getParamPassingMode(i));
+                paramDirections.add(funcType->getDeclaredParamPassingMode(i));
             }
         }
         else if (auto callableDeclRef = context.bestCandidate->item.declRef.as<CallableDecl>())
