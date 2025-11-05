@@ -3682,9 +3682,7 @@ void maybeModifyParamPassingModeForDetectedEntryPointVaryingInput(
     // We basically just want to change the parameter from `in`
     // to `borrow in`, so that it is an immutable by-reference parameter.
     //
-    auto mode = ParamPassingMode::BorrowIn;
-    ioParamInfo.adjustedParamPassingMode = mode;
-    ioParamInfo.hackedParamPassingMode = mode;
+    ioParamInfo.hackedParamPassingMode = ParamPassingMode::BorrowIn;
 }
 
 //
