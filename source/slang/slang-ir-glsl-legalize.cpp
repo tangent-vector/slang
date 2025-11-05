@@ -3329,18 +3329,25 @@ static void replaceAllUsesOfMeshOutputValWithLegalizedVal(
         }
         else if (auto store = as<IRStore>(user))
         {
-            SLANG_ASSERT(instToReplace == store->getPtr());
+            if (instToReplace == store->getPtr())
+            {
+                auto srcVal = store->getVal();
+                auto replacementDstVal = dereferenceVal(builder, replacement);
 
-            auto srcVal = store->getVal();
-            auto replacementDstVal = dereferenceVal(builder, replacement);
+                assign(builder, replacementDstVal, ScalarizedVal::value(srcVal));
+            }
+            else
+            {
+                SLANG_ASSERT(instToReplace == store->getVal());
 
-            assign(builder, replacementDstVal, ScalarizedVal::value(srcVal));
-
+                auto dstPtr = store->getPtr();
+                assign(builder, ScalarizedVal::address(dstPtr), replacement);
+            }
             store->removeAndDeallocate();
         }
         else if (const auto load = as<IRLoad>(user))
         {
-            SLANG_ASSERT(instToReplace == store->getPtr());
+            SLANG_ASSERT(instToReplace == load->getPtr());
 
             //auto srcPtr = load->getPtr();
             //auto srcPtrType = cast<IRPtrTypeBase>(srcPtr->getDataType());
