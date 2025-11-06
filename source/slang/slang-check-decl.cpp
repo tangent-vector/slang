@@ -5697,8 +5697,8 @@ bool SemanticsVisitor::trySynthesizeMethodRequirementWitness(
                     auto synParam = *synParamIter;
                     auto calleeParam = *calleeParamIter;
                     if (!matchParamDirection(
-                        getParamPassingMode(calleeParam),
-                        getParamPassingMode(synParam)))
+                            getParamPassingMode(calleeParam),
+                            getParamPassingMode(synParam)))
                     {
                         if (outFailureDetails)
                         {
