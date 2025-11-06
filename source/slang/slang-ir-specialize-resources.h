@@ -33,7 +33,9 @@ bool specializeResourceUsage(CodeGenContext* codeGenContext, IRModule* irModule)
 /// use `borrow in` or `in`, because in practice the GLSL type acts more like
 /// a handle to a stateful entity rather than a mutable value itself.
 ///
-void legalizeModesOfNonCopyableOpaqueTypedParamsForGLSL(CodeGenContext* codeGenContext, IRModule* irModule);
+void legalizeModesOfNonCopyableOpaqueTypedParamsForGLSL(
+    CodeGenContext* codeGenContext,
+    IRModule* irModule);
 
 bool isIllegalGLSLParameterType(IRType* type);
 bool isIllegalSPIRVParameterType(IRType* type, bool isArray);

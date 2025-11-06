@@ -169,7 +169,8 @@ inline Type* getType(ASTBuilder* astBuilder, DeclRef<VarDeclBase> declRef)
 ///
 Type* getParamValueType(ASTBuilder* astBuilder, DeclRef<ParamDecl> paramDeclRef);
 
-/// Get the type of a parameter including any wrapper type necessary to convey its parameter-passing mode.
+/// Get the type of a parameter including any wrapper type necessary to convey its parameter-passing
+/// mode.
 ///
 /// The underlying value type will be the same as returned from `getParamValueType()`, but
 /// may be wrapped in a type to represent, e.g., an `out int` parameter using the type
@@ -177,9 +178,13 @@ Type* getParamValueType(ASTBuilder* astBuilder, DeclRef<ParamDecl> paramDeclRef)
 ///
 Type* getParamTypeWithModeWrapper(ASTBuilder* astBuilder, DeclRef<ParamDecl> paramDeclRef);
 
-/// If necessary, wrap the value type of a parameter up with the wrapper type corresponding to its mode.
+/// If necessary, wrap the value type of a parameter up with the wrapper type corresponding to its
+/// mode.
 ///
-Type* getParamTypeWithModeWrapper(ASTBuilder* astBuilder, Type* paramValueType, ParamPassingMode paramMode);
+Type* getParamTypeWithModeWrapper(
+    ASTBuilder* astBuilder,
+    Type* paramValueType,
+    ParamPassingMode paramMode);
 
 inline SubstExpr<Expr> getInitExpr(ASTBuilder* astBuilder, DeclRef<VarDeclBase> declRef)
 {

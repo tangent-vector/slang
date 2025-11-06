@@ -176,10 +176,7 @@ ScalarizedVal extractField(
     UInt fieldIndex, // Pass ~0 in to search for the index via the key
     IRStructKey* fieldKey);
 
-ScalarizedVal extractField(
-    IRBuilder* builder,
-    ScalarizedVal const& val,
-    IRStructKey* fieldKey)
+ScalarizedVal extractField(IRBuilder* builder, ScalarizedVal const& val, IRStructKey* fieldKey)
 {
     return extractField(builder, val, kMaxUInt, fieldKey);
 }
@@ -201,12 +198,8 @@ ScalarizedVal getSubscriptVal(
     IRType* elementType,
     ScalarizedVal val,
     UInt index);
-ScalarizedVal getPtrToVal(
-    IRBuilder* builder,
-    ScalarizedVal val);
-ScalarizedVal dereferenceVal(
-    IRBuilder* builder,
-    ScalarizedVal val);
+ScalarizedVal getPtrToVal(IRBuilder* builder, ScalarizedVal val);
+ScalarizedVal dereferenceVal(IRBuilder* builder, ScalarizedVal val);
 
 struct GlobalVaryingDeclarator
 {
@@ -1350,7 +1343,10 @@ static bool targetBuiltinRequiresLegalization(IRTargetBuiltinVarName builtinVarN
 /// taking its element count from `declarator`.
 /// Other cases of declarator are handled similarly.
 ///
-IRType* wrapTypeUsingDeclarators(IRBuilder* builder, IRType* type, GlobalVaryingDeclarator* declarator)
+IRType* wrapTypeUsingDeclarators(
+    IRBuilder* builder,
+    IRType* type,
+    GlobalVaryingDeclarator* declarator)
 {
     if (!declarator)
         return type;
@@ -1436,7 +1432,7 @@ ScalarizedVal createSimpleGLSLGlobalVarying(
             targetBuiltinRequiresLegalization(systemValueInfo->targetVarName) &&
             ((stage == Stage::Fragment) ||
              (stage == Stage::Vertex &&
-                 userDeclaredParamVarLayout->usesResourceKind(LayoutResourceKind::VaryingOutput))))
+              userDeclaredParamVarLayout->usesResourceKind(LayoutResourceKind::VaryingOutput))))
         {
             ShortList<IRInst*> newOperands;
             auto opCount = userDeclaredParamVarLayout->getOperandCount();
@@ -1473,7 +1469,7 @@ ScalarizedVal createSimpleGLSLGlobalVarying(
     // if it implies a specific required type.
     //
     IRType* requiredParamType = nullptr;
-    if( systemValueInfo )
+    if (systemValueInfo)
     {
         requiredParamType = systemValueInfo->requiredType;
     }
@@ -1485,10 +1481,9 @@ ScalarizedVal createSimpleGLSLGlobalVarying(
     // is declared for SPIR-V/GLSL to use the `UInt64` type, and then translate
     // it into a pointer at any use sites.
     //
-    if( !requiredParamType && isUserPointerType(leafUserDeclaredParamType) )
+    if (!requiredParamType && isUserPointerType(leafUserDeclaredParamType))
     {
         requiredParamType = builder->getUInt64Type();
-
     }
 
     // The recursive walk that lead us to this function has already "peeled"
@@ -1542,7 +1537,8 @@ ScalarizedVal createSimpleGLSLGlobalVarying(
     // actual type for the legalized global varying shader parameter
     // we are going to create/declare, along with the necessary type layout.
     //
-    IRType* legalizedParamType = peeledRequiredParamType ? peeledRequiredParamType : leafUserDeclaredParamType;
+    IRType* legalizedParamType =
+        peeledRequiredParamType ? peeledRequiredParamType : leafUserDeclaredParamType;
     IRTypeLayout* legalizedParamTypeLayout = leafUserDeclaredParamTypeLayout;
 
     // The basic flow here is that we will walk the list of outer
@@ -1564,7 +1560,8 @@ ScalarizedVal createSimpleGLSLGlobalVarying(
         switch (dd->flavor)
         {
         default:
-            SLANG_UNEXPECTED("unhandled case of declarator in legalization of entry-point varying parameters");
+            SLANG_UNEXPECTED(
+                "unhandled case of declarator in legalization of entry-point varying parameters");
             break;
 
         case GlobalVaryingDeclarator::Flavor::array:
@@ -1586,7 +1583,8 @@ ScalarizedVal createSimpleGLSLGlobalVarying(
                 //
                 if (declaratorLayerIndex < arrayLayersPeeledFromRequiredParamType.getCount())
                 {
-                    elementCount = arrayLayersPeeledFromRequiredParamType[declaratorLayerIndex]->getElementCount();
+                    elementCount = arrayLayersPeeledFromRequiredParamType[declaratorLayerIndex]
+                                       ->getElementCount();
                 }
 
                 // We can now wrap up the type of the parameter we will declare
@@ -1594,7 +1592,9 @@ ScalarizedVal createSimpleGLSLGlobalVarying(
                 //
                 auto arrayType = builder->getArrayType(legalizedParamType, elementCount);
 
-                IRArrayTypeLayout::Builder arrayTypeLayoutBuilder(builder, legalizedParamTypeLayout);
+                IRArrayTypeLayout::Builder arrayTypeLayoutBuilder(
+                    builder,
+                    legalizedParamTypeLayout);
                 if (auto resInfo = legalizedParamTypeLayout->findSizeAttr(kind))
                 {
                     // We end up re-building type layout information here, which
@@ -1727,7 +1727,8 @@ ScalarizedVal createSimpleGLSLGlobalVarying(
         // constants.
         //
         UnownedTerminatedStringSlice systemValueName(systemValueInfo->name);
-        auto sharedGlobalArrayInfoForSystemValue = context->systemNameToGlobalMap.tryGetValue(systemValueName);
+        auto sharedGlobalArrayInfoForSystemValue =
+            context->systemNameToGlobalMap.tryGetValue(systemValueName);
 
         if (sharedGlobalArrayInfoForSystemValue == nullptr)
         {
@@ -1784,8 +1785,9 @@ ScalarizedVal createSimpleGLSLGlobalVarying(
 
             freshGlobalArrayInfo.globalParam = globalParam;
 
-            sharedGlobalArrayInfoForSystemValue =
-                &context->systemNameToGlobalMap.getOrAddValue(systemValueName, freshGlobalArrayInfo);
+            sharedGlobalArrayInfoForSystemValue = &context->systemNameToGlobalMap.getOrAddValue(
+                systemValueName,
+                freshGlobalArrayInfo);
         }
 
         // Based on the array index that is needed for this particular
@@ -1824,7 +1826,8 @@ ScalarizedVal createSimpleGLSLGlobalVarying(
         // all cases the new parameter will use a pointer type, into the
         // appropriate address space for a varying input/output.
         //
-        IRType* legalizedParamPtrType = builder->getPtrType(ptrOpCode, legalizedParamType, addrSpace);
+        IRType* legalizedParamPtrType =
+            builder->getPtrType(ptrOpCode, legalizedParamType, addrSpace);
         auto legalizedParamPtr = addGlobalParam(builder->getModule(), legalizedParamPtrType);
         moveValueBefore(legalizedParamPtr, builder->getFunc());
 
@@ -2756,9 +2759,7 @@ IRInst* materializeValue(IRBuilder* builder, ScalarizedVal const& val)
     }
 }
 
-ScalarizedVal getPtrToVal(
-    IRBuilder* builder,
-    ScalarizedVal val)
+ScalarizedVal getPtrToVal(IRBuilder* builder, ScalarizedVal val)
 {
     // Our task is to create a value that represents a pointer
     // to the input `val`.
@@ -2835,9 +2836,7 @@ ScalarizedVal getPtrToVal(
     }
 }
 
-ScalarizedVal dereferenceVal(
-    IRBuilder* builder,
-    ScalarizedVal ptr)
+ScalarizedVal dereferenceVal(IRBuilder* builder, ScalarizedVal ptr)
 {
     // Our goal is to take the input `ptr` and form a new
     // `ScalarizedVal` that represents whatever it points to.
@@ -3187,188 +3186,201 @@ static void replaceAllUsesOfMeshOutputValWithLegalizedVal(
     traverseUsers(
         instToReplace,
         [&](IRInst* user)
-    {
-        // Any additional instructions that we insert as part
-        // of this process should get inserted at the site
-        // of the use itself.
-        //
-        IRBuilderInsertLocScope locScope{ builder };
-        builder->setInsertBefore(user);
-
-        // The obvious cases that need translation are those
-        // where the original code was using the subscript
-        // accessors on the mesh output type, which translate
-        // into the `IRMeshOutput{Set|Ref}` instructions.
-        //
-        if (auto setElementInst = as<IRMeshOutputSet>(user))
         {
-            SLANG_ASSERT(instToReplace == setElementInst->getBase());
-
-            // The case where code is just trying to write an element
-            // into the mesh output is the simplest.
+            // Any additional instructions that we insert as part
+            // of this process should get inserted at the site
+            // of the use itself.
             //
-            // Because the `setElementInst` is logically writing to a single element of
-            // `instToReplace`, we need to form a (legalized) value that represents
-            // the corresponding element of `replacement` and then write to *that* instead.
+            IRBuilderInsertLocScope locScope{builder};
+            builder->setInsertBefore(user);
+
+            // The obvious cases that need translation are those
+            // where the original code was using the subscript
+            // accessors on the mesh output type, which translate
+            // into the `IRMeshOutput{Set|Ref}` instructions.
             //
-            // The `ScalarizedVal` infrastructure provides the `getSubscriptVal()`
-            // helper to do exactly that, and we can read the information it requires
-            // directly off of the operands of the `setElementInst`.
-            //
-            auto srcElementVal = setElementInst->getElementValue();
-            auto elementType = srcElementVal->getDataType();
-            auto elementIndex = setElementInst->getIndex();
-
-            // The base operand of the `setElementInst` is passed by-reference,
-            // since it represents a `this` parameter of a non-copyable type.
-            // As such, the matching `replacement` we have currently represents
-            // a pointer to the mesh output, so we need to dereference it to get
-            // something that correctly represents the value of the mesh output,
-            // and then only after that does it make sense to subscript into it
-            // and access a particular element.
-            //
-            auto replacementDstVal = dereferenceVal(builder, replacement);
-            auto replacementDstElementVal = getSubscriptVal(builder, elementType, replacementDstVal, elementIndex);
-
-            // Once we've formed the replacement value for the destination of
-            // the operation, we can simply use the `assign()` helper that is
-            // part of the `ScalarizedVal` machinery to do the rest.
-            //
-            assign(builder, replacementDstElementVal, ScalarizedVal::value(srcElementVal));
-            setElementInst->removeAndDeallocate();
-        }
-        else if (auto refElementInst = as<IRMeshOutputRef>(user))
-        {
-            SLANG_ASSERT(instToReplace == refElementInst->getBase());
-
-            // The case for forming a reference to an element of a value
-            // with a mesh-output type is similar in spirit to the case
-            // for setting an element, except that we will need to
-            // make a recurisve call to replace the subsequent uses of
-            // the pointer value that gets returned.
-            //
-            auto elementPtrType = cast<IRPtrTypeBase>(refElementInst->getDataType());
-            auto elementType = elementPtrType->getValueType();
-            auto elementIndex = refElementInst->getIndex();
-
-
-            auto replacementDstVal = dereferenceVal(builder, replacement);
-            auto replacementElementVal = getSubscriptVal(builder, elementType, replacementDstVal, elementIndex);
-
-            // The `replacementElementVal` above represents the *value* of the element,
-            // but the `refElementInst` represents a *pointer* to the element. We need
-            // to resolve the difference in levels of indirection by conceptually
-            // "taking the address" of the `replacementElementVal`.
-            //
-            auto replacementElementPtr = getPtrToVal(builder, replacementElementVal);
-
-            replaceAllUsesOfMeshOutputValWithLegalizedVal(context, refElementInst, replacementElementPtr);
-        }
-        //
-        // The remaining cases are not particularlly specific to mesh outputs,
-        // and their structure follows the same general pattern of using operations
-        // on `ScalarizedVal` to form a suitable replacement for the `user` instruction.
-        //
-        else if (auto fieldPtr = as<IRFieldAddress>(user))
-        {
-            SLANG_ASSERT(instToReplace == fieldPtr->getBase());
-
-            auto fieldKey = cast<IRStructKey>(fieldPtr->getField());
-            auto replacementFieldPtr = extractField(builder, replacement, fieldKey);
- 
-            replaceAllUsesOfMeshOutputValWithLegalizedVal(context, fieldPtr, replacementFieldPtr);
-        }
-        else if (auto elementPtr = as<IRGetElementPtr>(user))
-        {
-            SLANG_ASSERT(instToReplace == elementPtr->getBase());
-
-            auto elementPtrType = cast<IRPtrTypeBase>(elementPtr->getDataType());
-            auto elementType = elementPtrType->getValueType();
-            auto elementIndex = elementPtr->getIndex();
-
-            auto replacementElementPtr = getSubscriptVal(builder, elementType, replacement, elementIndex);
-
-            replaceAllUsesOfMeshOutputValWithLegalizedVal(context, elementPtr, replacementElementPtr);
-        }
-        else if (auto store = as<IRStore>(user))
-        {
-            if (instToReplace == store->getPtr())
+            if (auto setElementInst = as<IRMeshOutputSet>(user))
             {
-                auto srcVal = store->getVal();
-                auto replacementDstVal = dereferenceVal(builder, replacement);
+                SLANG_ASSERT(instToReplace == setElementInst->getBase());
 
-                assign(builder, replacementDstVal, ScalarizedVal::value(srcVal));
+                // The case where code is just trying to write an element
+                // into the mesh output is the simplest.
+                //
+                // Because the `setElementInst` is logically writing to a single element of
+                // `instToReplace`, we need to form a (legalized) value that represents
+                // the corresponding element of `replacement` and then write to *that* instead.
+                //
+                // The `ScalarizedVal` infrastructure provides the `getSubscriptVal()`
+                // helper to do exactly that, and we can read the information it requires
+                // directly off of the operands of the `setElementInst`.
+                //
+                auto srcElementVal = setElementInst->getElementValue();
+                auto elementType = srcElementVal->getDataType();
+                auto elementIndex = setElementInst->getIndex();
+
+                // The base operand of the `setElementInst` is passed by-reference,
+                // since it represents a `this` parameter of a non-copyable type.
+                // As such, the matching `replacement` we have currently represents
+                // a pointer to the mesh output, so we need to dereference it to get
+                // something that correctly represents the value of the mesh output,
+                // and then only after that does it make sense to subscript into it
+                // and access a particular element.
+                //
+                auto replacementDstVal = dereferenceVal(builder, replacement);
+                auto replacementDstElementVal =
+                    getSubscriptVal(builder, elementType, replacementDstVal, elementIndex);
+
+                // Once we've formed the replacement value for the destination of
+                // the operation, we can simply use the `assign()` helper that is
+                // part of the `ScalarizedVal` machinery to do the rest.
+                //
+                assign(builder, replacementDstElementVal, ScalarizedVal::value(srcElementVal));
+                setElementInst->removeAndDeallocate();
+            }
+            else if (auto refElementInst = as<IRMeshOutputRef>(user))
+            {
+                SLANG_ASSERT(instToReplace == refElementInst->getBase());
+
+                // The case for forming a reference to an element of a value
+                // with a mesh-output type is similar in spirit to the case
+                // for setting an element, except that we will need to
+                // make a recurisve call to replace the subsequent uses of
+                // the pointer value that gets returned.
+                //
+                auto elementPtrType = cast<IRPtrTypeBase>(refElementInst->getDataType());
+                auto elementType = elementPtrType->getValueType();
+                auto elementIndex = refElementInst->getIndex();
+
+
+                auto replacementDstVal = dereferenceVal(builder, replacement);
+                auto replacementElementVal =
+                    getSubscriptVal(builder, elementType, replacementDstVal, elementIndex);
+
+                // The `replacementElementVal` above represents the *value* of the element,
+                // but the `refElementInst` represents a *pointer* to the element. We need
+                // to resolve the difference in levels of indirection by conceptually
+                // "taking the address" of the `replacementElementVal`.
+                //
+                auto replacementElementPtr = getPtrToVal(builder, replacementElementVal);
+
+                replaceAllUsesOfMeshOutputValWithLegalizedVal(
+                    context,
+                    refElementInst,
+                    replacementElementPtr);
+            }
+            //
+            // The remaining cases are not particularlly specific to mesh outputs,
+            // and their structure follows the same general pattern of using operations
+            // on `ScalarizedVal` to form a suitable replacement for the `user` instruction.
+            //
+            else if (auto fieldPtr = as<IRFieldAddress>(user))
+            {
+                SLANG_ASSERT(instToReplace == fieldPtr->getBase());
+
+                auto fieldKey = cast<IRStructKey>(fieldPtr->getField());
+                auto replacementFieldPtr = extractField(builder, replacement, fieldKey);
+
+                replaceAllUsesOfMeshOutputValWithLegalizedVal(
+                    context,
+                    fieldPtr,
+                    replacementFieldPtr);
+            }
+            else if (auto elementPtr = as<IRGetElementPtr>(user))
+            {
+                SLANG_ASSERT(instToReplace == elementPtr->getBase());
+
+                auto elementPtrType = cast<IRPtrTypeBase>(elementPtr->getDataType());
+                auto elementType = elementPtrType->getValueType();
+                auto elementIndex = elementPtr->getIndex();
+
+                auto replacementElementPtr =
+                    getSubscriptVal(builder, elementType, replacement, elementIndex);
+
+                replaceAllUsesOfMeshOutputValWithLegalizedVal(
+                    context,
+                    elementPtr,
+                    replacementElementPtr);
+            }
+            else if (auto store = as<IRStore>(user))
+            {
+                if (instToReplace == store->getPtr())
+                {
+                    auto srcVal = store->getVal();
+                    auto replacementDstVal = dereferenceVal(builder, replacement);
+
+                    assign(builder, replacementDstVal, ScalarizedVal::value(srcVal));
+                }
+                else
+                {
+                    SLANG_ASSERT(instToReplace == store->getVal());
+
+                    auto dstPtr = store->getPtr();
+                    assign(builder, ScalarizedVal::address(dstPtr), replacement);
+                }
+                store->removeAndDeallocate();
+            }
+            else if (const auto load = as<IRLoad>(user))
+            {
+                SLANG_ASSERT(instToReplace == load->getPtr());
+
+                auto replacementSrcVal = dereferenceVal(builder, replacement);
+                replaceAllUsesOfMeshOutputValWithLegalizedVal(context, load, replacementSrcVal);
+            }
+            else if (const auto swiz = as<IRSwizzledStore>(user))
+            {
+                SLANG_UNEXPECTED("Swizzled store to a non-address ScalarizedVal");
+            }
+            else if (auto call = as<IRCall>(user))
+            {
+                // We only expect to see this case when the instruction to
+                // be replaced is one of the arguments to the call.
+                //
+                SLANG_ASSERT(instToReplace != call->getCallee());
+                auto originalArg = instToReplace;
+
+                // It only makes sense to pass part of a mesh output
+                // as an argument for an `out` parameter, since the
+                // output should be write-only. As such, we expect that
+                // the argument value must represent a pointer.
+                //
+                auto argPtrType = as<IRPtrTypeBase>(originalArg->getDataType());
+                if (!argPtrType)
+                {
+                    SLANG_UNEXPECTED("it appears a mesh-shader output parameter was passed into a "
+                                     "call as by-value argument");
+                    return;
+                }
+                auto argValType = argPtrType->getValueType();
+
+                // We further assume (without actually validating it at this point)
+                // that the corresponding parameter for this argument was an `out`
+                // parameter, so it will be sufficient to pass in a pointer to
+                // an uninitialized temporary (for the callee to initialize) and
+                // then write the resulting value back to the `reaplacementVal`
+                // at the end.
+                //
+                auto tmpVarPtr = builder->emitVar(argValType);
+                auto operandCount = call->getOperandCount();
+                for (UInt i = 0; i < operandCount; ++i)
+                {
+                    if (call->getOperand(i) != originalArg)
+                        continue;
+
+                    call->setOperand(i, tmpVarPtr);
+                }
+
+                // We will insert our write-basck logic after the call:
+                //
+                builder->setInsertAfter(call);
+                auto replacementArgVal = dereferenceVal(builder, replacement);
+                auto tmpVarVal = ScalarizedVal::address(tmpVarPtr);
+                assign(builder, replacementArgVal, tmpVarVal);
             }
             else
             {
-                SLANG_ASSERT(instToReplace == store->getVal());
-
-                auto dstPtr = store->getPtr();
-                assign(builder, ScalarizedVal::address(dstPtr), replacement);
+                SLANG_UNEXPECTED("unhandled case for use of mesh output parameter in Slang IR");
             }
-            store->removeAndDeallocate();
-        }
-        else if (const auto load = as<IRLoad>(user))
-        {
-            SLANG_ASSERT(instToReplace == load->getPtr());
-
-            auto replacementSrcVal = dereferenceVal(builder, replacement);
-            replaceAllUsesOfMeshOutputValWithLegalizedVal(context, load, replacementSrcVal);
-        }
-        else if (const auto swiz = as<IRSwizzledStore>(user))
-        {
-            SLANG_UNEXPECTED("Swizzled store to a non-address ScalarizedVal");
-        }
-        else if (auto call = as<IRCall>(user))
-        {
-            // We only expect to see this case when the instruction to
-            // be replaced is one of the arguments to the call.
-            //
-            SLANG_ASSERT(instToReplace != call->getCallee());
-            auto originalArg = instToReplace;
-
-            // It only makes sense to pass part of a mesh output
-            // as an argument for an `out` parameter, since the
-            // output should be write-only. As such, we expect that
-            // the argument value must represent a pointer.
-            //
-            auto argPtrType = as<IRPtrTypeBase>(originalArg->getDataType());
-            if (!argPtrType)
-            {
-                SLANG_UNEXPECTED("it appears a mesh-shader output parameter was passed into a call as by-value argument");
-                return;
-            }
-            auto argValType = argPtrType->getValueType();
-
-            // We further assume (without actually validating it at this point)
-            // that the corresponding parameter for this argument was an `out`
-            // parameter, so it will be sufficient to pass in a pointer to
-            // an uninitialized temporary (for the callee to initialize) and
-            // then write the resulting value back to the `reaplacementVal`
-            // at the end.
-            //
-            auto tmpVarPtr = builder->emitVar(argValType);
-            auto operandCount = call->getOperandCount();
-            for (UInt i = 0; i < operandCount; ++i)
-            {
-                if (call->getOperand(i) != originalArg)
-                    continue;
-
-                call->setOperand(i, tmpVarPtr);
-            }
-
-            // We will insert our write-basck logic after the call:
-            //
-            builder->setInsertAfter(call);
-            auto replacementArgVal = dereferenceVal(builder, replacement);
-            auto tmpVarVal = ScalarizedVal::address(tmpVarPtr);
-            assign(builder, replacementArgVal, tmpVarVal);
-        }
-        else
-        {
-            SLANG_UNEXPECTED("unhandled case for use of mesh output parameter in Slang IR");
-        }
-    });
+        });
 
     SLANG_ASSERT(!instToReplace->hasUses());
     instToReplace->removeAndDeallocate();
@@ -3393,7 +3405,8 @@ static void replaceAllUsesOfMeshOutputParamWithLegalizedVal(
     //
     if (!as<IRPtrTypeBase>(meshOutputGlobalParam->getDataType()))
     {
-        SLANG_UNEXPECTED("expected mesh output parameter of entry point to use `borrow in` parameter-passing mode");
+        SLANG_UNEXPECTED("expected mesh output parameter of entry point to use `borrow in` "
+                         "parameter-passing mode");
         return;
     }
     //
@@ -3475,7 +3488,9 @@ static void legalizeMeshOutputParam(
     //
     auto placeholderGlobalParam = addGlobalParam(builder->getModule(), pp->getFullType());
     moveValueBefore(placeholderGlobalParam, builder->getFunc());
-    builder->addNameHintDecoration(placeholderGlobalParam, pp->findDecoration<IRNameHintDecoration>()->getName());
+    builder->addNameHintDecoration(
+        placeholderGlobalParam,
+        pp->findDecoration<IRNameHintDecoration>()->getName());
     pp->replaceUsesWith(placeholderGlobalParam);
     // pp is only removed later on, so sadly we have to keep it around for now
     struct MeshOutputSpecializationCondition : FunctionCallSpecializeCondition
@@ -3497,7 +3512,10 @@ static void legalizeMeshOutputParam(
     // the writes may only be writing to parts of the output struct, or may not
     // be writes at all (i.e. being passed as an out paramter).
     //
-    replaceAllUsesOfMeshOutputParamWithLegalizedVal(context, placeholderGlobalParam, globalOutputVal);
+    replaceAllUsesOfMeshOutputParamWithLegalizedVal(
+        context,
+        placeholderGlobalParam,
+        globalOutputVal);
 
     //
     // GLSL requires that builtins are written to a block named

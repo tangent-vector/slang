@@ -661,8 +661,7 @@ void validateEntryPoint(EntryPoint* entryPoint, DiagnosticSink* sink)
                 // If the entry point has an explicitly declared capability, then we
                 // will merge that with the target capability set before checking if
                 // there is an implicit upgrade.
-                targetCaps.nonDestructiveJoin(
-                    CapabilitySet{declaredCapsMod->declaredCapabilityRequirements});
+                targetCaps.nonDestructiveJoin(declaredCapsMod->declaredCapabilityRequirements);
             }
 
             // Only attempt to error if a specific profile or capability is requested
@@ -848,7 +847,10 @@ Type* getParamTypeWithModeWrapper(ASTBuilder* astBuilder, DeclRef<ParamDecl> par
     return getParamTypeWithModeWrapper(astBuilder, paramValueType, paramMode);
 }
 
-Type* getParamTypeWithModeWrapper(ASTBuilder* astBuilder, Type* paramValueType, ParamPassingMode paramMode)
+Type* getParamTypeWithModeWrapper(
+    ASTBuilder* astBuilder,
+    Type* paramValueType,
+    ParamPassingMode paramMode)
 {
     switch (paramMode)
     {

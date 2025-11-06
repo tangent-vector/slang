@@ -3730,8 +3730,7 @@ Type* SemanticsVisitor::getForwardDiffFuncType(FuncType* originalType)
                 _toDifferentialParamType(originalType->getParamTypeWithModeWrapper(i)))
             paramTypes.add(jvpParamType);
     }
-    FuncType* jvpType =
-        m_astBuilder->getFuncType(paramTypes.getArrayView(), resultType, errorType);
+    FuncType* jvpType = m_astBuilder->getFuncType(paramTypes.getArrayView(), resultType, errorType);
 
     return jvpType;
 }
