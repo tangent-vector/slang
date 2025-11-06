@@ -898,7 +898,8 @@ class FuncType : public Type
         /// The parameter-passing mode declared for the parameter.
         ParamPassingMode declaredMode = ParamPassingMode::In;
 
-        /// The actual parameter-passing mode, which may take into account whether the parameter's type is non-copyable.
+        /// The actual parameter-passing mode, which may take into account whether the parameter's
+        /// type is non-copyable.
         ParamPassingMode actualMode = ParamPassingMode::In;
 
         /// The user-perceived type of the parameter.
