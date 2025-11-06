@@ -944,8 +944,7 @@ FuncType* getFuncType(ASTBuilder* astBuilder, DeclRef<CallableDecl> const& declR
         visitParamDecl(paramDeclRef);
     }
 
-    FuncType* funcType =
-        astBuilder->getFuncType(paramTypes.getArrayView(), resultType, errorType);
+    FuncType* funcType = astBuilder->getFuncType(paramTypes.getArrayView(), resultType, errorType);
     return funcType;
 }
 

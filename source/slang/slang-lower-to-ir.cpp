@@ -3480,7 +3480,8 @@ IRLoweringParameterInfo getParameterInfo(
     auto paramType = getParamValueType(context->astBuilder, paramDeclRef);
 
     auto declaredParamPassingMode = getExplicitlyDeclaredParamPassingMode(paramDecl);
-    auto adjustedParamPassingMode = adjustParamPassingModeBasedOnParamType(declaredParamPassingMode, paramType);
+    auto adjustedParamPassingMode =
+        adjustParamPassingModeBasedOnParamType(declaredParamPassingMode, paramType);
 
     IRLoweringParameterInfo info;
     info.type = paramType;
@@ -3535,7 +3536,8 @@ void addThisParameter(
     Type* type,
     ParameterLists* ioParameterLists)
 {
-    auto adjustedParamPassingMode = adjustParamPassingModeBasedOnParamType(impliedParamPassingMode, type);
+    auto adjustedParamPassingMode =
+        adjustParamPassingModeBasedOnParamType(impliedParamPassingMode, type);
 
     IRLoweringParameterInfo info;
     info.type = type;
@@ -4317,7 +4319,12 @@ struct ExprLoweringContext
                 subContext,
                 argExpr.getSubsts() ? argExpr.getSubsts().declRef : nullptr);
 
-            addCallArgsForParam(subContext, actualParamPassingMode, argExpr.getExpr(), ioArgs, ioFixups);
+            addCallArgsForParam(
+                subContext,
+                actualParamPassingMode,
+                argExpr.getExpr(),
+                ioArgs,
+                ioFixups);
 
             // TODO: The approach we are taking here to default arguments
             // is simplistic, and has consequences for the front-end as
@@ -4350,7 +4357,13 @@ struct ExprLoweringContext
         for (Index i = 0; i < argCount; ++i)
         {
             auto paramInfo = funcType->getParamInfo(i);
-            addDirectCallArgs(expr, i, paramInfo.declaredMode, DeclRef<ParamDecl>(), ioArgs, ioFixups);
+            addDirectCallArgs(
+                expr,
+                i,
+                paramInfo.declaredMode,
+                DeclRef<ParamDecl>(),
+                ioArgs,
+                ioFixups);
         }
     }
 

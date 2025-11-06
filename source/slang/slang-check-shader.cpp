@@ -848,7 +848,10 @@ Type* getParamTypeWithActualModeWrapper(ASTBuilder* astBuilder, DeclRef<ParamDec
     return getParamTypeWithModeWrapper(astBuilder, paramValueType, paramMode);
 }
 
-Type* getParamTypeWithModeWrapper(ASTBuilder* astBuilder, Type* paramValueType, ParamPassingMode paramMode)
+Type* getParamTypeWithModeWrapper(
+    ASTBuilder* astBuilder,
+    Type* paramValueType,
+    ParamPassingMode paramMode)
 {
     switch (paramMode)
     {
