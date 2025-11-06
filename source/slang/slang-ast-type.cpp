@@ -660,7 +660,7 @@ Val* FuncType::_substituteImplOverride(ASTBuilder* astBuilder, SubstitutionSet s
     for (Index pp = 0; pp < getParamCount(); pp++)
     {
         auto substParamType = as<Type>(
-            getParamTypeWithDeclaredModeWrapper(pp)->substituteImpl(astBuilder, subst, &diff));
+            getParamTypeWithModeWrapper(pp)->substituteImpl(astBuilder, subst, &diff));
         if (auto typePack = as<ConcreteTypePack>(substParamType))
         {
             // Unwrap the ConcreteTypePack and add each element as a parameter
