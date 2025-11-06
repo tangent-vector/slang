@@ -165,7 +165,7 @@ inline Type* getType(ASTBuilder* astBuilder, DeclRef<VarDeclBase> declRef)
 ///
 /// The type returned by this function does not take into account the parameter-passing
 /// mode of the parameter; if a type that includes a mode is desired then
-/// `getParamTypeWithActualModeWrapper` should be used instead.
+/// `getParamTypeWithModeWrapper` should be used instead.
 ///
 Type* getParamValueType(ASTBuilder* astBuilder, DeclRef<ParamDecl> paramDeclRef);
 
@@ -175,7 +175,7 @@ Type* getParamValueType(ASTBuilder* astBuilder, DeclRef<ParamDecl> paramDeclRef)
 /// may be wrapped in a type to represent, e.g., an `out int` parameter using the type
 /// `OutParam<int>`.
 ///
-Type* getParamTypeWithActualModeWrapper(ASTBuilder* astBuilder, DeclRef<ParamDecl> paramDeclRef);
+Type* getParamTypeWithModeWrapper(ASTBuilder* astBuilder, DeclRef<ParamDecl> paramDeclRef);
 
 /// If necessary, wrap the value type of a parameter up with the wrapper type corresponding to its mode.
 ///
@@ -270,7 +270,7 @@ ParamPassingMode getExplicitlyDeclaredParamPassingMode(ParamDecl* paramDecl);
 /// Get the parameter-passing mode that will actually be used
 /// for `paramDecl`, based on both its modifiers and type.
 ///
-ParamPassingMode getActualParamPassingMode(ParamDecl* paramDecl);
+ParamPassingMode getParamPassingMode(ParamDecl* paramDecl);
 
 inline Type* getTagType(ASTBuilder* astBuilder, DeclRef<EnumDecl> declRef)
 {

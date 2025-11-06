@@ -1110,8 +1110,8 @@ bool SemanticsVisitor::TryUnifyTypesByStructuralMatch(
                 if (!TryUnifyTypes(
                         constraints,
                         unifyCtx,
-                        fstFunType->getParamTypeWithDeclaredModeWrapper(i),
-                        sndFunType->getParamTypeWithDeclaredModeWrapper(i)))
+                        fstFunType->getParamTypeWithModeWrapper(i),
+                        sndFunType->getParamTypeWithModeWrapper(i)))
                     return false;
             }
             return TryUnifyTypes(

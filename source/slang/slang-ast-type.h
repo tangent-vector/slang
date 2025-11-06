@@ -817,7 +817,7 @@ class NamedExpressionType : public Type
 /// Adjust a parameter-passing mode to account for the type of a parameter.
 ///
 /// The `originalMode` should be the mode that would be used by default;
-/// usually this is a mode returned by `FuncType::getDeclaredParamPassingMode()`
+/// usually this is a mode returned by `getExplicitlyDeclaredParamPassingMode()`
 /// or something similar.
 ///
 /// The `paramType` should be the declared type of the parameter, not including
@@ -868,7 +868,7 @@ class FuncType : public Type
     /// the possibility of encountering these wrappers, and handle
     /// them accordingly.
     ///
-    Type* getParamTypeWithDeclaredModeWrapper(Index index) { return as<Type>(getOperand(index)); }
+    Type* getParamTypeWithModeWrapper(Index index) { return as<Type>(getOperand(index)); }
 
     /// Get the type of one of the function's parameters, by index.
     ///
@@ -889,17 +889,14 @@ class FuncType : public Type
 
     /// Get the parameter-passing mode of one of the function's parameters, by index.
     ///
-    ParamPassingMode getDeclaredParamPassingMode(Index index);
+    ParamPassingMode getParamPassingMode(Index index);
 
     /// Combined information on the type and parameter-passing mode of a parameter.
     ///
     struct ParamInfo
     {
-        /// The parameter-passing mode declared for the parameter.
-        ParamPassingMode declaredMode = ParamPassingMode::In;
-
-        /// The actual parameter-passing mode, which may take into account whether the parameter's type is non-copyable.
-        ParamPassingMode actualMode = ParamPassingMode::In;
+        /// The parameter-passing mode for the parameter.
+        ParamPassingMode mode = ParamPassingMode::In;
 
         /// The user-perceived type of the parameter.
         Type* type = nullptr;
@@ -910,9 +907,8 @@ class FuncType : public Type
     ParamInfo getParamInfo(Index index)
     {
         ParamInfo info;
-        info.declaredMode = getDeclaredParamPassingMode(index);
+        info.mode = getParamPassingMode(index);
         info.type = getParamValueType(index);
-        info.actualMode = adjustParamPassingModeBasedOnParamType(info.declaredMode, info.type);
         return info;
     }
 

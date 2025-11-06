@@ -4209,8 +4209,8 @@ bool SemanticsVisitor::doesSignatureMatchRequirement(
     {
         auto requiredParam = requiredParams[paramIndex];
         auto satisfyingParam = satisfyingParams[paramIndex];
-        if (getActualParamPassingMode(requiredParam.getDecl()) !=
-            getActualParamPassingMode(satisfyingParam.getDecl()))
+        if (getParamPassingMode(requiredParam.getDecl()) !=
+            getParamPassingMode(satisfyingParam.getDecl()))
             return false;
         auto requiredParamType = getType(m_astBuilder, requiredParam);
         auto satisfyingParamType = getType(m_astBuilder, satisfyingParam);
@@ -5697,16 +5697,16 @@ bool SemanticsVisitor::trySynthesizeMethodRequirementWitness(
                     auto synParam = *synParamIter;
                     auto calleeParam = *calleeParamIter;
                     if (!matchParamDirection(
-                            getActualParamPassingMode(calleeParam),
-                            getActualParamPassingMode(synParam)))
+                        getParamPassingMode(calleeParam),
+                        getParamPassingMode(synParam)))
                     {
                         if (outFailureDetails)
                         {
                             outFailureDetails->reason =
                                 WitnessSynthesisFailureReason::ParameterDirMismatch;
                             outFailureDetails->candidateMethod = declRefExpr->declRef;
-                            outFailureDetails->actualDir = getActualParamPassingMode(calleeParam);
-                            outFailureDetails->expectedDir = getActualParamPassingMode(synParam);
+                            outFailureDetails->actualDir = getParamPassingMode(calleeParam);
+                            outFailureDetails->expectedDir = getParamPassingMode(synParam);
                             outFailureDetails->paramDecl = calleeParam;
                         }
                         return false;
@@ -10063,7 +10063,7 @@ void SemanticsDeclHeaderVisitor::setFuncTypeIntoRequirementDecl(
     {
         auto paramInfo = funcType->getParamInfo(i);
         auto paramType = paramInfo.type;
-        auto paramDir = paramInfo.declaredMode;
+        auto paramDir = paramInfo.mode;
 
         auto param = m_astBuilder->create<ParamDecl>();
         param->type.type = paramType;
@@ -12690,14 +12690,14 @@ void checkDerivativeAttributeImpl(
                 //
                 if (resolvedInvoke->arguments[ii]->type.type->equals(
                         ctx.getASTBuilder()->getErrorType()) ||
-                    funcType->getDeclaredParamPassingMode(ii) != paramDirections[ii])
+                    funcType->getParamPassingMode(ii) != paramDirections[ii])
                 {
                     visitor->getSink()->diagnose(
                         attr,
                         Diagnostics::customDerivativeSignatureMismatchAtPosition,
                         ii,
                         qualTypeToString(argList[ii]->type),
-                        funcType->getParamTypeWithDeclaredModeWrapper(ii)->toString());
+                        funcType->getParamTypeWithModeWrapper(ii)->toString());
                 }
             }
             // The `imaginaryArguments` list does not include the `this` parameter.
@@ -12852,7 +12852,7 @@ ArgsWithDirectionInfo getImaginaryArgsToFunc(
         arg->type.type = param->getType();
         arg->loc = loc;
         imaginaryArguments.add(arg);
-        directions.add(getActualParamPassingMode(param));
+        directions.add(getParamPassingMode(param));
     }
     return {imaginaryArguments, directions, nullptr, ParamPassingMode::In};
 }
@@ -12908,7 +12908,7 @@ ArgsWithDirectionInfo getImaginaryArgsToForwardDerivative(
     List<ParamPassingMode> expectedParamDirections;
     for (auto param : originalFuncDecl->getParameters())
     {
-        expectedParamDirections.add(getActualParamPassingMode(param));
+        expectedParamDirections.add(getParamPassingMode(param));
     }
 
     return {imaginaryArguments, expectedParamDirections, thisArgExpr, thisTypeDirection};
@@ -12965,7 +12965,7 @@ ArgsWithDirectionInfo getImaginaryArgsToBackwardDerivative(
         arg->type.type = param->getType();
         arg->loc = loc;
 
-        ParamPassingMode direction = getActualParamPassingMode(param);
+        ParamPassingMode direction = getParamPassingMode(param);
 
         bool isDiffParam = (!param->findModifier<NoDiffModifier>());
         if (isDiffParam)

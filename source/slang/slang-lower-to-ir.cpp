@@ -2146,7 +2146,7 @@ struct ValLoweringVisitor : ValVisitor<ValLoweringVisitor, LoweredValInfo, Lower
         List<IRType*> paramTypes;
         for (Index pp = 0; pp < paramCount; ++pp)
         {
-            paramTypes.add(lowerType(context, type->getParamTypeWithDeclaredModeWrapper(pp)));
+            paramTypes.add(lowerType(context, type->getParamTypeWithModeWrapper(pp)));
         }
         if (type->getErrorType()->equals(context->astBuilder->getBottomType()))
         {
@@ -3088,7 +3088,7 @@ ParamPassingMode adjustParamPassingModeBasedOnParamType(
 /// is not copyable, the mode implied by its declaration may be adjusted
 /// to something else.
 ///
-ParamPassingMode getActualParamPassingMode(ParamDecl* paramDecl)
+ParamPassingMode getParamPassingMode(ParamDecl* paramDecl)
 {
     auto declaredMode = getExplicitlyDeclaredParamPassingMode(paramDecl);
     auto actualMode = adjustParamPassingModeBasedOnParamType(declaredMode, paramDecl->getType());
@@ -4350,7 +4350,7 @@ struct ExprLoweringContext
         for (Index i = 0; i < argCount; ++i)
         {
             auto paramInfo = funcType->getParamInfo(i);
-            addDirectCallArgs(expr, i, paramInfo.declaredMode, DeclRef<ParamDecl>(), ioArgs, ioFixups);
+            addDirectCallArgs(expr, i, paramInfo.mode, DeclRef<ParamDecl>(), ioArgs, ioFixups);
         }
     }
 
@@ -4364,7 +4364,7 @@ struct ExprLoweringContext
         for (auto paramDeclRef : getMembersOfType<ParamDecl>(getASTBuilder(), funcDeclRef))
         {
             auto paramDecl = paramDeclRef.getDecl();
-            auto paramDirection = getActualParamPassingMode(paramDecl);
+            auto paramDirection = getParamPassingMode(paramDecl);
 
             Index argIndex = argCounter++;
             addDirectCallArgs(expr, argIndex, paramDirection, paramDeclRef, ioArgs, ioFixups);
