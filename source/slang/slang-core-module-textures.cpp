@@ -153,7 +153,16 @@ void TextureTypeInfo::writeFuncWithSig(
         sb << i << "[__readNone]\n";
     sb << i << "[ForceInline]\n";
     sb << i << sig << "\n";
-    writeFuncBody(funcName, glsl, cuda, spirvDefault, spirvRWDefault, spirvCombined, metal, wgsl, spirvPrefixBeforeASMBlocks);
+    writeFuncBody(
+        funcName,
+        glsl,
+        cuda,
+        spirvDefault,
+        spirvRWDefault,
+        spirvCombined,
+        metal,
+        wgsl,
+        spirvPrefixBeforeASMBlocks);
     sb << "\n";
 }
 

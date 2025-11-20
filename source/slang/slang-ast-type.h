@@ -1189,7 +1189,7 @@ class UndefinedLiteralType : public Type
     Type* _createCanonicalTypeOverride();
 };
 
-bool isCopyableType(Type * type);
+bool isCopyableType(Type* type);
 bool isNonCopyableType(Type* type);
 
 } // namespace Slang
