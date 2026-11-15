@@ -121,7 +121,8 @@ This list explains current relationships; the unresolved cycles prevent treating
 - Object interfaces use native ownership to implement reference counting and interface discovery.
   Blobs use object interfaces, memory, collections, and text to expose byte storage.
   Text-to-blob conversions also use blob implementations.
-- Host services use text, memory, collections, object interfaces, and blobs for paths, command-line arguments, streams, and library handles.
+- Host services use text, memory, collections, and object interfaces for paths, command-line arguments, streams, and library handles.
+  One whole-file read overload uses Memory's `ScopedAllocation`, currently declared alongside blobs; that shared header does not establish blob-interface use.
   Output writers use text and host services to format and deliver output; Text's hex-dump output also calls writer helpers, creating a further unresolved cycle.
   File systems adapt host operations and in-memory storage to the product file-system interfaces.
 - Binary layouts use memory, collections, streams, and blobs to compose and transfer relocatable buffers.
@@ -169,6 +170,7 @@ They propose service ownership and do not authorize moving a file wholesale.
 - **Host Services:** `slang-io.{h,cpp}`, `slang-stream.{h,cpp}`, `slang-text-io.{h,cpp}`, `slang-command-line.{h,cpp}`, `slang-process.h`, `slang-process-util.{h,cpp}`, `windows/slang-win-process.cpp`, `unix/slang-unix-process.cpp`, `slang-platform.{h,cpp}`, and `slang-shared-library.{h,cpp}`.
   The generic `MemoryReader` at the end of `slang-riff.h` also belongs here as in-memory byte I/O; it reads and skips bytes without interpreting RIFF structure.
   Despite its name, `slang-platform.h` principally declares host queries and dynamic-library operations; the basic platform-selection macros already come from the product headers.
+  The complete process and native-loader services retain their existing invocation-locale and library-residency conventions, as described by [Host Services](host-services/host-services.md).
 - **Output Writers:** `slang-writer.{h,cpp}` and `slang-std-writers.{h,cpp}`.
 - **File Systems:** `slang-file-system.{h,cpp}`, `slang-memory-file-system.{h,cpp}`, and `slang-implicit-directory-collector.{h,cpp}`.
 - **Binary Layouts:** `slang-relative-ptr.{h,cpp}`, `slang-offset-container.{h,cpp}`, and `slang-blob-builder.{h,cpp}`.
@@ -249,11 +251,15 @@ These aggregate or excess includes require examination during header extraction,
 
 ### Host Operations and Archive Views
 
-Host Services deliberately groups related operating-system operations for this first refinement.
+Host Services groups file, stream, and subprocess operations in its public Host I/O child.
 `FileStream::_init` queries `File::exists` and `Path::getPathType`, while whole-file read/write operations construct file streams and text adapters.
 `BufferedReadStream::readUntilContains` calls `Process::sleepCurrentThread`, and process utilities read from streams.
 `Process::create` consumes a `CommandLine`, while command-line construction queries process escaping and executable suffixes.
-These current peer dependencies must remain visible if Host Services later proposes narrower children.
+These calls remain internal to Host I/O, whose later refinement must account for them before proposing narrower owners.
+
+Foundation retains the complete process and native-library loading services, including the existing Unix `LC_ALL=C` override and filename-based resident-library selection.
+Those rules govern invocation and loader behavior without calling compiler or graphics services.
+Clients retain responsibility for selecting programs and libraries and interpreting their results.
 
 File-system views depend on host operations, and archive file-system implementations depend on the ordinary file-system views.
 RIFF binary structure belongs to RIFF Data, below the archive views; ZIP only needs RIFF's `FourCC` declaration rather than the RIFF tree implementation.
