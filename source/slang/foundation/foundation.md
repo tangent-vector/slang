@@ -30,8 +30,11 @@ Foundation introduces the following implementation concepts:
   `UnownedStringSlice` borrows character storage; `StringSlice` retains its backing `StringRepresentation` through an intrusive reference.
   `String` manages its character storage through reference counting, and `OSString` owns a wide-character buffer.
   Character encodings describe how code units represent character values.
-- A **callable wrapper** stores a free function, a member-function/object pair, or a callable object for later invocation.
-  `Func` and `Action` retain their adapters; callable objects are copied into their adapters, while member-function adapters store an unretained receiver pointer.
+- A **callable wrapper** stores a function pointer, a member-function/object pair, or a client-supplied callable for later invocation.
+  `Func` and `Action` retain their adapters.
+  Their generic construction and assignment operations copy callable values when the callable type is deduced.
+  An explicitly supplied lvalue-reference type selects an adapter that borrows its callable.
+  Member-function adapters borrow their receiver.
 - A **signal** in Foundation is a reported assertion failure, invalid operation, or other internal failure.
   It is separate from an operating-system signal and from an ordinary failure returned as a `SlangResult`.
 - A **tool status code** identifies an outcome of a Slang tool invocation.
