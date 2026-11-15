@@ -123,7 +123,9 @@ This list explains current relationships; the unresolved cycles prevent treating
   Text-to-blob conversions also use blob implementations.
 - Host services use text, memory, collections, and object interfaces for paths, command-line arguments, streams, and library handles.
   One whole-file read overload uses Memory's `ScopedAllocation`, currently declared alongside blobs; that shared header does not establish blob-interface use.
-  Output writers use text and host services to format and deliver output; Text's hex-dump output also calls writer helpers, creating a further unresolved cycle.
+  Output writers use Text for formatting and deliver output through callbacks, direct C files, string builders, or a discard destination.
+  Their non-MS terminal-detection aliases currently come from the platform header and require the compatibility-ownership coordination recorded by [Output Writers](output-writers/output-writers.md#platform-compatibility-ownership).
+  Text's hex-dump output also calls writer helpers, creating a further unresolved cycle.
   File systems adapt host operations and in-memory storage to the product file-system interfaces.
 - Binary layouts use memory, collections, streams, and blobs to compose and transfer relocatable buffers.
   Type descriptions use memory, collections, and text for native layout metadata and operations on described values.
@@ -172,6 +174,8 @@ They propose service ownership and do not authorize moving a file wholesale.
   Despite its name, `slang-platform.h` principally declares host queries and dynamic-library operations; the basic platform-selection macros already come from the product headers.
   The complete process and native-loader services retain their existing invocation-locale and library-residency conventions, as described by [Host Services](host-services/host-services.md).
 - **Output Writers:** `slang-writer.{h,cpp}` and `slang-std-writers.{h,cpp}`.
+  These include the complete standard writer context and its debug-message interface and classifications.
+  The context borrows its debug callback; clients retain responsibility for message adaptation and callback lifetime.
 - **File Systems:** `slang-file-system.{h,cpp}`, `slang-memory-file-system.{h,cpp}`, and `slang-implicit-directory-collector.{h,cpp}`.
 - **Binary Layouts:** `slang-relative-ptr.{h,cpp}`, `slang-offset-container.{h,cpp}`, and `slang-blob-builder.{h,cpp}`.
 - **Type Descriptions:** `slang-rtti-info.{h,cpp}` and `slang-rtti-util.{h,cpp}`.
