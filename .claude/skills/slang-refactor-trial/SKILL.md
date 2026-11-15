@@ -43,6 +43,9 @@ Create a new child's stub with only a title and a brief service description.
 Do not prescribe that child's internal structure while refining its parent.
 
 Keep proposed boundaries distinguishable from observed implementation facts.
+Before assigning an existing file wholesale, inspect its declarations throughout the file and record any services owned elsewhere as partial-file assignments.
+A filename or a successful file-coverage check does not establish that all of its declarations serve one concern.
+Definitions of existing project terms must agree with the owning types and their lifetime or behavior contracts; a familiar generic meaning is insufficient evidence.
 An include edge is evidence to investigate, not proof of a semantic dependency.
 Document mixed responsibilities and dependency cycles rather than hiding them in a vague shared module.
 Product API headers under `include/` remain existing external contracts during the prototype; their use does not assign the entire public API to the compiler implementation module.
