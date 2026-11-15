@@ -85,6 +85,9 @@ Do not fix those deferred concerns during this phase.
 Run the applicable formatter checks on the owned files before freezing a delivery or its comparison inputs.
 Inspect any emitted corrections even when the formatter subsequently fails; an error exit does not invalidate a useful formatting diff.
 Keep an actual unavailable check distinct from a source correction that can be completed.
+Verify that the formatter actually processed inputs under ignored workflow directories.
+For an explicit Windows Prettier check of temporary prose, `--ignore-path NUL` provides an empty ignore input; the repository frontend can otherwise leave those files unchanged because `tmp/` is ignored.
+Retain earlier results that skipped files under their original descriptions and record the actual check separately.
 
 In this Windows workspace, Gersemi 0.21 fails with its optional cache enabled but passes the same checks with `--no-cache`.
 That supported control option leaves the formatting rules unchanged.
