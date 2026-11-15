@@ -10,7 +10,7 @@
 
 #include "core/slang-io.h"
 #include "core/slang-process-util.h"
-#include "core/slang-stable-hash.h"
+#include "slang/foundation/hashing/hashing.h"
 #include "core/slang-string-util.h"
 #include "slang-record-replay/replay-context.h"
 #include "slang-record-replay/replay-stream-decoder.h"

@@ -3,7 +3,7 @@
 
 #include "slang-common.h"
 #include "slang-exception.h"
-#include "slang-hash.h"
+#include "slang/foundation/hashing/hashing.h"
 #include "slang-linked-list.h"
 #include "slang-list.h"
 #include "slang-math.h"

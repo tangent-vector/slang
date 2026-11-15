@@ -3,7 +3,7 @@
 #define SLANG_SEMANTIC_VERSION_H
 
 #include "core/slang-basic.h"
-#include "core/slang-hash.h"
+#include "slang/foundation/hashing/hashing.h"
 
 namespace Slang
 {

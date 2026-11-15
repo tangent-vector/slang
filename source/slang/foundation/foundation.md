@@ -12,7 +12,7 @@ Foundation is the implementation concern currently supplied by the static `core`
 Its children below are candidate ordinary modules within that artifact; they do not introduce additional libraries.
 This decomposition is incomplete because several service dependencies are cyclic.
 The [unresolved boundaries](#unresolved-boundaries) identify the cycles and the ownership decisions required before the affected services can be migrated.
-[Compression](compression/compression.md), [Digests](digests/digests.md), and [Random Numbers](random-numbers/random-numbers.md) are implemented in this hierarchy and reexported by `foundation.h` in `slang::foundation`.
+[Compression](compression/compression.md), [Digests](digests/digests.md), [Hashing](hashing/hashing.md), and [Random Numbers](random-numbers/random-numbers.md) are implemented in this hierarchy and reexported by `foundation.h` in `slang::foundation`.
 The other services still use their legacy implementations and headers; these ports do not settle their unresolved boundaries.
 
 ## Concepts
@@ -46,7 +46,7 @@ Foundation introduces the following implementation concepts:
 - An **archive** stores named files in one serialized byte sequence.
   RIFF chunks provide a tagged binary structure; a particular RIFF layout implements one of Foundation's archive formats.
 - A **hash code** supports lookup of values in a collection.
-  A **stable hash** has a deliberately fixed computation for reproducible keys; the existing stable-hash header states its supported inputs.
+  A **stable hash** has a deliberately fixed computation for reproducible keys; [Hashing](hashing/hashing.md#compatibility-and-input-representation) describes the existing input-representation limits.
   A **digest** summarizes a byte sequence using a named algorithm, such as the SHA1 keys used by the persistent cache.
 
 These definitions describe implementation services, not additional supported product contracts.
@@ -150,7 +150,10 @@ They propose service ownership and do not authorize moving a file wholesale.
 - **Tool Status Codes:** only the `ToolReturnCode` enum in `slang-test-tool-util.h`.
   It distinguishes successful execution, ordinary tool or compilation failure, an internal compiler error, an ignored invocation, and an invocation that could not run.
   The declaration retains its canonical `Slang` identity and existing enumerator names and values.
-- **Hashing:** `slang-hash.h` and `slang-stable-hash.h`.
+- **Hashing:** `hashing/hashing.h` in this directory owns the complete ordinary and stable header-only implementation.
+  The two legacy headers have been removed, and their include clients use the new primary header.
+  All definitions retain their canonical `Slang` identities; `slang::foundation::hashing` and `foundation.h` explicitly reexport the same eighteen names.
+  The original math/product prerequisite includes remain available while their owners are unported.
 - **Memory:** `slang-allocator.h`, `slang-smart-pointer.h`, `slang-memory-arena.{h,cpp}`, `slang-free-list.{h,cpp}`, `slang-virtual-object-pool.h`, and the generic `ScopedAllocation` class in `slang-blob.h`.
 - **Callables:** `slang-func-ptr.h`, which stores and invokes functions, member-function/object pairs, and copied callable objects.
 - **Collections:** `slang-array.h`, `slang-array-view.h`, `slang-list.h`, `slang-short-list.h`, `slang-chunked-list.h`, `slang-linked-list.h`, `slang-internally-linked-list.{h,cpp}`, `slang-dictionary.h`, `slang-short-dictionary.h`, and `slang-uint-set.{h,cpp}`.
@@ -261,6 +264,7 @@ Archives refinement must retain one explicit owner for archive format selection 
 Every transferred implementation must therefore preserve both the static-core consumer and this separately compiled runtime consumer.
 Moving files into candidate ordinary modules does not change that requirement or establish new installed libraries.
 For Compression, Digests, and Random Numbers, this directory's CMake entries add each leaf implementation to both existing targets, conditionally including `slang-rt` when runtime is enabled.
+Hashing lists its one header on both targets without adding a translation unit.
 Root CMake gives the migrated Foundation directory a separate binary directory so the compiler's existing `source/slang` generated-file paths remain available.
 The old targets retain their names and export settings; these unannotated Compression and generator declarations and their implementation headers are not installed product API.
 

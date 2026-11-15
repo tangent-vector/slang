@@ -2,7 +2,7 @@
 #define SLANG_CORE_SMART_POINTER_H
 
 #include "slang-common.h"
-#include "slang-hash.h"
+#include "slang/foundation/hashing/hashing.h"
 #include "slang-type-traits.h"
 #include "slang.h"
 

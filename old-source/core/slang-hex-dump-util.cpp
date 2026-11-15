@@ -4,7 +4,7 @@
 #include "slang-char-util.h"
 #include "slang-com-helper.h"
 #include "slang-common.h"
-#include "slang-hash.h"
+#include "slang/foundation/hashing/hashing.h"
 #include "slang-string-util.h"
 #include "slang-writer.h"
 

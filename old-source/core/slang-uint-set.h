@@ -2,7 +2,7 @@
 #define SLANG_CORE_UINT_SET_H
 
 #include "slang-common.h"
-#include "slang-hash.h"
+#include "slang/foundation/hashing/hashing.h"
 #include "slang-list.h"
 #include "slang-math.h"
 

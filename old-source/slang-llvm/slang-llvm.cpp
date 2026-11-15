@@ -59,7 +59,7 @@
 #include <compiler-core/slang-slice-allocator.h>
 #include <compiler-core/slang-target-builtin-type-layout-info.h>
 #include <core/slang-com-object.h>
-#include <core/slang-hash.h>
+#include <slang/foundation/hashing/hashing.h>
 #include <core/slang-list.h>
 #include <core/slang-shared-library.h>
 #include <core/slang-string-util.h>

@@ -3,7 +3,7 @@
 
 #include "core/slang-char-encode.h"
 #include "core/slang-char-util.h"
-#include "core/slang-hash.h"
+#include "slang/foundation/hashing/hashing.h"
 #include "core/slang-performance-profiler.h"
 #include "slang-check-impl.h"
 #include "slang-check.h"

@@ -27,6 +27,9 @@ slang_add_target(
     EXPLICIT_SOURCE ${prelude_source}
     EXCLUDE_FROM_ALL
     TARGET_NAME prelude
+    # The generated C++ uses `StringBuilder` from `core` headers. We take only their include roots
+    # so `prelude` keeps its own export definitions and link dependencies.
+    INCLUDE_FROM_PRIVATE core
     INCLUDE_DIRECTORIES_PUBLIC
         ${CMAKE_CURRENT_LIST_DIR}
         ${CMAKE_CURRENT_LIST_DIR}/../include

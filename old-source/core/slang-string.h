@@ -2,10 +2,9 @@
 #define SLANG_CORE_STRING_H
 
 #include "slang-common.h"
-#include "slang-hash.h"
+#include "slang/foundation/hashing/hashing.h"
 #include "slang-secure-crt.h"
 #include "slang-smart-pointer.h"
-#include "slang-stable-hash.h"
 
 #include <cstdlib>
 #include <iostream>

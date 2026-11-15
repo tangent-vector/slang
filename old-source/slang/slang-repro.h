@@ -3,7 +3,7 @@
 #define SLANG_REPRO_H_INCLUDED
 
 #include "core/slang-riff.h"
-#include "core/slang-stable-hash.h"
+#include "slang/foundation/hashing/hashing.h"
 #include "core/slang-string.h"
 
 // For TranslationUnitRequest

@@ -57,6 +57,7 @@ documents:
     watched_paths:
       - old-source/*/CMakeLists.txt
       - prelude/*.h
+      - prelude/CMakeLists.txt
       - old-source/*/*.h
       - old-source/*/*.cpp
       # Migrated implementation modules no longer match the legacy globs above.
@@ -71,6 +72,8 @@ documents:
       - source/slang/foundation/digests/CMakeLists.txt
       - source/slang/foundation/digests/digests.h
       - source/slang/foundation/digests/digests.cpp
+      - source/slang/foundation/hashing/CMakeLists.txt
+      - source/slang/foundation/hashing/hashing.h
     depends_on:
       - architecture/overview.md
     size_cap_bytes: 32768
@@ -79,10 +82,12 @@ documents:
     prompt: prompts/architecture-dependency-graph.md
     watched_paths:
       - old-source/*/CMakeLists.txt
+      - prelude/CMakeLists.txt
       - source/slang/foundation/CMakeLists.txt
       - source/slang/foundation/random-numbers/CMakeLists.txt
       - source/slang/foundation/compression/CMakeLists.txt
       - source/slang/foundation/digests/CMakeLists.txt
+      - source/slang/foundation/hashing/CMakeLists.txt
     depends_on:
       - architecture/module-map.md
     size_cap_bytes: 16384

@@ -32,8 +32,9 @@ if(SLANG_ENABLE_SLANG_GLSLANG)
             ${slang_SOURCE_DIR}/include
             ${CMAKE_CURRENT_BINARY_DIR}/../slang/slang-version-header
             ${slang_glslang_extra_includes}
-        INCLUDE_FROM_PRIVATE
-            unordered_dense::unordered_dense
+        # The exception header reaches `String` and migrated Foundation headers. We need
+        # `core`'s include roots without its link or compile-definition interface.
+        INCLUDE_FROM_PRIVATE core unordered_dense::unordered_dense
         INSTALL
         EXPORT_SET_NAME SlangTargets
     )
