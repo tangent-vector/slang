@@ -63,7 +63,7 @@ SPDX-FileCopyrightText = "Microsoft Corporation. All rights reserved."
 SPDX-License-Identifier = "LicenseRef-UOI-NCSA"
 
 [[annotations]]
-path = "old-source/core/slang-crypto.cpp"
+path = "source/slang/foundation/digests/digests.cpp"
 precedence = "closest"
 SPDX-FileCopyrightText = "NONE"
 SPDX-License-Identifier = "Unlicense"

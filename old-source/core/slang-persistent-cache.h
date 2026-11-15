@@ -1,5 +1,5 @@
 #pragma once
-#include "core/slang-crypto.h"
+#include "slang/foundation/digests/digests.h"
 #include "core/slang-io.h"
 #include "core/slang-string.h"
 #include "slang.h"

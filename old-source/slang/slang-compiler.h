@@ -28,7 +28,7 @@
 #include "compiler-core/slang-spirv-core-grammar.h"
 #include "core/slang-basic.h"
 #include "core/slang-command-options.h"
-#include "core/slang-crypto.h"
+#include "slang/foundation/digests/digests.h"
 #include "core/slang-file-system.h"
 #include "core/slang-shared-library.h"
 #include "core/slang-std-writers.h"

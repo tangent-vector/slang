@@ -1,7 +1,7 @@
 // unit-test-source-file-set-contents.cpp
 
 #include "compiler-core/slang-source-loc.h"
-#include "core/slang-crypto.h"
+#include "slang/foundation/digests/digests.h"
 #include "core/slang-string.h"
 #include "unit-test/slang-unit-test.h"
 

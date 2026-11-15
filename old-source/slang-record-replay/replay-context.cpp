@@ -1,7 +1,7 @@
 #include "replay-context.h"
 
 #include "core/slang-blob.h"
-#include "core/slang-crypto.h"
+#include "slang/foundation/digests/digests.h"
 #include "core/slang-io.h"
 #include "core/slang-platform.h"
 #include "proxy/proxy-component-type.h"

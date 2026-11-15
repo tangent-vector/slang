@@ -68,6 +68,9 @@ documents:
       - source/slang/foundation/compression/CMakeLists.txt
       - source/slang/foundation/compression/compression.h
       - source/slang/foundation/compression/compression.cpp
+      - source/slang/foundation/digests/CMakeLists.txt
+      - source/slang/foundation/digests/digests.h
+      - source/slang/foundation/digests/digests.cpp
     depends_on:
       - architecture/overview.md
     size_cap_bytes: 32768
@@ -79,6 +82,7 @@ documents:
       - source/slang/foundation/CMakeLists.txt
       - source/slang/foundation/random-numbers/CMakeLists.txt
       - source/slang/foundation/compression/CMakeLists.txt
+      - source/slang/foundation/digests/CMakeLists.txt
     depends_on:
       - architecture/module-map.md
     size_cap_bytes: 16384

@@ -10,7 +10,8 @@ It also supplies adapters that append existing values to a digest computation.
 Callers choose which data to summarize and how to distinguish the parts of that data.
 
 This is a public leaf module within [Foundation](../foundation.md#candidate-decomposition).
-Its implementation remains in `old-source/core/`.
+Its primary header and implementation are `digests.h` and `digests.cpp` in this directory.
+`foundation.h` reexports its public declarations in `slang::foundation`.
 
 ## Concepts
 
@@ -68,19 +69,28 @@ Record/replay uses hexadecimal digests to name captured blob files and to valida
 The existing digest, persistent-cache, and file-content unit tests are further clients.
 
 The product `getEntryPointHash` and `getSessionDescDigest` operations return digest bytes through blobs rather than exposing the internal digest types.
-The legacy digest header is not installed, and its declarations have no export annotations.
-A later structural port must preserve the digest bytes, inline value representation, conversions, and builder input representation used by these clients.
+The implementation header is not installed, and its declarations have no export annotations.
+The definitions retain their canonical `Slang` identities, and `slang::foundation::digests` imports those same declarations with using-declarations.
+`foundation.h` reexports those module names without creating new types or templates.
+The digest bytes, inline value representation, conversions, and builder input representation remain unchanged.
+
+The compiler's internal `ComponentType::buildHash` virtual operation and its overrides still pass `DigestBuilder<SHA1>&`.
+This internal signature does not make the operation part of the product API.
+Keeping the same canonical declarations preserves that contract, the client object fields containing digest values, and the existing binary representations without requiring a new C++ identity.
+The product, text, blob, collection, and native ownership types used by the header also retain their existing identities.
 The [root's proposed staged migration contracts](../../slang.md#staged-migration-contracts) preserve the identities of product interfaces and Foundation types used across existing binary interfaces.
 The root's artifact and source-reuse questions remain unresolved.
 
 ## Existing Implementation Mapping
 
-All declarations and definitions in the following files belong to this leaf:
+The complete former `old-source/core/slang-crypto.{h,cpp}` pair now belongs to this leaf:
 
-- `old-source/core/slang-crypto.h` defines `DigestUtil`, `HashDigest<N>`, `SHA1`, and `DigestBuilder<Hash>`, including the value conversions and append adapters defined inline.
-- `old-source/core/slang-crypto.cpp` implements binary/hexadecimal conversion and the complete SHA1 computation, including initialization, incremental input, padding, block processing, and the one-buffer convenience operation.
+- `digests.h` defines `DigestUtil`, `HashDigest<N>`, `SHA1`, and `DigestBuilder<Hash>`, including the value conversions and append adapters defined inline.
+  It reexports the four canonical `Slang` declarations in `slang::foundation::digests`.
+- `digests.cpp` implements binary/hexadecimal conversion and the complete SHA1 computation, including initialization, incremental input, padding, block processing, and the one-buffer convenience operation.
+- `CMakeLists.txt` adds the implementation to the existing `core` target and, when enabled, the separately compiled `slang-rt` target.
 
 The hash and stable-hash headers remain assigned to [Hashing](../hashing/hashing.md).
 Cache storage, file-content caching, compiler input selection, serialization containers, and recording remain with their respective clients.
-The current `core` target compiles the digest implementation; enabled `slang-rt` separately compiles the same implementation with runtime export settings.
-A transfer must preserve both compilation consumers as described by [Foundation](../foundation.md#build-consumers-and-ancestor-decisions), without introducing a library for this leaf.
+The legacy crypto files are removed, and all of their include clients now use `slang/foundation/digests/digests.h`.
+Both compilation consumers retain their existing settings as described by [Foundation](../foundation.md#build-consumers-and-ancestor-decisions), without introducing a library for this leaf.

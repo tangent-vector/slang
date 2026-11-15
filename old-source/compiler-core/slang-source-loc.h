@@ -4,7 +4,7 @@
 
 #include "core/slang-basic.h"
 #include "core/slang-castable.h"
-#include "core/slang-crypto.h"
+#include "slang/foundation/digests/digests.h"
 #include "core/slang-memory-arena.h"
 #include "core/slang-string-slice-pool.h"
 #include "slang-com-ptr.h"

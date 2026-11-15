@@ -1,3 +1,8 @@
+// These functions convert between digest bytes and hexadecimal text and implement incremental SHA1.
+// We keep the conversion operations separate from the stateful SHA1 computation. The SHA1
+// definitions follow initialization, byte input, final padding, block processing, and
+// `SHA1::compute`.
+
 /*
  * MD5 implementation is based on:
  * http://openwall.info/wiki/people/solar/software/public-domain-source-code/md5
@@ -8,15 +13,19 @@
  * Original LICENSE is at the bottom of this file.
  */
 
-#include "slang-crypto.h"
+// TODO(tfoley-refactor): Review the inherited MD5 attribution; this file contains no MD5
+// implementation.
+
+#include "slang/foundation/digests/digests.h"
 
 #include "core/slang-char-util.h"
 
 namespace Slang
 {
 
-// DigestUtil
+// # Binary and Hexadecimal Conversion
 
+// TODO(tfoley-refactor): Explain the stored-byte order and hexadecimal digit emission.
 /*static*/ String DigestUtil::digestToString(const void* digest, SlangInt digestSize)
 {
     SLANG_ASSERT(digest && digestSize >= 0);
@@ -33,6 +42,8 @@ namespace Slang
     return str;
 }
 
+// TODO(tfoley-refactor): Explain exact-length validation, digit decoding, and why a failed
+// conversion clears the entire output.
 /*static*/ bool DigestUtil::stringToDigest(
     const char* str,
     SlangInt strLength,
@@ -64,13 +75,15 @@ namespace Slang
     return true;
 }
 
-// SHA1
+// # Incremental SHA1 Computation
 
 SHA1::SHA1()
 {
     init();
 }
 
+// TODO(tfoley-refactor): Explain the initial state and why inactive buffer bytes need no
+// initialization while `m_index` is zero.
 void SHA1::init()
 {
     m_index = 0;
@@ -82,6 +95,8 @@ void SHA1::init()
     m_state[4] = 0xc3d2e1f0;
 }
 
+// TODO(tfoley-refactor): Explain partial-buffer completion, complete blocks, remaining
+// bytes, and the accumulated bit-count invariant through these three stages.
 void SHA1::update(const void* data, SlangSizeT len)
 {
     if (!data || len <= 0)
@@ -117,6 +132,8 @@ void SHA1::update(const void* data, SlangSizeT len)
     }
 }
 
+// TODO(tfoley-refactor): Explain the padding, final bit-length field, and digest byte
+// emission, including how finalization changes the accumulated state.
 SHA1::Digest SHA1::finalize()
 {
     // Finalize with 0x80, some zero padding and the length in bits.
@@ -143,6 +160,8 @@ SHA1::Digest SHA1::finalize()
     return digest;
 }
 
+// TODO(tfoley-refactor): Explain how a full buffer triggers block processing and returns
+// `m_index` to zero.
 void SHA1::addByte(uint8_t byte)
 {
     m_buf[m_index++] = byte;
@@ -154,6 +173,8 @@ void SHA1::addByte(uint8_t byte)
     }
 }
 
+// TODO(tfoley-refactor): Explain the rolling sixteen-word schedule, the eighty rounds,
+// and accumulation of the round results into the stored state.
 void SHA1::processBlock(const uint8_t* ptr)
 {
     auto rol32 = [](uint32_t x, uint32_t n) { return (x << n) | (x >> (32 - n)); };

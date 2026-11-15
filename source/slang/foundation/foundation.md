@@ -12,7 +12,7 @@ Foundation is the implementation concern currently supplied by the static `core`
 Its children below are candidate ordinary modules within that artifact; they do not introduce additional libraries.
 This decomposition is incomplete because several service dependencies are cyclic.
 The [unresolved boundaries](#unresolved-boundaries) identify the cycles and the ownership decisions required before the affected services can be migrated.
-[Compression](compression/compression.md) and [Random Numbers](random-numbers/random-numbers.md) are implemented in this hierarchy and reexported by `foundation.h` in `slang::foundation`.
+[Compression](compression/compression.md), [Digests](digests/digests.md), and [Random Numbers](random-numbers/random-numbers.md) are implemented in this hierarchy and reexported by `foundation.h` in `slang::foundation`.
 The other services still use their legacy implementations and headers; these ports do not settle their unresolved boundaries.
 
 ## Concepts
@@ -160,7 +160,10 @@ They propose service ownership and do not authorize moving a file wholesale.
 - **Type Descriptions:** `slang-rtti-info.{h,cpp}` and `slang-rtti-util.{h,cpp}`.
   These descriptions and operations concern native C++ values used by JSON/native conversion and RPC; they are separate from shader reflection and the compiler's AST type system.
 - **RIFF Data:** `slang-riff.{h,cpp}`, except the generic `MemoryReader` assigned to Host Services.
-- **Digests:** `slang-crypto.{h,cpp}`.
+- **Digests:** `digests/digests.{h,cpp}` in this directory owns digest values, binary/hexadecimal conversion, SHA1 computation, and the value append adapters.
+  The legacy crypto pair has been removed, and its include clients use the new primary header.
+  The definitions retain their canonical `Slang` identities; `slang::foundation::digests` and `foundation.h` reexport the same four declarations.
+  Digests temporarily uses the unchanged legacy text, blob, and collection types while those services remain unported.
 - **Compression:** `compression/compression.{h,cpp}` in this directory now owns the complete style descriptor, encoding identifier, shared buffer interface, and both codec implementations.
   The five legacy Compression files have been removed, and clients use the new primary header.
   `foundation.h` explicitly reexports the five public names from `slang::foundation::compression`.
@@ -245,7 +248,7 @@ Archives refinement must retain one explicit owner for archive format selection 
 `old-source/slang-rt/CMakeLists.txt` also compiles the core implementations using runtime export settings, rather than linking the `core` archive.
 Every transferred implementation must therefore preserve both the static-core consumer and this separately compiled runtime consumer.
 Moving files into candidate ordinary modules does not change that requirement or establish new installed libraries.
-For Compression and Random Numbers, this directory's CMake entries add each leaf implementation to both existing targets, conditionally including `slang-rt` when runtime is enabled.
+For Compression, Digests, and Random Numbers, this directory's CMake entries add each leaf implementation to both existing targets, conditionally including `slang-rt` when runtime is enabled.
 Root CMake gives the migrated Foundation directory a separate binary directory so the compiler's existing `source/slang` generated-file paths remain available.
 The old targets retain their names and export settings; these unannotated Compression and generator declarations and their implementation headers are not installed product API.
 
