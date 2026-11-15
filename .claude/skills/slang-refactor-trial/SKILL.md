@@ -55,6 +55,13 @@ Request independent review of the actual document and implementation evidence, a
 Resolve supported in-scope findings and repeat the relevant review before marking the module ready for migration.
 Retain review coverage, version fingerprints, findings, and dispositions under the ignored trial directory.
 
+For a fresh author or blinded reader created with the native collaboration tools, explicitly set `fork_turns` to `"none"`.
+Omitting that option inherits the parent conversation and does not create the intended isolation.
+Give a blinded reader the assignment, applicable requirements, document and source locations, and relevant scope boundaries, without the author's discussion or conclusions.
+Record the actual context setup with the review evidence.
+An audit that inherited authoring context may still provide useful independent source checks, but must not be described as blinded.
+If that distinction was missed, obtain the separate blinded check before accepting the module for migration.
+
 ## Migrate an Investigated Module
 
 Code porting requires the module's architecture document to exist, have completed the applicable review, and identify its ownership and dependencies.

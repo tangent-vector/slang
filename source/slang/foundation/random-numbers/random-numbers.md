@@ -38,7 +38,8 @@ The `RandomGenerator` family uses the following sibling services within Foundati
 The C++ environment and product-header contracts inherited through [Foundation](../foundation.md#dependencies) supply integer types, byte counts, allocation, byte copying, and compatibility macros.
 The wider include graph through native ownership does not establish additional direct service dependencies.
 `Random` uses ordinary C++ arithmetic and has no dependency on the `Math` services that share its existing header.
-Clients supply seeds; neither generator selects them from host entropy, clocks, or files.
+Clients may supply seeds explicitly; `Mt19937RandomGenerator` also has a default constructor that uses the fixed seed `21452`.
+Neither generator selects seeds from host entropy, clocks, or files.
 
 ## Service Areas
 
@@ -58,7 +59,7 @@ Each generator has mutable state without synchronization of draws or resets; cli
 
 ## Clients and Reproducibility
 
-Clients own seed selection and the order of operations that consume each sequence.
+Clients control the order of operations that consume each sequence.
 For example, `obfuscateModuleLocs` in `old-source/slang/slang-ir-obfuscate-loc.cpp` hashes module location information to choose a seed, fills bytes for an obfuscated filename, then selects indices from a shrinking bag.
 The compiler pass owns the hash inputs, location ordering, and mapping policy; Random Numbers owns the draws and their state consumption.
 
