@@ -9,7 +9,7 @@ Compiler support provides shared services for reading program text, reporting di
 It also provides JSON and protocol data services used by compiler clients and development tools.
 
 This is a proposed decomposition of the existing `compiler-core` static library.
-The implementation remains in `old-source/`, and the sibling assignments below require the ancestor decisions recorded at the end of this document.
+The implementation remains in `old-source/`; the accepted concrete-tool assignment and the remaining ancestor questions are recorded below.
 Parsing declarations, semantic checking, Slang IR, and producing shader reflection information remain responsibilities of [Compiler](../compiler/compiler.md).
 
 ## Concepts
@@ -53,7 +53,7 @@ Parsing declarations, semantic checking, Slang IR, and producing shader reflecti
   Its current generated object is compiled with the compiler, so the declaration and generated implementation have not yet acquired one accepted owner.
 
 The current artifact also locates and invokes particular external compilers and adapters.
-Those concrete dependencies are covered by the proposed sibling reassignment below, rather than being attributed to the shared contracts alone.
+Those concrete dependencies are covered by the accepted sibling assignment below, rather than being attributed to the shared contracts alone.
 
 ## Decomposition
 
@@ -116,7 +116,7 @@ These are responsibility assignments, including the partial and deferred assignm
 - **Lexing:** `slang-lexer.{h,cpp}`.
   Diagnostics owns the lexer message descriptions and their assembly into the core lookup; using those descriptions does not make reporting depend on tokenization.
 - **Located Arguments:** the `CommandLineArg`, `CommandLineContext`, `CommandLineArgs`, and `CommandLineReader` declarations and implementations in `slang-command-line-args.{h,cpp}`.
-  The separate `DownstreamArgs` declaration and its implementation select named tool argument groups and interpret `-X` forwarding syntax; their proposed owner is Compiler.
+  The separate `DownstreamArgs` declaration and its implementation select named tool argument groups and interpret `-X` forwarding syntax; they belong to Compiler's Downstream Tools.
 - **Artifacts:** all `slang-artifact*.h` and `slang-artifact*.cpp` files, plus `slang-slice-allocator.{h,cpp}` and `slang-source-embed-util.{h,cpp}`.
   The slice types at the start of `slang-artifact.h` and the slice allocator support the borrowed request and result interfaces as well as artifact storage.
   The associated-data files include downstream diagnostic records and post-emission metadata for bindings, coverage, synthetic resources, bindless use, cooperative types, and exported names.
@@ -141,7 +141,7 @@ These are responsibility assignments, including the partial and deferred assignm
   The builder's `SLANG_LLVM_IMPL` aliases and LLVM header inclusions belong to the LLVM adapter; its Slang IR emitter remains in Compiler.
 
 `CMakeLists.txt` owns the current static-library assembly, precompiled-header setup, and the DXC-specific compilation settings.
-Its current source selection includes the concrete integrations below; the proposed boundary has not been implemented by changing that build.
+Its current source selection includes the concrete integrations below; the accepted concrete-integration boundary has not been implemented by changing that build.
 
 ## Ancestor and Sibling Questions
 
@@ -150,13 +150,16 @@ Its current source selection includes the concrete integrations below; the propo
 `slang-downstream-compiler-util.{h,cpp}` combines compiler-version matching, language-to-tool defaults, the table of concrete locators, and dependent-library search.
 The concrete integrations are `slang-dxc-compiler.{h,cpp}`, `slang-fxc-compiler.{h,cpp}`, `slang-gcc-compiler-util.{h,cpp}`, `slang-glslang-compiler.{h,cpp}`, `slang-llvm-compiler.{h,cpp}`, `slang-metal-compiler.{h,cpp}`, `slang-nvrtc-compiler.{h,cpp}`, `slang-tint-compiler.{h,cpp}`, `slang-visual-studio-compiler-util.{h,cpp}`, and `windows/slang-win-visual-studio-util.{h,cpp}`.
 Those files discover particular tools, translate requests for them, parse their output, and invoke their implementations.
-Their proposed owner is Compiler's coordination of downstream compilation, using this module's shared contracts and invocation support.
+The [root migration contract](../slang.md#staged-migration-contracts) assigns this complete concrete service to Compiler's Downstream Tools, using this module's shared contracts and invocation support.
 That assignment includes the actual calls into loaded implementations, not just the loading functions.
 
 For example, `LLVMDownstreamCompilerUtil::locateCompilers` loads `slang-llvm`, resolves `createLLVMDownstreamCompiler_V4`, and stores the library and compiler in a set.
 The LLVM adapter links `compiler-core` in `cmake/LLVM.cmake`.
-The current support-to-adapter-to-support cycle therefore remains real until the ancestor accepts the revised ownership and the implementations and build consumers follow it.
+The current `compiler-core` to `slang-llvm` to `compiler-core` cycle remains until the concrete implementations and their build consumers follow that accepted ownership.
 Moving only the shared header, or only the discovery operation, would not establish the intended separation.
+Migration must also preserve access for the existing callers described by the root contract.
+Current test and other clients obtain static internal definitions that a shared Compiler library may hide.
+No replacement library, export, or callback mechanism is selected here.
 The root's compiler/bootstrap and compiled-language-library-wrapper cycles remain separate questions.
 
 ### Reusable Text and Shared Compilation Vocabulary
@@ -179,4 +182,4 @@ JSON RPC does not need those application schemas to implement message transport.
 
 The SPIR-V grammar's shared type and JSON loader serve both the compiler and its embedding generator, while its built-in accessor is supplied by the compiler's generated lookup-table object.
 The parent must reconcile those ownership and build-input relationships before that child can migrate as a complete service.
-Compiler Support remains pending while these ancestor assignments and the concrete-integration cycle are unresolved.
+Compiler Support remains pending while these ancestor assignments and the migration of the concrete integrations remain unresolved.

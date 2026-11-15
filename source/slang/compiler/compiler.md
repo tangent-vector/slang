@@ -58,7 +58,7 @@ Compiler adds the following concepts:
   The shared requests and LLVM builder interface belong to Compiler Support; the compiler-side LLVM emitter interprets Slang IR and calls that builder.
   Loading the implementation remains a dependency on the adapter, even when the request declarations are shared.
 - External toolchain interfaces supply DXC/FXC, NVRTC, Tint, Metal, GCC/Clang, and Visual Studio compilation where selected.
-  The concrete integration proposal below includes their discovery, request translation, invocation, and output parsing, rather than only their loaders.
+  The accepted concrete integration assignment below includes their discovery, request translation, invocation, and output parsing, rather than only their loaders.
   SPIR-V headers supply target-format definitions; `libcmark-gfm` supplies Markdown parsing for literate Slang input.
   Editor formatting additionally invokes a discovered `clang-format` executable.
 - Product headers under `include/` supply the compiler interfaces, options, scalar types, and export conventions that this artifact implements.
@@ -133,11 +133,11 @@ The assignments describe service responsibilities, including mixed files; they a
   Emission includes text targets, direct SPIR-V, the compiler-side LLVM builder calls, VM bytecode, dependency files, and target prelude generation.
   The pass wrapper supplies validation/dumping/profiling hooks around IR processing; individual transformations remain in Intermediate Programs.
   `slang-ir-spirv-snippet.{h,cpp}` parses target intrinsic snippets used during SPIR-V preparation and emission.
-- **Downstream Tools:** the concrete integrations proposed by [Compiler Support](../compiler-support/compiler-support.md#concrete-tool-integration) in `old-source/compiler-core/`:
+- **Downstream Tools:** the concrete integrations in `old-source/compiler-core/`, assigned to Compiler by the [root migration contract](../slang.md#staged-migration-contracts):
   `slang-downstream-compiler-util.{h,cpp}`, `slang-dxc-compiler.{h,cpp}`, `slang-fxc-compiler.{h,cpp}`, `slang-gcc-compiler-util.{h,cpp}`, `slang-glslang-compiler.{h,cpp}`, `slang-llvm-compiler.{h,cpp}`, `slang-metal-compiler.{h,cpp}`, `slang-nvrtc-compiler.{h,cpp}`, `slang-tint-compiler.{h,cpp}`, `slang-visual-studio-compiler-util.{h,cpp}`, and `windows/slang-win-visual-studio-util.{h,cpp}`.
   Their shared compiler interfaces, retaining compiler sets, reusable command-line invocation base, and request/result contracts stay with Compiler Support.
   The `DownstreamArgs` portion of `slang-command-line-args.{h,cpp}` also belongs here; located arguments and sequential reading remain in Compiler Support.
-  This accepts the complete service assignment as a candidate, without claiming that the source or current `compiler-core` build has changed.
+  The complete service assignment is accepted as semantic ownership; the source and current `compiler-core` build have not changed.
 - **Module Storage:** the `slang-serialize*` family, `slang-fossil.{h,cpp}`, and `slang-module-library.{h,cpp}`.
   They cover serialization operations and fossil storage, module containers and RIFF chunks, AST/IR encoding, source-location data, and loading a serialized library into compiler objects.
 - **Language Libraries:** `core.meta.slang`, `hlsl.meta.slang`, `glsl.meta.slang`, `diff.meta.slang`, `slang-core-module.cpp`, and `slang-core-module-textures.{h,cpp}`.
@@ -206,7 +206,7 @@ The current build uses several kinds of inputs and outputs that cannot be inferr
 | Standard-module compilation rules                                                                            | Bootstrap or `slangc` invocations, with the generated core archive, that produce the serialized module tree and manifests under the configured build location. Cross builds can use a supplied host bootstrap; installation chooses loose resources or the separately owned provider library. |
 | `slang-capability-defs`, `slang-capability-lookup`, `slang-lookup-tables`, and `slang-fiddle-output`         | Generated object libraries and an interface target carrying generated-source ordering/include requirements. Their declarations and tables follow the service they describe.                                                                                                                   |
 | `generate_core_module_cache`                                                                                 | Runs `slang-core-module-cache` to prefix the already-generated core archive with the final compiler file's modification timestamp, producing the non-embedded shared build's runtime cache.                                                                                                   |
-| `slang-proxy`                                                                                                | A conditional Windows compatibility shared library installed as `slang.dll`, forwarding to `slang-compiler.dll`. The Unix compatibility path instead installs a symlink. Its separate artifact ownership remains an ancestor question.                                                        |
+| `slang-proxy`                                                                                                | A conditional Windows compatibility shared library installed as `slang.dll`, forwarding to `slang-compiler.dll`, owned by the root's [Compiler DLL Proxy](../compiler-dll-proxy/compiler-dll-proxy.md) artifact. The Unix compatibility symlink remains Compiler packaging.                   |
 
 The GLSL and optional standard-library provider wrappers remain [Adapters](../adapters/adapters.md) artifacts.
 Compiler owns the language definitions and prepared resources they publish, not those wrappers.
@@ -218,12 +218,14 @@ No new library target or build procedure is selected by this document.
 The [root's bootstrap and provider cycles](../slang.md#unresolved-architectural-dependencies) remain unresolved.
 The observed build orders distinct compiler variants correctly; collapsing those variants into one architectural artifact still gives Compiler a construction dependency on a tool that links Compiler.
 Loading a provider whose contents Compiler prepared likewise preserves a dependency in both directions at the proposed owner level.
-The independently installed Windows proxy additionally requires an artifact owner whose parent is a package; making it an ordinary Compiler child would contradict the root's artifact rule.
+The root assigns the independently installed Windows proxy to its public [Compiler DLL Proxy](../compiler-dll-proxy/compiler-dll-proxy.md) artifact, whose parent is the root package.
+That settled ownership does not resolve the compiler/bootstrap or provider dependencies above.
 
-The complete Downstream Tools assignment agrees with Compiler Support's proposed boundary.
+The root has accepted the complete Downstream Tools assignment described by [Compiler Support](../compiler-support/compiler-support.md#concrete-tool-integration).
 For example, `LLVMDownstreamCompilerUtil::locateCompilers` creates an LLVM-backed compiler through the loaded adapter, and the concrete wrappers perform the subsequent tool calls; moving only the locator would leave part of the implementation dependency in Support.
 The shared `DownstreamCompilerBase`, `CommandLineDownstreamCompiler`, request/result contracts, and retaining `DownstreamCompilerSet` remain in Support.
 Current source selection still compiles the concrete integrations into `compiler-core`, so the reassignment has not yet removed its adapter dependency in the implementation or build.
+Migration must preserve existing test and other callers of those static internal definitions, including when a shared Compiler library hides them, under the [root's migration conditions](../slang.md#staged-migration-contracts).
 
 The SPIR-V grammar also remains split: Compiler Support owns the shared grammar representation and JSON loader, but this artifact's generated `slang-lookup-tables` object defines `SPIRVCoreGrammarInfo::getEmbeddedVersion`.
 Compiler and the existing embedding generator both use that grammar contract.

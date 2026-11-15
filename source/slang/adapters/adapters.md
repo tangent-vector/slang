@@ -37,7 +37,7 @@ This is the package's combined dependency inventory; each child must refine the 
   The glslang wrapper includes Foundation's exception-configuration macros without linking `core`.
 - [Compiler Support](../compiler-support/compiler-support.md) supplies compilation artifacts, diagnostics associated with results, and shared downstream-compiler contracts used by the LLVM integration.
   The locally built LLVM library links `compiler-core`.
-  The proposed shared LLVM-builder and glslang request contracts also belong to Compiler Support; moving their headers alone would not change the current load dependencies.
+  The shared LLVM-builder and glslang request contracts also belong to Compiler Support; moving their headers alone would not change the current load dependencies.
 - LLVM and Clang supply C/C++ compilation, LLVM code construction and emission, JIT execution, target information, and FileCheck matching.
   `cmake/LLVM.cmake` can select a prebuilt `slang-llvm` library or compile the integration against system-provided LLVM and Clang.
 - glslang and SPIRV-Tools supply GLSL compilation and SPIR-V optimization, validation, disassembly, and linking.
@@ -98,7 +98,7 @@ Within each item, an unqualified filename uses the first file's directory.
 
 The compiler-side loaders in `old-source/slang/slang-api.cpp`, `slang-session.cpp`, and `slang-global-session.cpp` remain with Compiler.
 The Slang IR emitter in `old-source/slang/slang-emit-llvm.cpp` and layout-query caller in `slang-type-layout.cpp` also remain with Compiler.
-The concrete LLVM and glslang discovery/invocation code currently in `old-source/compiler-core/` is covered by Compiler Support's [proposed reassignment](../compiler-support/compiler-support.md#concrete-tool-integration), rather than assigned to these loaded implementations.
+The concrete LLVM and glslang discovery/invocation code currently in `old-source/compiler-core/` belongs to Compiler's Downstream Tools under the [accepted sibling assignment](../compiler-support/compiler-support.md#concrete-tool-integration).
 
 ## Ancestor Decisions Before Migration
 
@@ -108,9 +108,10 @@ The optional standard-library provider similarly requires modules prepared by Co
 Separating the provider wrapper from the prepared library content does not remove those dependencies.
 
 The LLVM integration's link dependency on Compiler Support is also real.
-Compiler Support proposes assigning the concrete LLVM and glslang locators and callers to Compiler, including the actual calls into loaded implementations.
-That proposal could remove Compiler Support's dependence on the loaded implementations if the ancestor accepts the ownership and the relevant implementations and build consumers follow it.
-It has not been implemented, and it does not resolve the separate provider or bootstrap cycles.
+The root has accepted Compiler's ownership of the complete concrete integration service, including the actual calls into loaded implementations.
+Those calls still compile into `compiler-core`, so its current load/link cycle with `slang-llvm` has not been removed.
+Migration must satisfy the [root's source-selection and existing-caller conditions](../slang.md#staged-migration-contracts) before Compiler Support's implementation dependency can be considered removed.
+This semantic assignment does not resolve the separate provider or bootstrap cycles.
 
 The root must also assign the FileCheck interface and its test-result/callback contract alongside the existing test infrastructure.
 The LLVM library implements that interface, while the test runner loads the implementation by its versioned entry point.

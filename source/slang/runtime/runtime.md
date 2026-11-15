@@ -65,7 +65,9 @@ Generating these dependencies does not make Runtime depend on Compiler.
 The three entry points use C linkage and `SLANG_MCALL`, but their signatures pass `Slang::String` by value.
 The interface therefore still depends on compatible C++ type identity, layout, ownership operations, and calling conventions; C linkage alone does not make it a C data interface.
 Foundation's string and native-ownership declarations also carry `SLANG_RT_API` export annotations.
-A later namespace or header migration must account for those shared types and both build consumers, while preserving the existing entry-point and artifact names.
+The [root's staged migration contract](../slang.md#staged-migration-contracts) preserves these canonical types in their defining namespaces and keeps both compilation consumers with their existing export settings.
+A module namespace may re-export those same declarations.
+The runtime entry-point names and signatures, calling conventions, and artifact names remain unchanged during migration.
 
 ## Existing Implementation Mapping
 
@@ -82,5 +84,6 @@ The existing scalar, vector, resource, and other generated-program support in `p
 
 The final artifact arrangement must represent Foundation's service ownership together with its separate compilation under runtime export settings.
 Simply replacing that compilation with a link to `core`, or treating every included core service as a second Runtime-owned implementation, would select a different arrangement without establishing ABI and build equivalence.
-The root and Foundation documents already record this shared build-consumer constraint.
-Runtime remains pending for that ancestor decision and for the shared-type migration constraints above; this document does not establish a completed artifact boundary or a new export policy.
+The root's staged migration contract settles those preservation constraints without selecting a general model for source reuse across artifacts.
+Runtime remains pending for that [general artifact decision](../slang.md#unresolved-architectural-dependencies) and for verification that a later port preserves the shared types and both build consumers.
+This document does not establish a completed artifact boundary or a new export policy.

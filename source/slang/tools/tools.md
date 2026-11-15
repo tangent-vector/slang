@@ -110,7 +110,7 @@ The FileCheck interface in `tools/slang-test/filecheck.h` uses `TestResult` and 
 Those contracts need an ancestor assignment alongside their actual test applications before the affected siblings can complete their dependency analysis.
 The current scope does not justify adding an unrelated shared tool library to contain them.
 
-The Windows `slang-proxy` compatibility library is another pending ancestor artifact assignment.
+The root assigns the Windows `slang-proxy` compatibility library to its public [Compiler DLL Proxy](../compiler-dll-proxy/compiler-dll-proxy.md) artifact.
 It forwards compiler exports through `slang.dll`; it is distinct from the `slang` dispatcher executable and is not assigned to Tools by sharing that base name.
 
 Tools remains on the refinement worklist until these ancestor questions are resolved.

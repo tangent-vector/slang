@@ -83,26 +83,55 @@ Refining an owning child includes identifying its actual dependencies and their 
 
 All direct children are public within the implementation hierarchy.
 
-| Child                                                    | Kind           | Responsibility                                                                                                                                                                             |
-| -------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [Foundation](foundation/foundation.md)                   | Build artifact | Reusable data structures, memory and text services, and access to the host environment.                                                                                                    |
-| [Compiler Support](compiler-support/compiler-support.md) | Build artifact | Shared services for reading program text, reporting diagnostics, representing compilation outputs, and communicating with compilation tools, including their shared integration contracts. |
-| [Compiler](compiler/compiler.md)                         | Build artifact | Program loading, checking, transformation, code generation, reflection, and compiler-backed editing services.                                                                              |
-| [Runtime](runtime/runtime.md)                            | Build artifact | Runtime operations called by generated host programs, including failure reporting and dynamic-library access.                                                                              |
-| [Adapters](adapters/adapters.md)                         | Package        | Separately loadable integrations with external toolchains and providers of compiled language-library contents.                                                                             |
-| [Tools](tools/tools.md)                                  | Package        | Executable and binding entry points through which clients use the compiler and related services.                                                                                           |
+| Child                                                          | Kind           | Responsibility                                                                                                                                                     |
+| -------------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [Foundation](foundation/foundation.md)                         | Build artifact | Reusable data structures, memory and text services, and access to the host environment.                                                                            |
+| [Compiler Support](compiler-support/compiler-support.md)       | Build artifact | Shared services for reading program text, reporting diagnostics, representing compilation outputs, and supporting common compilation-tool requests and invocation. |
+| [Compiler](compiler/compiler.md)                               | Build artifact | Program loading, checking, transformation, code generation, reflection, compiler-backed editing, and concrete downstream-tool integration.                         |
+| [Compiler DLL Proxy](compiler-dll-proxy/compiler-dll-proxy.md) | Build artifact | The optional Windows compatibility DLL that forwards compiler exports from `slang.dll` to `slang-compiler.dll`.                                                    |
+| [Runtime](runtime/runtime.md)                                  | Build artifact | Runtime operations called by generated host programs, including failure reporting and dynamic-library access.                                                      |
+| [Adapters](adapters/adapters.md)                               | Package        | Separately loadable integrations with external toolchains and providers of compiled language-library contents.                                                     |
+| [Tools](tools/tools.md)                                        | Package        | Executable and binding entry points through which clients use the compiler and related services.                                                                   |
 
 Foundation and compiler support supply reusable services below the compiler.
 Adapters implement separately loadable services that the compiler can request without linking the external implementation into the compiler library.
-The proposed assignment places shared adapter contracts in compiler support.
-That separates ownership of shared declarations from ownership of implementations, but does not remove the loaders' runtime dependencies on adapter implementations.
+Compiler Support owns the shared adapter contracts, reusable invocation bases, and collections of compiler objects.
+Compiler's existing Downstream Tools concern owns the complete concrete integrations: discovery, defaults and version selection, tool-specific request translation, invocation, output parsing, and dependent-library search.
+The loaded external implementations remain with Adapters.
+These assignments distinguish the common contracts from their concrete clients and implementations; the clients still depend on the implementations they load.
 Tools turn client requests into calls to those services.
 Runtime supports generated host programs and does not perform compilation for them.
+
+Compiler DLL Proxy owns the existing `slang-proxy` artifact, enabled only on Windows when the compiler is shared and `SLANG_ENABLE_SLANG_PROXY` is enabled.
+It depends on Compiler for its forwarded exports and the final compiler DLL used to generate the export list.
+The Unix compatibility symlink remains Compiler packaging rather than another build artifact.
 
 The compiler concern includes the code and resources that define bundled language libraries and the machinery that prepares their contents for embedding.
 A separately loadable wrapper that publishes compiled library contents belongs to adapters.
 The existing build also installs loose `.slang-module` files, which are serialized language modules rather than C++ libraries or executables.
 The child decomposition must account for those resources without inventing a C++ build artifact for each resource or treating an object-library build step as an independently shipped library.
+
+## Staged Migration Contracts
+
+Each reusable Foundation service has one owning module even when the existing build compiles its implementation into both static `core` and enabled `slang-rt`.
+Phase-two ports preserve both compilation consumers and their respective export settings; Runtime continues to compile those implementations separately.
+The Random Numbers port follows this arrangement.
+The general rules for source reuse across artifacts remain an [open architectural question](#unresolved-architectural-dependencies).
+
+A Foundation C++ type used across an existing binary interface keeps its canonical identity, defining namespace, and layout during migration.
+Its operations retain their existing names and signatures, and its declarations retain their export annotations.
+For example, Runtime's C-linkage entry points pass `Slang::String` by value, and the string and native-ownership declarations, including `Slang::RefObject`, carry `SLANG_RT_API` annotations.
+C linkage does not remove those C++ ABI requirements.
+A module namespace may re-export the same declaration with a `using` declaration or type alias; the class definition remains in its existing namespace.
+The pitch's correspondence between modules and C++ namespaces was tentative, so the prototype preserves these identities rather than requiring every declaration to move namespaces.
+Unannotated internal types may move to their owning module namespaces after their binary-interface uses are audited, as Random Numbers did.
+This limited namespace policy does not relax preservation of behavior or existing declaration names and signatures.
+
+The concrete downstream integration assignment is accepted as semantic ownership, but its implementations still compile into legacy `compiler-core`.
+Before their migration is accepted, source selection must remove those concrete implementations from Compiler Support and leave its shared services independent of Compiler policy.
+Existing test and other callers must retain access to the internal operations they currently obtain from static definitions, including when the final Compiler library hides those symbols.
+Moving the definitions into a shared Compiler library alone does not establish that linkability.
+The migration must account for those build consumers without assuming new product exports, another library, or a callback protocol; no such mechanism is selected here.
 
 ## Unresolved Architectural Dependencies
 
@@ -112,6 +141,11 @@ That target and variant ordering is acyclic; the final compiler is not the compi
 The organization must preserve that construction constraint.
 It does not establish acyclicity after those distinct targets are assigned to the broader modules proposed here.
 
+The compiler library variants contain ordinary session-creation and provider-loading services in their shared implementation.
+The bootstrap driver's particular construction invocations select session modes that do not require already-generated built-ins.
+Those invocations explain how the build proceeds, but do not remove the libraries' other capabilities from the architecture.
+Separating target names or shared interfaces therefore does not prove an acyclic combined link, load, and construction graph.
+
 Collapsing the observed link, load, and construction dependencies to the proposed owners exposes unresolved cycles:
 
 - Compiler requires the bootstrap executable in tools to construct bundled language-library contents, while that bootstrap executable links a compiler variant.
@@ -119,12 +153,16 @@ Collapsing the observed link, load, and construction dependencies to the propose
 - Compiler loads compiled-library wrappers assigned to adapters, while constructing those wrappers requires language-library contents prepared by compiler.
   Assigning the implementation and its generated contents to different owners yields compiler to adapters to compiler.
   The GLSL wrapper and optional `slang-standard-modules` wrapper both expose this ownership question.
-- Compiler support locates and loads adapter implementations, while the LLVM adapter links compiler support.
-  `LLVMDownstreamCompilerUtil::locateCompilers` and the `slang-llvm` link dependencies expose compiler support to adapters to compiler support.
 
-Extracting a shared interface does not remove any of those runtime implementation or generated-input dependencies.
-The compiler, compiler-support, adapters, and tools assignments therefore remain provisional and require architectural revisiting.
-The proposed hierarchy has not yet satisfied its acyclicity requirement for those portions of the implementation.
+The current `compiler-core` implementation also loads adapter implementations while the LLVM adapter links `compiler-core`.
+The accepted Downstream Tools assignment gives Compiler ownership of the complete concrete client service.
+The current `compiler-core` to `slang-llvm` to `compiler-core` cycle remains until the implementations and their build consumers follow that assignment.
+Moving a shared header or only `LLVMDownstreamCompilerUtil::locateCompilers` would leave the remaining concrete calls unaccounted for.
+
+The compiler/bootstrap/provider assignments and the physical ownership of reused compiler and driver implementations still require a decision about artifacts and construction stages.
+Foundation's existing separate runtime compilation must also be represented explicitly in that model.
+The preservation contracts above do not select a general source-reuse rule or qualify the acyclicity requirement.
+The affected artifact assignments and the whole architecture remain provisional while those rules are unmet.
 
 ## Existing Implementation Mapping
 
@@ -134,16 +172,19 @@ The assignments identify concerns rather than wholesale file moves; shared files
 
 - **`old-source/core/`**
   Foundation owns the reusable services currently built into the static `core` target by `old-source/core/CMakeLists.txt`.
-  Runtime also compiles these files, so migration affects both builds.
+  Runtime also compiles these files under its own export settings, so migration preserves both consumers of the one Foundation-owned implementation.
 
 - **`old-source/compiler-core/`**
-  Compiler support owns the services currently built into the static `compiler-core` target by its local `CMakeLists.txt`.
-  Its lexer, diagnostics, compilation-output services, downstream integrations, and JSON/protocol code still require internal decomposition.
+  Compiler Support owns its shared services for program text, lexing, diagnostics, compilation outputs, downstream contracts, and JSON/protocol data.
+  Compiler's Downstream Tools owns the complete concrete integrations identified in [Compiler's mapping](compiler/compiler.md#existing-implementation-mapping), including actual invocation and output parsing.
+  The local `CMakeLists.txt` still builds both groups into static `compiler-core`; these are partial responsibility assignments, not completed source or build changes.
 
 - **`old-source/slang/`**
   Compiler owns most of this directory: compiler API/session coordination, front end, IR, transformations, target emission, layout/reflection, serialization, and editing services.
   Its `.meta.slang` inputs and bundled-library preparation also belong to the compiler concern.
   The generated capability/lookup objects and fiddle output are build components of that implementation, not separate product libraries.
+  Compiler DLL Proxy owns only the conditional Windows `slang-proxy` construction and installation concern in this directory's `CMakeLists.txt`, including the generated forwarding stub and export list.
+  Compiler retains the final library, its variants, and its Unix compatibility symlink packaging.
 
 - **`old-source/slang-record-replay/`**
   Compiler owns the recording and replay integration.
@@ -172,7 +213,7 @@ The assignments identify concerns rather than wholesale file moves; shared files
 
 - **`old-source/slang-glslang/`**
   Adapters owns the optional `slang-glslang` runtime-loaded implementation defined by its local `CMakeLists.txt`.
-  Compiler support owns the shared request contract currently in `slang-glslang.h`, which compiler support already includes when locating the library.
+  Compiler Support owns the shared request contract currently in `slang-glslang.h`; the concrete locating and invoking client still in `old-source/compiler-core/slang-glslang-compiler.cpp` belongs to Compiler's Downstream Tools.
   This is a partial assignment of the directory.
 
 - **`old-source/slang-llvm/`**
