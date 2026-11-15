@@ -164,7 +164,8 @@ They propose service ownership and do not authorize moving a file wholesale.
 - **Blobs:** `slang-blob.{h,cpp}`, except the `ScopedAllocation` class assigned to Memory.
   The blob-facing `StringUtil` operations in `slang-string-util.{h,cpp}` cross the text/blob boundary discussed below.
 - **Command Options:** `slang-command-options.{h,cpp}` and `slang-command-options-writer.{h,cpp}`.
-  These hold generic descriptions and help formatting; compiler-specific option tables remain with the compiler concern.
+  These hold reusable descriptions and help composition for Slang tools, including the complete text renderer's built-in `slangc -h` guidance and `Internal`/`Repro` category filtering.
+  Compiler-specific option tables, argument interpretation, and compilation-request policy remain with the compiler concern.
 - **Host Services:** `slang-io.{h,cpp}`, `slang-stream.{h,cpp}`, `slang-text-io.{h,cpp}`, `slang-command-line.{h,cpp}`, `slang-process.h`, `slang-process-util.{h,cpp}`, `windows/slang-win-process.cpp`, `unix/slang-unix-process.cpp`, `slang-platform.{h,cpp}`, and `slang-shared-library.{h,cpp}`.
   The generic `MemoryReader` at the end of `slang-riff.h` also belongs here as in-memory byte I/O; it reads and skips bytes without interpreting RIFF structure.
   Despite its name, `slang-platform.h` principally declares host queries and dynamic-library operations; the basic platform-selection macros already come from the product headers.
