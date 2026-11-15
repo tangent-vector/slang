@@ -67,7 +67,7 @@ The compiler-specific material presently compiled into `core` requires the expli
 
 ## Candidate Decomposition
 
-Every child in this list is public within Foundation: existing code outside `source/core/` uses the corresponding services.
+Every child in this list is public within Foundation: existing code outside `old-source/core/` uses the corresponding services.
 Public visibility has the implementation-only meaning defined by the root document.
 Platform branches and individual compression or archive implementations do not become separate child modules merely because their files are separate.
 The children's own refinement determines their internal public and private organization.
@@ -128,7 +128,7 @@ This list explains current relationships; the unresolved cycles prevent treating
 
 ## Existing Implementation Mapping
 
-All paths below refer to the current `source/core/` directory unless another directory is stated.
+All paths below refer to the current `old-source/core/` directory unless another directory is stated.
 A basename with `{h,cpp}` denotes both existing files; a name ending in `.h` identifies that header alone.
 These assignments cover the directory, including the partial-file and deferred assignments following the list.
 They propose service ownership and do not authorize moving a file wholesale.
@@ -178,13 +178,13 @@ It assembles services assigned to several children and therefore belongs to Foun
 The following files require ancestor ownership decisions rather than an invented Foundation service:
 
 - `slang-type-text-util.{h,cpp}` and `slang-type-convert-util.{h,cpp}` describe compiler targets, source languages, and compiler settings.
-  Compiler support is a candidate owner for the shared mappings used by both `source/compiler-core/` and `source/slang/`.
+  Compiler support is a candidate owner for the shared mappings used by both `old-source/compiler-core/` and `old-source/slang/`.
   The archive-name and file-system-mode entries within `TypeTextUtil` also need separation from that compiler policy; the generic `NameValueUtil` machinery is already assigned to Text.
 - `slang-builtin-module-cache.{h,cpp}` reads and writes timestamp-prefixed serialized built-in language modules.
-  Its callers in `source/slang/slang-api.cpp` and `tools/slang-core-module-cache/` make the compiler's bundled-library preparation/loading concern a candidate owner.
+  Its callers in `old-source/slang/slang-api.cpp` and `tools/slang-core-module-cache/` make the compiler's bundled-library preparation/loading concern a candidate owner.
   It is distinct from Foundation's generic digest-to-blob persistent cache.
 - `slang-render-api-util.{h,cpp}` holds rendering API names, flags, and availability policy used by `tools/gfx/`, `tools/render-test/`, and `tools/slang-test/`.
-  The root must determine ownership alongside those existing tools, whose implementations are outside this trial's initial `source/` mapping.
+  The root must determine ownership alongside those existing tools, whose implementations are outside this trial's initial `old-source/` mapping.
 - Apart from the common status declarations noted above, `slang-test-tool-util.{h,cpp}` mixes executable layout, compiler-session prelude setup, command-line compilation modes, and test selection.
   The compiler-session and test-policy operations require an owner above Foundation; generic path operations may use Host Services without making the entire utility a host service.
 
@@ -235,7 +235,7 @@ Archives refinement must retain one explicit owner for archive format selection 
 
 ### Build Consumers and Ancestor Decisions
 
-`source/slang-rt/CMakeLists.txt` also compiles the core implementations using runtime export settings, rather than linking the `core` archive.
+`old-source/slang-rt/CMakeLists.txt` also compiles the core implementations using runtime export settings, rather than linking the `core` archive.
 Every transferred implementation must therefore preserve both the static-core consumer and this separately compiled runtime consumer.
 Moving files into candidate ordinary modules does not change that requirement or establish new installed libraries.
 

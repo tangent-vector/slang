@@ -2,12 +2,12 @@
 -- This file provides helper functions for FIDDLE templates in slang-rich-diagnostics.h
 
 -- Load shared helpers for edit distance functions
-local helpers = dofile("source/slang/slang-diagnostics-helpers.lua")
+local helpers = dofile("old-source/slang/slang-diagnostics-helpers.lua")
 local edit_distance = helpers.edit_distance
 local find_similar = helpers.find_similar
 
 -- Load the diagnostic definitions (this processes using helpers internally)
-local diagnostics_module = dofile("source/slang/slang-diagnostics.lua")
+local diagnostics_module = dofile("old-source/slang/slang-diagnostics.lua")
 
 local M = {}
 

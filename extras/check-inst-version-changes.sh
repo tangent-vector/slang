@@ -25,14 +25,19 @@ fi
 # only get a restricted GITHUB_TOKEN with no `gh` auth — exactly the PRs this
 # check is meant to run on.
 
+# We compare both implementation locations together so Git can recognize a moved file
+# instead of reporting all its unchanged version constants as added lines.
+
 # Function to check if module ir version constants were modified
 check_module_versions_modified() {
   local base_ref="$1"
 
   # Check if slang-ir.h was modified and if the version constants were changed
-  if git diff --name-only "$base_ref...HEAD" | grep -q "^source/slang/slang-ir\.h$"; then
+  if git diff --name-only "$base_ref...HEAD" | grep -Eq "^(old-)?source/slang/slang-ir\.h$"; then
     # Check if either version constant was modified
-    if git diff "$base_ref...HEAD" -- source/slang/slang-ir.h | grep -E "^\+.*k_(min|max)SupportedModuleVersion\s*="; then
+    if git diff --find-renames "$base_ref...HEAD" -- \
+      source/slang/slang-ir.h old-source/slang/slang-ir.h |
+      grep -E "^\+.*k_(min|max)SupportedModuleVersion\s*="; then
       debug_log "Module version constants were modified"
       return 0
     fi
@@ -47,7 +52,10 @@ check_serialization_version_modified() {
   local base_ref="$1"
 
   # Check if the serialization version constant was modified
-  if git diff "$base_ref...HEAD" -- source/slang/slang-serialize-ir.cpp | grep -E "^\+.*kSupportedSerializationVersion\s*="; then
+  if git diff --find-renames "$base_ref...HEAD" -- \
+    source/slang/slang-serialize-ir.cpp \
+    old-source/slang/slang-serialize-ir.cpp |
+    grep -E "^\+.*kSupportedSerializationVersion\s*="; then
     debug_log "Serialization version constant was modified"
     return 0
   fi
@@ -89,14 +97,14 @@ debug_log "$CHANGED_FILES"
 
 # Check for changes in IR instruction files
 INST_FILES_CHANGED=false
-if echo "$CHANGED_FILES" | grep -E "^source/slang/slang-ir-insts(-stable-names)?\.lua$"; then
+if echo "$CHANGED_FILES" | grep -E "^(old-)?source/slang/slang-ir-insts(-stable-names)?\.lua$"; then
   INST_FILES_CHANGED=true
   debug_log "IR instruction files have changed"
 fi
 
 # Check for changes in serialization file
 SERIALIZE_CHANGED=false
-if echo "$CHANGED_FILES" | grep -q "^source/slang/slang-serialize-ir\.cpp$"; then
+if echo "$CHANGED_FILES" | grep -Eq "^(old-)?source/slang/slang-serialize-ir\.cpp$"; then
   SERIALIZE_CHANGED=true
   debug_log "Serialization file has changed"
 fi
@@ -119,7 +127,7 @@ if [[ "$INST_FILES_CHANGED" == "true" ]]; then
     fi
     COMMENT_BODY="${COMMENT_BODY}⚠️ **IR Instruction Files Changed**
 
-This PR modifies IR instruction definition files. Please review if you need to update the following constants in \`source/slang/slang-ir.h\`:
+This PR modifies IR instruction definition files. Please review if you need to update the following constants in \`old-source/slang/slang-ir.h\`:
 
 - \`k_minSupportedModuleVersion\`: Should be incremented if you're removing instructions or making breaking changes
 - \`k_maxSupportedModuleVersion\`: Should be incremented when adding new instructions
@@ -143,7 +151,7 @@ if [[ "$SERIALIZE_CHANGED" == "true" ]]; then
     fi
     COMMENT_BODY="${COMMENT_BODY}⚠️ **Serialization Code Changed**
 
-This PR modifies \`source/slang/slang-serialize-ir.cpp\`. Please review if you need to update:
+This PR modifies \`old-source/slang/slang-serialize-ir.cpp\`. Please review if you need to update:
 
 - \`kSupportedSerializationVersion\`: Should be incremented if you're making backwards-incompatible changes to the serialization format
 

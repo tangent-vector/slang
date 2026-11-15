@@ -7,6 +7,12 @@ watched_paths_digest: 420d22e36762196fb735538454cabb173bfdf2b017241535d0a3ffa6e9
 warning: "Auto-generated. May drift from source. Do not edit by hand."
 ---
 
+<!--
+Local implementation link destinations were mechanically relocated from
+source/ to old-source/ for this checkout.
+The `source_commit` and `watched_paths_digest` above still record the original generation inputs.
+-->
+
 # Token Reference
 
 This document catalogs the tokens emitted by the Slang lexer. The
@@ -17,19 +23,19 @@ that consumes Slang source.
 
 The catalog is reverse-engineered from:
 
-- [slang-token.h](../../../../source/compiler-core/slang-token.h) —
+- [slang-token.h](../../../../old-source/compiler-core/slang-token.h) —
   `Token`, `TokenType`, `TokenFlags`.
-- [slang-token-defs.h](../../../../source/compiler-core/slang-token-defs.h)
+- [slang-token-defs.h](../../../../old-source/compiler-core/slang-token-defs.h)
   — the X-macro list of every `TokenType` value, included by
-  [slang-token.h](../../../../source/compiler-core/slang-token.h) and
+  [slang-token.h](../../../../old-source/compiler-core/slang-token.h) and
   several other places.
-- [slang-token.cpp](../../../../source/compiler-core/slang-token.cpp)
+- [slang-token.cpp](../../../../old-source/compiler-core/slang-token.cpp)
   — `TokenTypeToString`, which expands the same definition list into
   the diagnostic spelling for each kind.
-- [slang-lexer.h](../../../../source/compiler-core/slang-lexer.h) /
-  [slang-lexer.cpp](../../../../source/compiler-core/slang-lexer.cpp)
+- [slang-lexer.h](../../../../old-source/compiler-core/slang-lexer.h) /
+  [slang-lexer.cpp](../../../../old-source/compiler-core/slang-lexer.cpp)
   — the tokenizer that produces them.
-- [slang-preprocessor.cpp](../../../../source/slang/slang-preprocessor.cpp)
+- [slang-preprocessor.cpp](../../../../old-source/slang/slang-preprocessor.cpp)
   — the consumer that reads the token flags, and the owner of
   angle-bracket include-path assembly in `HandleIncludeDirective`.
 
@@ -39,7 +45,7 @@ Tokens come in five groups: end markers, content tokens (literals
 and identifiers), trivia (whitespace and comments), preprocessor
 markers, and punctuation / operators. The `PUNCTUATION(id, text)`
 macro in
-[slang-token-defs.h](../../../../source/compiler-core/slang-token-defs.h)
+[slang-token-defs.h](../../../../old-source/compiler-core/slang-token-defs.h)
 expands to a `TOKEN(id, "'<text>'")` so every punctuation kind is
 both a `TokenType` enumerator and a string used in diagnostics. The
 "Lexer source range" column points at the lexer code that emits the
@@ -57,7 +63,7 @@ consumes one and records `ScrubbingNeeded`).
 | --- | --- | --- |
 | `Unknown` | default-constructed `Token` | Should not appear in valid input |
 | `EndOfFile` | `kEOF` arm of `_lexTokenImpl` (`slang-lexer.cpp` around line 1974) | Returned when the lexer reaches end of input |
-| `Invalid` | fall-through block at the end of `_lexTokenImpl` (`slang-lexer.cpp` lines 2440-2470) | Lexer hit a character that matched no dispatch arm and is not a non-ASCII code point (those are folded into identifiers); it chooses between `illegalCharacterPrint`, `unexpectedEndOfInput`, and `illegalCharacterHex` by the character's value, and skips the diagnostic entirely when `kLexerFlag_SuppressDiagnostics` is set (see `Lexer::getDiagnosticSink` in [slang-lexer.h](../../../../source/compiler-core/slang-lexer.h)). The `Invalid` token is produced either way |
+| `Invalid` | fall-through block at the end of `_lexTokenImpl` (`slang-lexer.cpp` lines 2440-2470) | Lexer hit a character that matched no dispatch arm and is not a non-ASCII code point (those are folded into identifiers); it chooses between `illegalCharacterPrint`, `unexpectedEndOfInput`, and `illegalCharacterHex` by the character's value, and skips the diagnostic entirely when `kLexerFlag_SuppressDiagnostics` is set (see `Lexer::getDiagnosticSink` in [slang-lexer.h](../../../../old-source/compiler-core/slang-lexer.h)). The `Invalid` token is produced either way |
 
 ### Content tokens
 
@@ -71,7 +77,7 @@ consumes one and records `ScrubbingNeeded`).
 
 Neither numeric rule validates its suffix, so there is no fixed suffix
 set at lex time: `_maybeLexNumberSuffix`
-([slang-lexer.cpp](../../../../source/compiler-core/slang-lexer.cpp)
+([slang-lexer.cpp](../../../../old-source/compiler-core/slang-lexer.cpp)
 lines 561-583) folds *any* run of ASCII letters, digits, and
 underscores after the numeric body into the token's raw text, and
 leaves the meaning to the consumer. Suffix acceptance and its
@@ -122,8 +128,8 @@ Listed by spelling; the lexer routes each through the per-character
 | `RightArrow` | `->` punctuation | Function return type, member access through pointer |
 | `DoubleRightArrow` | `=>` punctuation | Lambda syntax (its only parser consumer) |
 | `At` | `@` punctuation (`slang-lexer.cpp` lines 2418-2420) | Lexed as a distinct kind; no parser consumer at this commit |
-| `Dollar` | `$` punctuation (`slang-lexer.cpp` lines 2421-2430) | Prefixes a Slang value operand inside a `spirv_asm` block (`$this`, `$location` in [hlsl.meta.slang](../../../../source/slang/hlsl.meta.slang) line 1437); also introduces the compile-time `$for` statement, which `parseCompileTimeStmt` in [slang-parser.cpp](../../../../source/slang/slang-parser.cpp) (line 7268) still reads but diagnoses as deprecated from language version 2025 and as removed from 202c |
-| `DollarDollar` | `$$` punctuation (`slang-lexer.cpp` lines 2421-2430) | Prefixes a Slang *type* operand inside a `spirv_asm` block (`result:$$float2` in [hlsl.meta.slang](../../../../source/slang/hlsl.meta.slang) line 1437) |
+| `Dollar` | `$` punctuation (`slang-lexer.cpp` lines 2421-2430) | Prefixes a Slang value operand inside a `spirv_asm` block (`$this`, `$location` in [hlsl.meta.slang](../../../../old-source/slang/hlsl.meta.slang) line 1437); also introduces the compile-time `$for` statement, which `parseCompileTimeStmt` in [slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp) (line 7268) still reads but diagnoses as deprecated from language version 2025 and as removed from 202c |
+| `DollarDollar` | `$$` punctuation (`slang-lexer.cpp` lines 2421-2430) | Prefixes a Slang *type* operand inside a `spirv_asm` block (`result:$$float2` in [hlsl.meta.slang](../../../../old-source/slang/hlsl.meta.slang) line 1437) |
 
 ### Operators
 
@@ -134,7 +140,7 @@ rule as nested lookahead rather than a table: an arm of the outer
 per-character `switch` consumes its character and then switches again
 on `_peek`, returning the shorter kind only from a `default:` arm. The
 `>`-prefixed family is the worked example
-([slang-lexer.cpp](../../../../source/compiler-core/slang-lexer.cpp)
+([slang-lexer.cpp](../../../../old-source/compiler-core/slang-lexer.cpp)
 lines 2292-2311) — a second `>` is consumed, and a following `=` then
 yields `OpShrAssign`, so `>>=` is a single token; without the `=` the
 inner arm falls back to `OpRsh`, an `=` directly after the first `>`
@@ -182,7 +188,7 @@ resolved the same way. The choice is made with no parse context; the
 ## Token data layout
 
 The `Token` struct in
-[slang-token.h](../../../../source/compiler-core/slang-token.h) carries:
+[slang-token.h](../../../../old-source/compiler-core/slang-token.h) carries:
 
 ```cpp
 class Token
@@ -212,7 +218,7 @@ refers to scrubbed text in lexer-owned arena memory instead.
 ## Token flags
 
 `TokenFlag` (declared in
-[slang-token.h](../../../../source/compiler-core/slang-token.h)) is a
+[slang-token.h](../../../../old-source/compiler-core/slang-token.h)) is a
 bitmask that records lexical properties:
 
 | Flag | Meaning |
@@ -226,7 +232,7 @@ The reader-facing consequence of the `AtStartOfLine` carve-out is that
 a preprocessor directive body may be continued onto the next physical
 line. A directive body runs to the next `NewLine` *token* (`IsEndOfLine`
 in
-[slang-preprocessor.cpp](../../../../source/slang/slang-preprocessor.cpp)
+[slang-preprocessor.cpp](../../../../old-source/slang/slang-preprocessor.cpp)
 lines 2700-2712), and a folded continuation emits none, so this is one
 macro whose body is `((x) + 1)`:
 
@@ -237,13 +243,13 @@ macro whose body is `((x) + 1)`:
 
 Directive *recognition* is the reader of the flag itself: a `Pound`
 token starts a directive only when it carries `AtStartOfLine`
-([slang-preprocessor.cpp](../../../../source/slang/slang-preprocessor.cpp)
+([slang-preprocessor.cpp](../../../../old-source/slang/slang-preprocessor.cpp)
 line 4896).
 
 ## Special-case lexing rules
 
 The lexer in
-[slang-lexer.cpp](../../../../source/compiler-core/slang-lexer.cpp)
+[slang-lexer.cpp](../../../../old-source/compiler-core/slang-lexer.cpp)
 implements several context-sensitive rules:
 
 - **Backslash line continuation.** A `\` immediately before a newline
@@ -265,7 +271,7 @@ implements several context-sensitive rules:
 - **`<...>` after `#include`.** The lexer has no include-header mode:
   it emits ordinary `OpLess`, path, and `OpGreater` tokens.
   `HandleIncludeDirective` in
-  [slang-preprocessor.cpp](../../../../source/slang/slang-preprocessor.cpp)
+  [slang-preprocessor.cpp](../../../../old-source/slang/slang-preprocessor.cpp)
   reassembles the path by concatenating the contents of the tokens
   between `<` and `>`; the quoted form is a single `StringLiteral`.
 - **Raw string literals.** A string opened with `R"delimiter(` is
@@ -310,7 +316,7 @@ implements several context-sensitive rules:
   legacy MSVC infinity form (`0#INF`) is lexed as a
   `FloatingPointLiteral`, matching the `1e10` / `1#INF` forms. The
   `default:` arm of the `0` branch in `_lexTokenImpl`
-  ([slang-lexer.cpp](../../../../source/compiler-core/slang-lexer.cpp)
+  ([slang-lexer.cpp](../../../../old-source/compiler-core/slang-lexer.cpp)
   line 2059) consults `_maybeLexNumberExponent` (line 608) before
   falling back to an `IntegerLiteral`; without it the exponent would be
   swallowed as an integer suffix. The sibling arms of the same branch
@@ -318,7 +324,7 @@ implements several context-sensitive rules:
   digit run that is lexed base-8 after a `LexerDiagnostics::octalLiteral`
   diagnostic). That octal diagnostic is a *warning* — W10002, `'0'
   prefix indicates octal literal`, declared in
-  [slang-lexer-diagnostic-defs.h](../../../../source/compiler-core/slang-lexer-diagnostic-defs.h)
+  [slang-lexer-diagnostic-defs.h](../../../../old-source/compiler-core/slang-lexer-diagnostic-defs.h)
   line 27 — so lexing is not gated on it: the literal is still lexed
   and decoded base-8, and an octal literal compiles.
 
@@ -339,8 +345,8 @@ implements several context-sensitive rules:
 
 Every token's `SourceLoc` is a 32-bit integer decoded by
 `SourceManager`
-([slang-source-loc.h](../../../../source/compiler-core/slang-source-loc.h),
-[slang-source-loc.cpp](../../../../source/compiler-core/slang-source-loc.cpp)).
+([slang-source-loc.h](../../../../old-source/compiler-core/slang-source-loc.h),
+[slang-source-loc.cpp](../../../../old-source/compiler-core/slang-source-loc.cpp)).
 The integer is a key into one `SourceView`, not a pair of locations:
 the interpretation is chosen by the `SourceLocType` argument
 (`Nominal`, which honours `#line` directives and source maps;

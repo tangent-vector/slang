@@ -7,7 +7,7 @@ slang_add_target(
     LINK_WITH_PRIVATE miniz lz4_static Threads::Threads ${CMAKE_DL_LIBS}
     LINK_WITH_PUBLIC unordered_dense::unordered_dense
     INCLUDE_DIRECTORIES_PUBLIC
-        ${slang_SOURCE_DIR}/source
+        ${SLANG_LEGACY_SOURCE_DIR}
         ${slang_SOURCE_DIR}/include
     PRECOMPILE_HEADERS
         ${CMAKE_CURRENT_SOURCE_DIR}/slang-basic.h

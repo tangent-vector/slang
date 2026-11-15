@@ -7,6 +7,12 @@ watched_paths_digest: c0c551c26b5c6b8cdcd2fff95ae01f9403452087dcb8bccb74fe55a8a5
 warning: "Auto-generated. May drift from source. Do not edit by hand."
 ---
 
+<!--
+Local implementation link destinations were mechanically relocated from
+source/ to old-source/ for this checkout.
+The `source_commit` and `watched_paths_digest` above still record the original generation inputs.
+-->
+
 # Compilation Pipeline Overview
 
 This document is the index to the per-stage pipeline documents under
@@ -45,11 +51,11 @@ begins.
 
 Driven by:
 
-- [slang-lexer.cpp](../../../../source/compiler-core/slang-lexer.cpp)
+- [slang-lexer.cpp](../../../../old-source/compiler-core/slang-lexer.cpp)
   (lexer)
-- [slang-preprocessor.cpp](../../../../source/slang/slang-preprocessor.cpp)
+- [slang-preprocessor.cpp](../../../../old-source/slang/slang-preprocessor.cpp)
   (preprocessor and `#include`)
-- [slang-include-system.cpp](../../../../source/compiler-core/slang-include-system.cpp)
+- [slang-include-system.cpp](../../../../old-source/compiler-core/slang-include-system.cpp)
   (path resolution)
 
 Detail: [01-lex-preprocess.md](01-lex-preprocess.md).
@@ -65,9 +71,9 @@ comparison disambiguation has type information to lean on.
 
 Driven by:
 
-- [slang-parser.cpp](../../../../source/slang/slang-parser.cpp)
+- [slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp)
 - the `slang-ast-*.h` headers under
-  [source/slang/](../../../../source/slang) (AST data model)
+  [source/slang/](../../../../old-source/slang) (AST data model)
 
 Detail: [02-parse-ast.md](02-parse-ast.md).
 
@@ -80,12 +86,12 @@ synthesizes default conformance witnesses and generated members.
 
 Driven by:
 
-- [slang-check.cpp](../../../../source/slang/slang-check.cpp)
+- [slang-check.cpp](../../../../old-source/slang/slang-check.cpp)
 - the per-concern files
-  ([slang-check-decl.cpp](../../../../source/slang/slang-check-decl.cpp),
-  [slang-check-expr.cpp](../../../../source/slang/slang-check-expr.cpp),
-  [slang-check-stmt.cpp](../../../../source/slang/slang-check-stmt.cpp),
-  ..., [slang-check-shader.cpp](../../../../source/slang/slang-check-shader.cpp))
+  ([slang-check-decl.cpp](../../../../old-source/slang/slang-check-decl.cpp),
+  [slang-check-expr.cpp](../../../../old-source/slang/slang-check-expr.cpp),
+  [slang-check-stmt.cpp](../../../../old-source/slang/slang-check-stmt.cpp),
+  ..., [slang-check-shader.cpp](../../../../old-source/slang/slang-check-shader.cpp))
 
 Detail: [03-semantic-check.md](03-semantic-check.md).
 
@@ -106,8 +112,8 @@ detail doc for the mechanics.
 
 Driven by:
 
-- [slang-lower-to-ir.cpp](../../../../source/slang/slang-lower-to-ir.cpp)
-- [slang-ir.cpp](../../../../source/slang/slang-ir.cpp) (`IRBuilder`,
+- [slang-lower-to-ir.cpp](../../../../old-source/slang/slang-lower-to-ir.cpp)
+- [slang-ir.cpp](../../../../old-source/slang/slang-ir.cpp) (`IRBuilder`,
   hoistable / global value deduplication)
 
 Detail: [04-ast-to-ir.md](04-ast-to-ir.md).
@@ -115,10 +121,10 @@ Detail: [04-ast-to-ir.md](04-ast-to-ir.md).
 ### IR passes
 
 The `linkAndOptimizeIR` function in
-[slang-emit.cpp](../../../../source/slang/slang-emit.cpp) (line 1015 at
+[slang-emit.cpp](../../../../old-source/slang/slang-emit.cpp) (line 1015 at
 `source_commit`) drives a long, target-sensitive sequence of IR
 transformations between lowering and emit. The
-[source/slang/](../../../../source/slang) directory contains 167
+[source/slang/](../../../../old-source/slang) directory contains 167
 `slang-ir-*.cpp` files implementing analyses, validations,
 specializations, legalizations, and target-specific lowerings.
 
@@ -130,7 +136,7 @@ the emitter.
 
 Driven by:
 
-- [slang-emit.cpp](../../../../source/slang/slang-emit.cpp) (orchestrator)
+- [slang-emit.cpp](../../../../old-source/slang/slang-emit.cpp) (orchestrator)
 - the `slang-ir-*` family (individual passes)
 
 Detail: [05-ir-passes.md](05-ir-passes.md).
@@ -139,7 +145,7 @@ Detail: [05-ir-passes.md](05-ir-passes.md).
 
 `CodeGenContext::emitEntryPoints` selects a dispatch path per
 `TargetRequest`. Textual targets go to `emitEntryPointsSourceFromIR`
-([slang-emit.cpp](../../../../source/slang/slang-emit.cpp) line 2968 at
+([slang-emit.cpp](../../../../old-source/slang/slang-emit.cpp) line 2968 at
 `source_commit`), which picks a C-like source emitter — HLSL, GLSL,
 Metal, WGSL, C++, or CUDA, each of which emits for any entry point —
 or the Torch glue emitter. Torch glue differs from the others: the
@@ -152,28 +158,28 @@ native via `slang-llvm`, and VM bytecode) are dispatched separately.
 
 Driven by:
 
-- [slang-code-gen.cpp](../../../../source/slang/slang-code-gen.cpp)
+- [slang-code-gen.cpp](../../../../old-source/slang/slang-code-gen.cpp)
   (per-target dispatcher; defines `CodeGenContext::emitEntryPoints`
   and `_emitEntryPoints`)
-- [slang-emit.cpp](../../../../source/slang/slang-emit.cpp) (linked-IR
+- [slang-emit.cpp](../../../../old-source/slang/slang-emit.cpp) (linked-IR
   and pass orchestration, plus the C-like source-emitter selection in
   `emitEntryPointsSourceFromIR`)
 - one `slang-emit-<target>.cpp` per backend
-  ([source/slang/](../../../../source/slang))
+  ([source/slang/](../../../../old-source/slang))
 
 Detail: [06-emit.md](06-emit.md).
 
 ## Driver entry points
 
 The high-level objects that orchestrate the stages above live in
-[source/slang/](../../../../source/slang):
+[source/slang/](../../../../old-source/slang):
 
-- [slang-compile-request.h](../../../../source/slang/slang-compile-request.h)
+- [slang-compile-request.h](../../../../old-source/slang/slang-compile-request.h)
   declares `FrontEndCompileRequest` / `CompileRequestBase`.
   `CompileRequestBase` holds the `Linkage` that owns the session and
   supplies the source manager, name pool, and file system used
   throughout parse and check;
-  [slang-compile-request.cpp](../../../../source/slang/slang-compile-request.cpp)
+  [slang-compile-request.cpp](../../../../old-source/slang/slang-compile-request.cpp)
   implements them and orchestrates the per-translation-unit front-
   end work. Its `checkAllTranslationUnits` (line 702 at
   `source_commit`) calls `checkTranslationUnit` once per unchecked
@@ -189,20 +195,20 @@ The high-level objects that orchestrate the stages above live in
   translation unit. The
   dictionary starts from `additionalLoadedModules` when the request
   carries one.
-- [slang-end-to-end-request.h](../../../../source/slang/slang-end-to-end-request.h)
+- [slang-end-to-end-request.h](../../../../old-source/slang/slang-end-to-end-request.h)
   declares `EndToEndCompileRequest`, which is what a single `slangc`
   invocation (or `slang::ICompileRequest`) becomes. Its
   implementation lives in
-  [slang-end-to-end-request.cpp](../../../../source/slang/slang-end-to-end-request.cpp).
-- [slang-module.h](../../../../source/slang/slang-module.h) declares
+  [slang-end-to-end-request.cpp](../../../../old-source/slang/slang-end-to-end-request.cpp).
+- [slang-module.h](../../../../old-source/slang/slang-module.h) declares
   `Module`, the result object the front-end produces (AST + IR) and
   the implementation of `IModule` from
   [include/slang.h](../../../../include/slang.h).
-- [slang-code-gen.cpp](../../../../source/slang/slang-code-gen.cpp) is
+- [slang-code-gen.cpp](../../../../old-source/slang/slang-code-gen.cpp) is
   the back-end target dispatcher invoked once the front-end has
   produced a composite `IComponentType` for the targets to be
   generated;
-  [slang-emit.cpp](../../../../source/slang/slang-emit.cpp) is the
+  [slang-emit.cpp](../../../../old-source/slang/slang-emit.cpp) is the
   linked-IR and IR-pass orchestrator it calls into, and also selects
   the C-like source emitter for textual targets.
 

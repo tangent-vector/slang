@@ -547,7 +547,7 @@ file does not flag the doc as stale. The recommended response is:
    `mark-fresh` it; otherwise regenerate first, then mark fresh.
 
 A concrete example surfaced during the Phase 4 exercise: a temporary
-edit to [source/compiler-core/slang-token-defs.h](../../../../source/compiler-core/slang-token-defs.h)
+edit to [source/compiler-core/slang-token-defs.h](../../../../old-source/compiler-core/slang-token-defs.h)
 flagged only `architecture/module-map.md` (whose `source/compiler-core/slang-*.h`
 glob caught it). Both `pipeline/01-lex-preprocess.md` and
 `syntax-reference/tokens.md` reverse-engineer their token catalogues from

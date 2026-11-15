@@ -7,6 +7,12 @@ watched_paths_digest: f39f7b2520b2e5061ebb8ffd7d9d6c3ee67d8463ef419fefebeebebc4a
 warning: "Auto-generated. May drift from source. Do not edit by hand."
 ---
 
+<!--
+Local implementation link destinations were mechanically relocated from
+source/ to old-source/ for this checkout.
+The `source_commit` and `watched_paths_digest` above still record the original generation inputs.
+-->
+
 # Statements Reference
 
 The reference for every concrete `Stmt` subclass in the Slang AST,
@@ -17,12 +23,12 @@ that handles statements.
 ## Source
 
 Statement classes are declared in
-[slang-ast-stmt.h](../../../../source/slang/slang-ast-stmt.h). `Stmt`
+[slang-ast-stmt.h](../../../../old-source/slang/slang-ast-stmt.h). `Stmt`
 itself is not declared there — it is one of the abstract roots in
-[slang-ast-base.h](../../../../source/slang/slang-ast-base.h).
+[slang-ast-base.h](../../../../old-source/slang/slang-ast-base.h).
 
 The parser entry point is `Parser::ParseStatement`
-([slang-parser.cpp](../../../../source/slang/slang-parser.cpp) line
+([slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp) line
 7281), a keyword-lookahead dispatcher that selects one of the
 `Parse*Statement` / `parse*Stmt` helpers; `Parser::parseBlockStatement`
 (line 7523) parses a `{ ... }` block. Both take an
@@ -215,7 +221,7 @@ that is not a `DeclStmt` or `ExpressionStmt` there (`E20001`) while still
 building the node. `UnscopedForStmt` is created instead of a `ForStmt`
 when `getSourceLanguage()` is `SourceLanguage::HLSL`, which for a
 command-line compile is decided in `OptionsParser::addInputPath`
-([slang-options.cpp](../../../../source/slang/slang-options.cpp) line
+([slang-options.cpp](../../../../old-source/slang/slang-options.cpp) line
 1927) from `-lang` or the file extension. In that case the parser fills
 in `scopeDecl` but never pushes the scope, so the loop variable leaks
 into the surrounding scope. `Parser::ParseDoStatement` (line 7916)
@@ -281,7 +287,7 @@ The checker restricts what the deferred statement may contain: a
 would leave it is `E30108` / `E30109`, and a `throw` that would escape
 it is also diagnosed (`visitReturnStmt`, `visitBreakStmt`,
 `visitContinueStmt` and `visitThrowStmt` in
-[slang-check-stmt.cpp](../../../../source/slang/slang-check-stmt.cpp),
+[slang-check-stmt.cpp](../../../../old-source/slang/slang-check-stmt.cpp),
 which test `FindOuterStmt<DeferStmt>`). What the deferred statement
 does at a `break` or `throw` exit is not stated here. See
 [../pipeline/04-ast-to-ir.md](../pipeline/04-ast-to-ir.md).

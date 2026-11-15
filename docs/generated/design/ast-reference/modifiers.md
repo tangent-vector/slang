@@ -7,6 +7,12 @@ watched_paths_digest: b01b225b8bde27c3d88361d42256af2a347366a98b51c393066f46d210
 warning: "Auto-generated. May drift from source. Do not edit by hand."
 ---
 
+<!--
+Local implementation link destinations were mechanically relocated from
+source/ to old-source/ for this checkout.
+The `source_commit` and `watched_paths_digest` above still record the original generation inputs.
+-->
+
 # Modifiers and Attributes Reference
 
 The reference for every concrete `Modifier` subclass in the Slang
@@ -33,11 +39,11 @@ Both are linked off `ModifiableSyntaxNode::modifiers` and walked with
 ## Source
 
 Modifier classes are declared in
-[slang-ast-modifier.h](../../../../source/slang/slang-ast-modifier.h),
+[slang-ast-modifier.h](../../../../old-source/slang/slang-ast-modifier.h),
 on top of the `Modifier` / `ModifiableSyntaxNode` pair in
-[slang-ast-base.h](../../../../source/slang/slang-ast-base.h).
+[slang-ast-base.h](../../../../old-source/slang/slang-ast-base.h).
 Parsing happens in
-[slang-parser.cpp](../../../../source/slang/slang-parser.cpp):
+[slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp):
 `parseAttributeName` and `ParseSquareBracketAttributes` handle the
 `[name(args)]` form, and `parseUncheckedGLSLLayoutAttribute` handles
 the valued entries of a GLSL `layout(...)` group. Attributes are
@@ -48,14 +54,14 @@ The *surface spelling* of an attribute is not declared in the C++
 modifier header at all. It comes from `attribute_syntax` declarations in
 four sources — three core-module `.meta.slang` files and one
 experimental standard module: the bulk in
-[core.meta.slang](../../../../source/slang/core.meta.slang), the
+[core.meta.slang](../../../../old-source/slang/core.meta.slang), the
 differentiability attributes (the markers in `core.meta.slang`, the
 derivative bindings in
-[diff.meta.slang](../../../../source/slang/diff.meta.slang)), the
+[diff.meta.slang](../../../../old-source/slang/diff.meta.slang)), the
 Vulkan pointer attributes in
-[hlsl.meta.slang](../../../../source/slang/hlsl.meta.slang), and the
+[hlsl.meta.slang](../../../../old-source/slang/hlsl.meta.slang), and the
 work-graph attributes in the experimental standard module
-[workgraph.slang](../../../../source/standard-modules/experimental/workgraph.slang).
+[workgraph.slang](../../../../old-source/standard-modules/experimental/workgraph.slang).
 The spellings quoted below were read from those four files, all of which
 this page watches, so renaming a spelling marks the page stale.
 
@@ -446,7 +452,7 @@ resolves against an `AttributeDecl` registered under the name
 `IntrinsicOpModifier` binds a core-module function declaration to the
 Slang IR opcode it lowers to. For example,
 `__intrinsic_op(select) T select(bool condition, T ifTrue, T ifFalse)` in
-[core.meta.slang](../../../../source/slang/core.meta.slang) (line 1117)
+[core.meta.slang](../../../../old-source/slang/core.meta.slang) (line 1117)
 carries an `IntrinsicOpModifier` whose `op` is the `select` opcode, so
 lowering emits that opcode without recognizing the function by name. By
 contrast, `sin` in `hlsl.meta.slang` has no opcode binding; it uses
@@ -550,7 +556,7 @@ and [../pipeline/05-ir-passes.md](../pipeline/05-ir-passes.md).
 The eight `Node*` / `MaxRecords` / `AllowSparseNodes` attribute classes
 have their spellings declared outside `core.meta.slang`, in the
 experimental
-[workgraph.slang](../../../../source/standard-modules/experimental/workgraph.slang)
+[workgraph.slang](../../../../old-source/standard-modules/experimental/workgraph.slang)
 standard module; the derivative-binding attributes
 (`diff.meta.slang`) and the Vulkan pointer attributes
 (`hlsl.meta.slang`) are other groups outside it. Reading only

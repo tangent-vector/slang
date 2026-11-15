@@ -3155,7 +3155,7 @@ struct IRCompilerDictionaryEntry : IRInst
 
 // Generate struct definitions for all IR instructions not explicitly defined in this file
 #if 0 // FIDDLE TEMPLATE:
-% local lua_module = require("source/slang/slang-ir.h.lua")
+% local lua_module = require("old-source/slang/slang-ir.h.lua")
 % local inst_structs = lua_module.getAllOtherInstStructsData()
 % for _, inst in ipairs(inst_structs) do
 struct IR$(inst.struct_name) : IR$(inst.parent_struct)
@@ -3354,7 +3354,7 @@ public:
     IRBasicType* getBasicType(BaseType baseType);
 
 #if 0 // FIDDLE TEMPLATE:
-%local ir_lua = require("source/slang/slang-ir.h.lua")
+%local ir_lua = require("old-source/slang/slang-ir.h.lua")
 %local basic_types = ir_lua.getBasicTypesForBuilderMethods()
 %for _, type_info in ipairs(basic_types) do
 %  -- Declare variables for both variadic and non-variadic cases

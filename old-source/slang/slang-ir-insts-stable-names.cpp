@@ -5,7 +5,7 @@ namespace Slang
 
 static constexpr UInt kOpcodeToStableName[] = {
 #if 0 // FIDDLE TEMPLATE:
-% local insts = require("source/slang/slang-ir-insts.lua")
+% local insts = require("old-source/slang/slang-ir-insts.lua")
 % insts.traverse(function(inst)
 %   if inst.is_leaf then
 %     if inst.stable_name == nil then 
@@ -23,7 +23,7 @@ static constexpr UInt kOpcodeToStableName[] = {
 
 static constexpr IROp kStableNameToOpcode[] = {
 #if 0 // FIDDLE TEMPLATE:
-% local insts = require("source/slang/slang-ir-insts.lua")
+% local insts = require("old-source/slang/slang-ir-insts.lua")
 % for i = 0, insts.max_stable_name do 
 %   inst = insts.stable_name_to_inst[i]
 %   if inst then

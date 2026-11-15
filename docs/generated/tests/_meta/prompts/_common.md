@@ -4,6 +4,11 @@ These rules apply to every per-section prompt under this directory. The
 per-section prompt extends or overrides them; if there is a conflict, the
 per-section prompt wins for that bundle.
 
+On this refactoring branch, `old-source/` holds the legacy implementation and `source/` holds the new module hierarchy.
+Historical `source/` implementation examples in prompts refer to the corresponding `old-source/` files until those files are ported.
+Newly generated links must still resolve at that generation's `source_commit`.
+Some historical design pages have an HTML comment recording a mechanical relocation of local implementation links; their generation and review metadata still describe the original inputs.
+
 ## What you are producing
 
 You are producing a **test bundle**: a directory at

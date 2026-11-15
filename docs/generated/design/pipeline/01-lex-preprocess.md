@@ -7,6 +7,12 @@ watched_paths_digest: 25c315302bec8a98147ed08e896ab7b882f1e7ddd78ee373f4e252ec03
 warning: "Auto-generated. May drift from source. Do not edit by hand."
 ---
 
+<!--
+Local implementation link destinations were mechanically relocated from
+source/ to old-source/ for this checkout.
+The `source_commit` and `watched_paths_digest` above still record the original generation inputs.
+-->
+
 # Lex and Preprocess
 
 This document covers the first compilation stage: turning a source
@@ -20,14 +26,14 @@ location encoding, literal-value extraction, or preprocessor directives.
   include system) plus the active `Linkage` configuration (predefined
   macros, include paths). The raw file bytes are turned into source
   text by `SourceFile::decodeContentBlob`
-  ([slang-source-loc.h](../../../../source/compiler-core/slang-source-loc.h),
-  [slang-source-loc.cpp](../../../../source/compiler-core/slang-source-loc.cpp)),
+  ([slang-source-loc.h](../../../../old-source/compiler-core/slang-source-loc.h),
+  [slang-source-loc.cpp](../../../../old-source/compiler-core/slang-source-loc.cpp)),
   which strips a leading Unicode byte-order mark and decodes non-UTF-8
   encodings into a fresh blob; a BOM-free UTF-8 file is handed through
   unchanged. `SourceFile::setContents` routes through the same helper,
   so the lexer always sees BOM-free UTF-8.
 - **Output**: a fully expanded `TokenList` (see
-  [slang-lexer.h](../../../../source/compiler-core/slang-lexer.h)),
+  [slang-lexer.h](../../../../old-source/compiler-core/slang-lexer.h)),
   meaning a sequence of `Token` values with all `#include`, macro
   expansion, and conditional preprocessor directives already resolved.
 
@@ -38,16 +44,16 @@ begins, which allows the parser arbitrary lookahead.
 ## Lexer
 
 The lexer is implemented under
-[source/compiler-core/](../../../../source/compiler-core):
+[source/compiler-core/](../../../../old-source/compiler-core):
 
-- [slang-lexer.h](../../../../source/compiler-core/slang-lexer.h) /
-  [slang-lexer.cpp](../../../../source/compiler-core/slang-lexer.cpp) —
+- [slang-lexer.h](../../../../old-source/compiler-core/slang-lexer.h) /
+  [slang-lexer.cpp](../../../../old-source/compiler-core/slang-lexer.cpp) —
   the `Lexer` struct, its `initialize` / lex driver, and the
   `TokenList`, `TokenSpan`, and `TokenReader` types.
-- [slang-token.h](../../../../source/compiler-core/slang-token.h) /
-  [slang-token.cpp](../../../../source/compiler-core/slang-token.cpp) —
+- [slang-token.h](../../../../old-source/compiler-core/slang-token.h) /
+  [slang-token.cpp](../../../../old-source/compiler-core/slang-token.cpp) —
   the `Token`, `TokenType`, and `TokenFlags` data types.
-- [slang-token-defs.h](../../../../source/compiler-core/slang-token-defs.h)
+- [slang-token-defs.h](../../../../old-source/compiler-core/slang-token-defs.h)
   — X-macro list of every `TokenType` value.
 
 ### Token data model
@@ -55,11 +61,11 @@ The lexer is implemented under
 Every token carries:
 
 - a `TokenType` (one byte; declared via the X-macro in
-  [slang-token-defs.h](../../../../source/compiler-core/slang-token-defs.h));
+  [slang-token-defs.h](../../../../old-source/compiler-core/slang-token-defs.h));
 - raw text (`charsCount` plus a union pointing either to raw chars or
   to an interned `Name*`);
 - a `SourceLoc` (a single 32-bit integer; decoded by
-  [slang-source-loc.h](../../../../source/compiler-core/slang-source-loc.h));
+  [slang-source-loc.h](../../../../old-source/compiler-core/slang-source-loc.h));
 - a small `TokenFlags` byte — `AtStartOfLine`, `AfterWhitespace`,
   `ScrubbingNeeded`, and `Name` (which discriminates the union).
 
@@ -70,15 +76,15 @@ The token-kind catalog is in
 
 Source locations are kept as a single `uint32_t` that the
 `SourceManager`
-([slang-source-loc.h](../../../../source/compiler-core/slang-source-loc.h),
-[slang-source-loc.cpp](../../../../source/compiler-core/slang-source-loc.cpp))
+([slang-source-loc.h](../../../../old-source/compiler-core/slang-source-loc.h),
+[slang-source-loc.cpp](../../../../old-source/compiler-core/slang-source-loc.cpp))
 decodes back into file / line / column on demand. The encoding is
 chosen so that every token carries one cheap field rather than three.
 
 ### Lexer flags and special-case rules
 
 `LexerFlags` (declared in
-[slang-lexer.h](../../../../source/compiler-core/slang-lexer.h))
+[slang-lexer.h](../../../../old-source/compiler-core/slang-lexer.h))
 currently includes `kLexerFlag_SuppressDiagnostics`, used to lex
 without complaining about invalid or unsupported characters (for
 example, when tokenizing inside an inactive `#if` block). The flag is
@@ -95,7 +101,7 @@ The lexer handles several C-isms:
 - No distinction between identifiers and keywords. Every keyword token
   arrives at the parser as `TokenType::Identifier` (see the X-macro
   list in
-  [slang-token-defs.h](../../../../source/compiler-core/slang-token-defs.h));
+  [slang-token-defs.h](../../../../old-source/compiler-core/slang-token-defs.h));
   the parser resolves the keyword status via lookup, as described in
   [02-parse-ast.md](02-parse-ast.md).
 - Numeric, string, and character literal text is kept undecoded in the
@@ -104,7 +110,7 @@ The lexer handles several C-isms:
   decode its value; value extraction is deferred to the helpers below.
 - Non-ASCII input is decoded as UTF-8 by the byte-level `_advance`
   helper in
-  [slang-lexer.cpp](../../../../source/compiler-core/slang-lexer.cpp),
+  [slang-lexer.cpp](../../../../old-source/compiler-core/slang-lexer.cpp),
   which folds a valid multi-byte sequence into a single code point that
   the identifier rule accepts. A malformed sequence is diagnosed as
   `invalidUtf8ByteSequence` (offending bytes in hex) and substituted
@@ -121,12 +127,12 @@ literal ends plus a few purely syntactic checks (`invalidDigitForBase`,
 is deferred. Of those three checks only
 `octalLiteral` is a warning: scanning continues into
 `_lexNumber(lexer, 8)`, so `017` still yields a usable base-8 literal
-token ([slang-lexer.cpp](../../../../source/compiler-core/slang-lexer.cpp)
+token ([slang-lexer.cpp](../../../../old-source/compiler-core/slang-lexer.cpp)
 line 2097). `invalidDigitForBase` (line 551) and
 `quoteCannotBeDelimiter` (line 1797) are errors.
 
 Scanning happens in the lex driver. `_lexStringLiteralBody(lexer, char quote)`
-([slang-lexer.cpp](../../../../source/compiler-core/slang-lexer.cpp)
+([slang-lexer.cpp](../../../../old-source/compiler-core/slang-lexer.cpp)
 line 1731) handles both `"..."` and `'...'`; the closing quote
 character is the parameter, so there is no separate
 character-literal mode. Its only escape handling is stepping over
@@ -139,7 +145,7 @@ that prevent finding an end at all: `endOfFileInLiteral` and
 `)delimiter"` and performs no escape processing at all.
 
 Decoding into a value is done on demand by the helper routines declared
-in [slang-lexer.h](../../../../source/compiler-core/slang-lexer.h):
+in [slang-lexer.h](../../../../old-source/compiler-core/slang-lexer.h):
 
 - `getIntegerLiteralValue` — parses the integer, optionally returning
   the suffix, decimal-base flag, and an overflow flag.
@@ -152,7 +158,7 @@ in [slang-lexer.h](../../../../source/compiler-core/slang-lexer.h):
   range. The same enum reports the two malformed cases,
   `BadSignificand` and `BadSuffix`, with `outErrorContent` carrying the
   offending text; the parser's `parseFloatingPointLiteralExpr`
-  ([slang-parser.cpp](../../../../source/slang/slang-parser.cpp) line
+  ([slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp) line
   9098) turns them into `InvalidFloatingPointLiteralNumber` and
   `InvalidFloatingPointLiteralSuffix` (lines 9131-9143), the only
   caller in the watched sources. `outIsOutOfRange` means the result is
@@ -167,7 +173,7 @@ in [slang-lexer.h](../../../../source/compiler-core/slang-lexer.h):
   one-character rule: it emits `illegalCharacterLiteral` for a body too
   short to hold a character (`''`) and again when the decode leaves
   unconsumed input, which is how a multi-character body is caught
-  ([slang-lexer.cpp](../../../../source/compiler-core/slang-lexer.cpp)
+  ([slang-lexer.cpp](../../../../old-source/compiler-core/slang-lexer.cpp)
   lines 1660-1725).
 
 An empty suffix classifies as `Float`, not `Double`, so the suffix
@@ -179,12 +185,12 @@ float b = 1e300;    // Float: out of range, decodes to INFINITY
 ```
 
 `1e300` is far above the `float` maximum
-([slang-lexer.cpp](../../../../source/compiler-core/slang-lexer.cpp)
+([slang-lexer.cpp](../../../../old-source/compiler-core/slang-lexer.cpp)
 lines 1273-1284, and line 1331 for the `float` parse).
 
 Literal-value errors are reported at decode time through the helpers'
 `DiagnosticSink*`. Escape handling is centralized in `_decodeStringEscape`
-([slang-lexer.cpp](../../../../source/compiler-core/slang-lexer.cpp)
+([slang-lexer.cpp](../../../../old-source/compiler-core/slang-lexer.cpp)
 line 1440), which takes the sink and the token's `SourceLoc` and
 diagnoses its own failures (`invalidStringEscape` for an unknown escape
 letter, a digitless or unterminated `\x{...}` / `\u{...}` form, or an
@@ -199,7 +205,7 @@ bare non-escape bytes through without re-checking UTF-8, since
 `_advance` already diagnosed malformed sequences while scanning; in
 character literals the body is re-decoded with `getUnicodePointFromUTF8`
 and malformed UTF-8 is rejected again. The diagnostics are defined in
-[slang-lexer-diagnostic-defs.h](../../../../source/compiler-core/slang-lexer-diagnostic-defs.h).
+[slang-lexer-diagnostic-defs.h](../../../../old-source/compiler-core/slang-lexer-diagnostic-defs.h).
 
 ### What the lexer does *not* do
 
@@ -213,9 +219,9 @@ and malformed UTF-8 is rejected again. The diagnostics are defined in
 ## Preprocessor
 
 Implemented in
-[source/slang/slang-preprocessor.cpp](../../../../source/slang/slang-preprocessor.cpp);
+[source/slang/slang-preprocessor.cpp](../../../../old-source/slang/slang-preprocessor.cpp);
 public surface in
-[slang-preprocessor.h](../../../../source/slang/slang-preprocessor.h).
+[slang-preprocessor.h](../../../../old-source/slang/slang-preprocessor.h).
 
 The `Preprocessor` is configured through `PreprocessorDesc`, which
 takes:
@@ -224,7 +230,7 @@ takes:
 - a `NamePool*` for interning identifier text,
 - an `ISlangFileSystemExt*` and `SourceManager*` for I/O,
 - an optional `IncludeSystem*` for `#include` resolution
-  ([slang-include-system.h](../../../../source/compiler-core/slang-include-system.h)),
+  ([slang-include-system.h](../../../../old-source/compiler-core/slang-include-system.h)),
 - an optional `Dictionary<String, String>` of predefined macros,
 - an optional `PreprocessorHandler*` (callbacks for
   end-of-translation-unit and file-dependency events),
@@ -247,7 +253,7 @@ parameter reference is compiled to a parameter op (`ExpandedParam`,
 `UnexpandedParam`, or `StringizedParam`) carrying the parameter index.
 At invocation, `MacroInvocation` replays the matching argument's token
 range by index (`_getArgTokens`,
-[slang-preprocessor.cpp](../../../../source/slang/slang-preprocessor.cpp)),
+[slang-preprocessor.cpp](../../../../old-source/slang/slang-preprocessor.cpp)),
 wrapping it in an `ExpansionInputStream` for the `ExpandedParam` case so
 argument tokens are themselves macro-expanded — there is no per-invocation
 environment of pseudo-macros.
@@ -273,7 +279,7 @@ the conditional directives (`#if`, `#ifdef`, `#ifndef`, `#else`,
 
 Directives are looked up by name in a callback table, so adding one is
 a matter of registering a new callback in
-[slang-preprocessor.cpp](../../../../source/slang/slang-preprocessor.cpp).
+[slang-preprocessor.cpp](../../../../old-source/slang/slang-preprocessor.cpp).
 The `kDirectives` table holds the C / HLSL-style set (`#if` and friends, `#include`,
 `#define`, `#undef`, `#warning`, `#error`, `#line`, `#pragma`) plus
 the Slang language-selection directives `#language` / `#lang` and the
@@ -293,7 +299,7 @@ followed by a version —
 through its `SourceLanguageDirective` out-parameter (language, the
 location of the first directive, and the Slang version) and the
 version through `outLanguageVersion`
-([slang-preprocessor.h](../../../../source/slang/slang-preprocessor.h)).
+([slang-preprocessor.h](../../../../old-source/slang/slang-preprocessor.h)).
 Only the first selection in a source segment is kept:
 `_tryApplySourceLanguageDirective` (line 4516) diagnoses a later
 directive naming a different language
@@ -302,7 +308,7 @@ directive naming a different language
 leaves the first selection and `languageVersion` in force. Combining
 the selections of separately preprocessed primary files is done by
 `_applySourceLanguageDirective` in
-[slang-compile-request.cpp](../../../../source/slang/slang-compile-request.cpp)
+[slang-compile-request.cpp](../../../../old-source/slang/slang-compile-request.cpp)
 (line 276), outside this document's scope.
 The version operand is resolved by name: whether it arrived as an
 identifier or an integer literal, its *text* is looked up by
@@ -348,10 +354,10 @@ naming no object-like macro evaluates to `0` after the
 ### `#include` resolution
 
 `#include` strings are resolved by `IncludeSystem` from
-[slang-include-system.cpp](../../../../source/compiler-core/slang-include-system.cpp),
+[slang-include-system.cpp](../../../../old-source/compiler-core/slang-include-system.cpp),
 which consults the `Linkage`'s search paths. For angle-form includes,
 `HandleIncludeDirective`
-([slang-preprocessor.cpp](../../../../source/slang/slang-preprocessor.cpp))
+([slang-preprocessor.cpp](../../../../old-source/slang/slang-preprocessor.cpp))
 concatenates the raw tokens between `OpLess` and `OpGreater` into the
 path string and selects `IncludeSystem::Mode::System`; quoted includes
 take the path from a single `StringLiteral` token. Resolution returns a
@@ -362,7 +368,7 @@ that file. The handler's `handleFileDependency` callback records dependencies.
 
 `#pragma warning(push/pop/disable/...)` state is tracked by a
 `WarningStateTracker`
-([slang-preprocessor.cpp](../../../../source/slang/slang-preprocessor.cpp)),
+([slang-preprocessor.cpp](../../../../old-source/slang/slang-preprocessor.cpp)),
 which records, per diagnostic id, a timeline keyed on an absolute
 source-location axis. Because each `__include`d file is preprocessed in
 its own `preprocessSource` pass with a fresh `Preprocessor`, the
@@ -383,7 +389,7 @@ source locations are chosen differently:
    definition. Their `SourceLoc` is the location of the corresponding
    token in the macro *definition*, replayed by
    `MacroInvocation::readToken`
-   ([slang-preprocessor.cpp](../../../../source/slang/slang-preprocessor.cpp)).
+   ([slang-preprocessor.cpp](../../../../old-source/slang/slang-preprocessor.cpp)).
    No new `SourceView` is created for the invocation, so such a
    diagnostic points into the macro body rather than at the call site.
 2. **Argument tokens** — tokens taken from the call-site argument
@@ -397,7 +403,7 @@ source locations are chosen differently:
    where the category-1 rule would put it.
 3. **Constructed tokens** — synthesized fresh, with three different
    source-location rules
-   ([slang-preprocessor.cpp](../../../../source/slang/slang-preprocessor.cpp)):
+   ([slang-preprocessor.cpp](../../../../old-source/slang/slang-preprocessor.cpp)):
    - *Builtins* (`__LINE__`, `__FILE__`) are pushed by
      `_pushStreamForSourceLocBuiltin`, which gives the synthesized token
      `m_macroInvocationLoc`, attributing it to the invocation site (the
@@ -435,7 +441,7 @@ long as the view's `PathInfo::Type` is `TokenPaste`, emitting a
   takes no sink; it returns `BadSignificand` / `BadSuffix` and the
   parser chooses the diagnostic.
 - Both phases funnel through the file-local `diagnose` helper in
-  [slang-lexer.cpp](../../../../source/compiler-core/slang-lexer.cpp),
+  [slang-lexer.cpp](../../../../old-source/compiler-core/slang-lexer.cpp),
   which drops a null sink and stops forwarding once the sink's error
   count exceeds `kMaxLexErrorCount` (100), so a pathologically
   malformed file cannot flood the sink.
@@ -452,7 +458,7 @@ long as the view's `PathInfo::Type` is `TokenPaste`, emitting a
   invocation can expand to no tokens, and an unclosed conditional is
   diagnosed once per still-open conditional at end-of-file, as
   `EndOfFileInPreprocessorConditional`
-  ([slang-preprocessor.cpp](../../../../source/slang/slang-preprocessor.cpp)
+  ([slang-preprocessor.cpp](../../../../old-source/slang/slang-preprocessor.cpp)
   line 4836). The stray closer is a separate diagnostic,
   `DirectiveWithoutIf` (line 3530); `CyclicInclude` fires
   when a resolved include is already open on the include stack (line

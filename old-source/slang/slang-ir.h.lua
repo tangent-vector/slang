@@ -143,7 +143,7 @@ end
 
 -- Prepare instruction data for template iteration
 local function getAllOtherInstStructsData()
-	local insts = require("source/slang/slang-ir-insts.lua").insts
+	local insts = require("old-source/slang/slang-ir-insts.lua").insts
 	local result = {}
 
 	walk_instructions(insts, function(key, value, struct_name, parent_struct)
@@ -198,7 +198,7 @@ end
 
 -- Forward declarations for everything
 local function instStructForwardDecls()
-	local insts = require("source/slang/slang-ir-insts.lua").insts
+	local insts = require("old-source/slang/slang-ir-insts.lua").insts
 	local output = {}
 
 	walk_instructions(insts, function(key, value, struct_name, parent_struct)
@@ -211,7 +211,7 @@ end
 
 -- The info table
 local function instInfoEntries()
-	local insts = require("source/slang/slang-ir-insts.lua").insts
+	local insts = require("old-source/slang/slang-ir-insts.lua").insts
 	local output = {}
 
 	local function constructFlags(value)
@@ -267,7 +267,7 @@ end
 
 -- The enum table
 local function instEnums()
-	local insts = require("source/slang/slang-ir-insts.lua").insts
+	local insts = require("old-source/slang/slang-ir-insts.lua").insts
 	local output = {}
 
 	-- Walk manually so we can output in postorder
@@ -318,7 +318,7 @@ end
 -- Collect type instructions for template generation, do it here rather than
 -- clutter the FIDDLE TEMPLATE code
 local function getBasicTypesForBuilderMethods()
-	local lua_data = require("source/slang/slang-ir-insts.lua")
+	local lua_data = require("old-source/slang/slang-ir-insts.lua")
 	local type_insts = lua_data.type_insts
 
 	-- Define the list of type instruction exceptions that should NOT have FIDDLE auto-generated methods
@@ -444,7 +444,7 @@ end
 return {
 	leafInst = function(args)
 		-- Get the current instruction definition from the Lua data
-		local insts = require("source/slang/slang-ir-insts.lua").insts
+		local insts = require("old-source/slang/slang-ir-insts.lua").insts
 		local current_name = tostring(fiddle.current_decl):gsub("^IR", "")
 		local inst_data = findInstData(insts, current_name)
 
@@ -458,7 +458,7 @@ return {
 	end,
 	baseInst = function(args)
 		-- Get the current instruction definition from the Lua data
-		local insts = require("source/slang/slang-ir-insts.lua").insts
+		local insts = require("old-source/slang/slang-ir-insts.lua").insts
 		local current_name = tostring(fiddle.current_decl):gsub("^IR", "")
 		local inst_data = findInstData(insts, current_name)
 

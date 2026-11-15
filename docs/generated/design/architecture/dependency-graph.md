@@ -7,13 +7,19 @@ watched_paths_digest: c607137db619e7fb3fa941a06e151cddf9fdb533d8005452d73cf7e068
 warning: "Auto-generated. May drift from source. Do not edit by hand."
 ---
 
+<!--
+Local implementation link destinations were mechanically relocated from
+source/ to old-source/ for this checkout.
+The `source_commit` and `watched_paths_digest` above still record the original generation inputs.
+-->
+
 # Dependency Graph
 
 This document captures the static link dependencies among the major
 subsystems of the Slang source tree, derived from the
 `slang_add_target(... LINK_WITH_PRIVATE ...)` and
 `LINK_WITH_PUBLIC` clauses in the per-directory
-[CMakeLists.txt](../../../../source) files. The granularity is
+[CMakeLists.txt](../../../../old-source) files. The granularity is
 **subsystem level** (one node per `source/<subsystem>/`), not file
 level; for the file-level inventory consult
 [module-map.md](module-map.md).
@@ -76,7 +82,7 @@ subsystems: `slang-fiddle-output` (FIDDLE-generated AST/IR support),
 `slang-capability-defs` and `slang-capability-lookup` (the generated
 capability tables), and `slang-lookup-tables` (generated SPIR-V and
 similar lookups). They are declared in
-[source/slang/CMakeLists.txt](../../../../source/slang/CMakeLists.txt)
+[source/slang/CMakeLists.txt](../../../../old-source/slang/CMakeLists.txt)
 and are consumed by `slang` and `slang-wasm`. They also explain the
 `slang-core-module → slang` edge above: `source/slang-core-module/`
 links `slang-capability-defs` and `slang-fiddle-output`, so it depends
@@ -87,7 +93,7 @@ Three subsystems present in [module-map.md](module-map.md) appear
 above without ordinary `LINK_WITH_*` edges:
 
 - **`source/standard-modules/`** — its
-  [CMakeLists.txt](../../../../source/standard-modules/CMakeLists.txt)
+  [CMakeLists.txt](../../../../old-source/standard-modules/CMakeLists.txt)
   only `configure_file`s a config header and `add_subdirectory`s the
   `neural`, `experimental`, `numerics` and `functional` modules; it
   does not declare a link target of its own. The module products are shipped as standalone
@@ -97,7 +103,7 @@ above without ordinary `LINK_WITH_*` edges:
   `slang-common-objects`) through `EXTRA_SOURCE_DIRS
   ${SLANG_RECORD_REPLAY_SYSTEM}`, set up in
   [source/slang/CMakeLists.txt lines
-  184-200](../../../../source/slang/CMakeLists.txt) (dashed edge
+  184-200](../../../../old-source/slang/CMakeLists.txt) (dashed edge
   above). The inclusion is conditional on the `SLANG_ENABLE_RECORD_REPLAY`
   option (default `ON`, declared in the root
   [CMakeLists.txt](../../../../CMakeLists.txt) lines 235-239): when it
@@ -118,29 +124,29 @@ or `LINK_WITH_PRIVATE` clause in the cited file.
 
 | Edge | Cited CMakeLists.txt | Clause |
 | --- | --- | --- |
-| `compiler-core → core` | [source/compiler-core/CMakeLists.txt](../../../../source/compiler-core/CMakeLists.txt) | `LINK_WITH_PRIVATE core` |
-| `core-module → core`, `core-module → slang` (generated targets) | [source/slang-core-module/CMakeLists.txt](../../../../source/slang-core-module/CMakeLists.txt) | `LINK_WITH_PRIVATE core slang-capability-defs slang-fiddle-output` |
-| `glsl-module → core` | [source/slang-glsl-module/CMakeLists.txt](../../../../source/slang-glsl-module/CMakeLists.txt) | `LINK_WITH_PRIVATE core` |
-| `slang → {core, prelude, compiler-core, core-module}`, plus the generated targets in `source/slang/` | [source/slang/CMakeLists.txt](../../../../source/slang/CMakeLists.txt) | The `slang_add_target(slang ... LINK_WITH_*)` clause near the bottom of the file; `prelude` is an object library of generated embeddings of the prelude headers ([prelude/CMakeLists.txt](../../../../prelude/CMakeLists.txt) lines 9-29), linked privately into the compiler |
-| `slangc → core`, `slangc → slang` | [source/slangc/CMakeLists.txt](../../../../source/slangc/CMakeLists.txt) | `LINK_WITH_PRIVATE core slang Threads::Threads` plus the optional `REQUIRES` entries below |
-| `slang-dispatcher → core` | [source/slang-dispatcher/CMakeLists.txt](../../../../source/slang-dispatcher/CMakeLists.txt) | `LINK_WITH_PRIVATE core` |
-| `slang-wasm → {slang, core, compiler-core}`, plus the generated targets in `source/slang/` | [source/slang-wasm/CMakeLists.txt](../../../../source/slang-wasm/CMakeLists.txt) | `LINK_WITH_PRIVATE miniz lz4_static slang core compiler-core slang-capability-defs slang-capability-lookup slang-fiddle-output slang-lookup-tables` on the wasm target |
+| `compiler-core → core` | [source/compiler-core/CMakeLists.txt](../../../../old-source/compiler-core/CMakeLists.txt) | `LINK_WITH_PRIVATE core` |
+| `core-module → core`, `core-module → slang` (generated targets) | [source/slang-core-module/CMakeLists.txt](../../../../old-source/slang-core-module/CMakeLists.txt) | `LINK_WITH_PRIVATE core slang-capability-defs slang-fiddle-output` |
+| `glsl-module → core` | [source/slang-glsl-module/CMakeLists.txt](../../../../old-source/slang-glsl-module/CMakeLists.txt) | `LINK_WITH_PRIVATE core` |
+| `slang → {core, prelude, compiler-core, core-module}`, plus the generated targets in `source/slang/` | [source/slang/CMakeLists.txt](../../../../old-source/slang/CMakeLists.txt) | The `slang_add_target(slang ... LINK_WITH_*)` clause near the bottom of the file; `prelude` is an object library of generated embeddings of the prelude headers ([prelude/CMakeLists.txt](../../../../prelude/CMakeLists.txt) lines 9-29), linked privately into the compiler |
+| `slangc → core`, `slangc → slang` | [source/slangc/CMakeLists.txt](../../../../old-source/slangc/CMakeLists.txt) | `LINK_WITH_PRIVATE core slang Threads::Threads` plus the optional `REQUIRES` entries below |
+| `slang-dispatcher → core` | [source/slang-dispatcher/CMakeLists.txt](../../../../old-source/slang-dispatcher/CMakeLists.txt) | `LINK_WITH_PRIVATE core` |
+| `slang-wasm → {slang, core, compiler-core}`, plus the generated targets in `source/slang/` | [source/slang-wasm/CMakeLists.txt](../../../../old-source/slang-wasm/CMakeLists.txt) | `LINK_WITH_PRIVATE miniz lz4_static slang core compiler-core slang-capability-defs slang-capability-lookup slang-fiddle-output slang-lookup-tables` on the wasm target |
 
 The dashed edge `slang -.-> slang-record-replay` is justified by the
 source-list inclusion at
 [source/slang/CMakeLists.txt lines
-184-200](../../../../source/slang/CMakeLists.txt), not by a
+184-200](../../../../old-source/slang/CMakeLists.txt), not by a
 `LINK_WITH_*` clause.
 
 The dashed edge `slangc -.-> slang-glsl-module` is a `REQUIRES
 slang-glsl-module` build-order dependency, present only when
 `TARGET slang-glsl-module` exists; `slangc` likewise adds `REQUIRES
 generate_core_module_cache` when that target exists
-([source/slangc/CMakeLists.txt](../../../../source/slangc/CMakeLists.txt)
+([source/slangc/CMakeLists.txt](../../../../old-source/slangc/CMakeLists.txt)
 lines 1-12 and 14-24). Neither is a link edge.
 
 External dependencies (visible in
-[CMakeLists.txt](../../../../source/core/CMakeLists.txt) and friends but
+[CMakeLists.txt](../../../../old-source/core/CMakeLists.txt) and friends but
 not shown in the diagram):
 
 - `coreLib` (`core`): `miniz`, `lz4_static`, `Threads::Threads`,
@@ -148,13 +154,13 @@ not shown in the diagram):
   `SLANG_ENABLE_MIMALLOC` is set — `mimalloc-static`, linked `PUBLIC`
   together with a `PUBLIC SLANG_ENABLE_MIMALLOC=1` compile definition
   so dependents see the same allocator choice
-  ([source/core/CMakeLists.txt](../../../../source/core/CMakeLists.txt)).
+  ([source/core/CMakeLists.txt](../../../../old-source/core/CMakeLists.txt)).
   The configure step hard-fails if the `mimalloc-static` target is not
   available.
 - `compilerCore` (`compiler-core`): `fast_float` (fast floating-point
   parsing), in addition to its internal `core` link; see the
   `LINK_WITH_PRIVATE core fast_float` clause in
-  [source/compiler-core/CMakeLists.txt](../../../../source/compiler-core/CMakeLists.txt).
+  [source/compiler-core/CMakeLists.txt](../../../../old-source/compiler-core/CMakeLists.txt).
 - `slangLib` (`slang`): `SPIRV-Headers::SPIRV-Headers` and
   `libcmark-gfm`; `slang-wasm`: `miniz` / `lz4_static`.
 - `slang-rt`: `miniz`, `lz4_static`, `Threads`, `unordered_dense`,
@@ -162,7 +168,7 @@ not shown in the diagram):
   dependency. `slang-rt` is shipped alongside the compiler and links
   none of the compiler's libraries, but it is not wholly independent of
   the compiler's source: its
-  [CMakeLists.txt](../../../../source/slang-rt/CMakeLists.txt) passes
+  [CMakeLists.txt](../../../../old-source/slang-rt/CMakeLists.txt) passes
   `EXTRA_SOURCE_DIRS ${slang_SOURCE_DIR}/source/core`, which recompiles
   the `source/core/` sources into the runtime with
   `SLANG_RT_DYNAMIC_EXPORT` defined, and
@@ -180,7 +186,7 @@ not shown in the diagram):
   and uses `SKIP_SANITIZERS` rather than `SKIP_ASAN`. With
   `SLANG_USE_SYSTEM_GLSLANG` it locates `SPIRV/GlslangToSpv.h` with
   `find_path` (cite
-  [source/slang-glslang/CMakeLists.txt](../../../../source/slang-glslang/CMakeLists.txt)).
+  [source/slang-glslang/CMakeLists.txt](../../../../old-source/slang-glslang/CMakeLists.txt)).
 - `slang-lookup-tables`: `SPIRV-Headers`.
 
 ## Notable invariants
@@ -191,38 +197,38 @@ specific build file.
 - **`source/core/` does not depend on any other internal subsystem.**
   Its `slang_add_target(... LINK_WITH_PRIVATE miniz lz4_static
   Threads::Threads ...)` block in
-  [source/core/CMakeLists.txt](../../../../source/core/CMakeLists.txt)
+  [source/core/CMakeLists.txt](../../../../old-source/core/CMakeLists.txt)
   lists only external libraries.
 - **`source/compiler-core/` may depend on `source/core/` but not on
   `source/slang/`.** The corresponding block in
-  [source/compiler-core/CMakeLists.txt](../../../../source/compiler-core/CMakeLists.txt)
+  [source/compiler-core/CMakeLists.txt](../../../../old-source/compiler-core/CMakeLists.txt)
   contains `LINK_WITH_PRIVATE core` only.
 - **`source/slang/` is the only subsystem that pulls in the
   AST/IR/emit/check sources.** The concrete source-owning target is
   `slang` itself in a non-embedded build, or `slang-common-objects` when
   `SLANG_EMBED_CORE_MODULE` is on and both library targets are declared
   `NO_SOURCE`
-  ([source/slang/CMakeLists.txt](../../../../source/slang/CMakeLists.txt)).
+  ([source/slang/CMakeLists.txt](../../../../old-source/slang/CMakeLists.txt)).
   Every other binary that
   needs compilation services (such as `slangc`,
-  [source/slangc/CMakeLists.txt](../../../../source/slangc/CMakeLists.txt))
+  [source/slangc/CMakeLists.txt](../../../../old-source/slangc/CMakeLists.txt))
   links against `slang` rather than reaching into individual files.
 - **The capability subsystem is split into two libraries.**
   `slang-capability-defs` is the generated header library and
   `slang-capability-lookup` is the generated source library; the main
   `slang` target consumes both
-  ([source/slang/CMakeLists.txt](../../../../source/slang/CMakeLists.txt)).
+  ([source/slang/CMakeLists.txt](../../../../old-source/slang/CMakeLists.txt)).
 - **The core module is linked optionally.** The choice between
   `slang-embedded-core-module` and `slang-no-embedded-core-module` is
   controlled by the CMake option `SLANG_EMBED_CORE_MODULE` and
   expressed as a generator expression in
-  [source/slang/CMakeLists.txt](../../../../source/slang/CMakeLists.txt).
+  [source/slang/CMakeLists.txt](../../../../old-source/slang/CMakeLists.txt).
   When the option is off *and* `SLANG_LIB_TYPE` is `SHARED`, the same
   file adds a `generate_core_module_cache` target that runs the
   `slang-core-module-cache` tool over the freshly linked library and the
   archive produced by `generate_core_module`
   (`core_module_archive_without_timestamp` in
-  [source/slang-core-module/CMakeLists.txt](../../../../source/slang-core-module/CMakeLists.txt)),
+  [source/slang-core-module/CMakeLists.txt](../../../../old-source/slang-core-module/CMakeLists.txt)),
   writing a `slang-core-module.bin` next to the library. This is a
   build-order dependency on a target under
   [tools/](../../../../tools), not a link edge, and it makes the
@@ -237,7 +243,7 @@ specific build file.
   neither bounds the final export list irrespective of where a symbol
   came from. `slang-glslang.version-script` does, and is the single
   source of truth for the exported names
-  ([source/slang-glslang/CMakeLists.txt](../../../../source/slang-glslang/CMakeLists.txt)).
+  ([source/slang-glslang/CMakeLists.txt](../../../../old-source/slang-glslang/CMakeLists.txt)).
   ELF consumes that file directly. Mach-O has no version-script
   concept, so on Apple the same CMake file parses the script's
   `global:` block at configure time and derives an
@@ -255,9 +261,9 @@ specific build file.
   script as well as to the C++, or it will not be exported on either
   ELF or macOS.
 - **Public headers in [include/](../../../../include) must not include
-  private headers from [source/](../../../../source).** The build
+  private headers from [source/](../../../../old-source).** The build
   exposes `${slang_SOURCE_DIR}/include` as the public include directory
-  ([source/slang/CMakeLists.txt](../../../../source/slang/CMakeLists.txt)
+  ([source/slang/CMakeLists.txt](../../../../old-source/slang/CMakeLists.txt)
   line 315), which is the observed public include boundary; the build
   does not enforce the no-private-includes rule itself.
 
@@ -267,7 +273,7 @@ No link-level cycles are observed in the per-directory CMake files.
 
 Two irregularities are worth knowing about. The first is that the
 `slang` library reaches *upward* into the tools tree for headers:
-[source/slang/CMakeLists.txt](../../../../source/slang/CMakeLists.txt)
+[source/slang/CMakeLists.txt](../../../../old-source/slang/CMakeLists.txt)
 adds `${slang_SOURCE_DIR}/tools` to `INCLUDE_DIRECTORIES_PRIVATE`, which
 is what lets `slang-language-server.cpp` compile
 `#include "platform/performance-counter.h"` from
@@ -277,7 +283,7 @@ it — the header is used for its inline definitions — but it does mean
 
 The second is the `slang-common-objects`
 indirection in
-[source/slang/CMakeLists.txt](../../../../source/slang/CMakeLists.txt):
+[source/slang/CMakeLists.txt](../../../../old-source/slang/CMakeLists.txt):
 when configured in some modes the same source files are compiled into
 an object library and then re-linked into both
 `slang-without-embedded-core-module` and the main `slang` library,

@@ -7,6 +7,12 @@ watched_paths_digest: 686b8730f14d503c2c40ba8ae76a5c904f438901aace8656656d58178d
 warning: "Auto-generated. May drift from source. Do not edit by hand."
 ---
 
+<!--
+Local implementation link destinations were mechanically relocated from
+source/ to old-source/ for this checkout.
+The `source_commit` and `watched_paths_digest` above still record the original generation inputs.
+-->
+
 # Keywords and Built-in Syntax
 
 This document inventories Slang's syntactic keywords for a developer
@@ -24,21 +30,21 @@ syntax table or the core-module sources, not the lexer.
 Three sources contribute keywords:
 
 1. **Hardcoded statement keywords** in
-   [slang-parser.cpp](../../../../source/slang/slang-parser.cpp). The
+   [slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp). The
    statement parser inspects identifiers via `LookAheadToken("if")`,
    `LookAheadToken("for")`, etc., and dispatches to dedicated parse
    functions.
 2. **The parser's `SyntaxParseInfo` table**
-   ([slang-parser.cpp](../../../../source/slang/slang-parser.cpp), the
+   ([slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp), the
    array `g_parseSyntaxEntries[]`), which `getSyntaxParseInfos()`
    exposes as a view and `populateBaseLanguageModule()` registers into
    the default environment. This is the source of decl, modifier, and
    expression keywords.
 3. **Core-module `*.meta.slang` declarations**. The meta-modules
-   ([core.meta.slang](../../../../source/slang/core.meta.slang),
-   [hlsl.meta.slang](../../../../source/slang/hlsl.meta.slang),
-   [glsl.meta.slang](../../../../source/slang/glsl.meta.slang),
-   [diff.meta.slang](../../../../source/slang/diff.meta.slang)) declare
+   ([core.meta.slang](../../../../old-source/slang/core.meta.slang),
+   [hlsl.meta.slang](../../../../old-source/slang/hlsl.meta.slang),
+   [glsl.meta.slang](../../../../old-source/slang/glsl.meta.slang),
+   [diff.meta.slang](../../../../old-source/slang/diff.meta.slang)) declare
    built-in types, functions, and operators that contribute names to
    the default environment. These are processed at compiler startup,
    but they are built-in vocabulary rather than keywords: only a
@@ -77,7 +83,7 @@ grammar above, are `syntax <name> : <SyntaxClass>;` and
 `attribute_syntax [<Name>] : <SyntaxClass>;`;
 `syntax constexpr : ConstExprModifier;` and
 `attribute_syntax [ExperimentalModule] : ExperimentalModuleAttribute;`
-in [core.meta.slang](../../../../source/slang/core.meta.slang) are
+in [core.meta.slang](../../../../old-source/slang/core.meta.slang) are
 representative. The `= <existingKeyword>` alias form copies the named
 keyword's parse callback and user data, and inherits its syntax class
 only when no explicit class was given (`slang-parser.cpp` 5522-5529),
@@ -88,7 +94,7 @@ so the new spelling is a drop-in alias in that case; no `.slang` source in the t
 
 Recognized in the statement parser by direct identifier comparison.
 Cited line numbers refer to
-[slang-parser.cpp](../../../../source/slang/slang-parser.cpp) at
+[slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp) at
 `source_commit`.
 
 | Keyword | Where parsed |
@@ -121,7 +127,7 @@ code. Note that `try` is an *expression* keyword (see
 to the expression-statement parser; the statement-level exception
 handler is `do { ... } catch ( ... ) { ... }`, parsed at
 [slang-parser.cpp lines
-7882-7913](../../../../source/slang/slang-parser.cpp). The error
+7882-7913](../../../../old-source/slang/slang-parser.cpp). The error
 parameter is optional — a bare `catch` catches every error type — and
 `ParseDoCatchStatement` loops while another `catch` follows, using each
 `CatchStmt` as the `tryBody` of the next so a chain of `catch` clauses
@@ -146,7 +152,7 @@ one in core-module source can recognize it:
 ### Decl keywords
 
 Registered in `g_parseSyntaxEntries[]` at
-[slang-parser.cpp](../../../../source/slang/slang-parser.cpp) line 11106
+[slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp) line 11106
 through `_makeParseDecl(...)` (defined at line 11077). Identifiers that begin with double
 underscore (`__`) are intentionally namespaced as compiler-internal /
 non-stable.
@@ -200,14 +206,14 @@ callback name alone does not imply one:
   followed by the requirement's name. The core module uses it for the
   autodiff function requirements, e.g.
   `static __associatedfunc FwdDiffFuncType<FType> fwd_diff;` in
-  [core.meta.slang](../../../../source/slang/core.meta.slang) (line 771).
+  [core.meta.slang](../../../../old-source/slang/core.meta.slang) (line 771).
 - `__func_extension` takes a higher-order target expression, a
   parameter list, an optional `throws` clause, an optional
   `-> <result type>`, and a body. The target is parsed by syntax-decl
   lookup rather than a hardcoded operator list, so it is written with
   one of the differentiation expression keywords, as in
   `__func_extension<T : __BuiltinFloatingPointType, let N : int> fwd_diff(CoopVec<T, N>::__subscript::get)(DifferentialPair<CoopVec<T, N>> self, int index) -> DifferentialPair<T> { ... }`
-  from [hlsl.meta.slang](../../../../source/slang/hlsl.meta.slang)
+  from [hlsl.meta.slang](../../../../old-source/slang/hlsl.meta.slang)
   (line 33606; the `-experimental-feature` flag is the whole
   invocation, as above).
 
@@ -217,11 +223,11 @@ callback name alone does not imply one:
 identifier lookahead in the type-specifier parser
 `_parseSimpleTypeSpec`
 ([slang-parser.cpp lines
-3662-3688](../../../../source/slang/slang-parser.cpp)), reached through
+3662-3688](../../../../old-source/slang/slang-parser.cpp)), reached through
 `ParseDeclaratorDecl` and `_parseTypeSpec` from the fallback case of
 `ParseDeclWithModifiers`
 ([slang-parser.cpp line
-6268](../../../../source/slang/slang-parser.cpp)). The dedicated
+6268](../../../../old-source/slang/slang-parser.cpp)). The dedicated
 parse routines (`ParseStruct` at line 6719, `ParseClass`
 at line 6789, `parseEnumDecl` at line 6838) construct the
 corresponding AST nodes directly. A block statement also routes a
@@ -249,7 +255,7 @@ leaves every semantic consequence of the choice to later stages
 The same type-specifier parser also recognizes the variadic-pack type
 forms `expand` and `each` by direct identifier lookahead
 ([slang-parser.cpp lines
-3689-3698](../../../../source/slang/slang-parser.cpp)), in the same
+3689-3698](../../../../old-source/slang/slang-parser.cpp)), in the same
 branch as the `__first` / `__last` / `__trimFirst` / `__trimLast` /
 `__shapeConcat` / `__shapePermute` / `__shapeSwap` / `__shapeReduce` /
 `__packBranch` shape utilities, which hands off to `parsePrefixExpr`.
@@ -264,7 +270,7 @@ registered as syntax. `__func_as_type` is matched the same way (line
 comma-separated parameter type expressions, a mandatory `->`, and a
 result type. The core module uses it for higher-order parameters, as in
 `This MapElement(functype(uint32_t, uint32_t, T)->T mapOp)` in
-[hlsl.meta.slang](../../../../source/slang/hlsl.meta.slang) (line
+[hlsl.meta.slang](../../../../old-source/slang/hlsl.meta.slang) (line
 30554); a parameter of such a type accepts a function name as its
 argument. Nothing in the parser says whether a value of such a type can
 be called, so this document does not claim it. A generic parameter list
@@ -280,7 +286,7 @@ accepted (bare `unsigned` too), while `signed` and the `char` /
 ### Modifier keywords
 
 Registered through `_makeParseModifier` in
-[slang-parser.cpp](../../../../source/slang/slang-parser.cpp). Some are
+[slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp). Some are
 "simple" (single keyword, single AST node class), others take
 arguments (e.g. `layout`, `__target_intrinsic`).
 
@@ -384,7 +390,7 @@ taking the integer or identifier it otherwise accepts, and
 ### Expression keywords
 
 Registered through `_makeParseExpr` in
-[slang-parser.cpp](../../../../source/slang/slang-parser.cpp).
+[slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp).
 
 | Keyword | Parses |
 | --- | --- |
@@ -397,7 +403,7 @@ Registered through `_makeParseExpr` in
 | `__fwd_diff`, `fwd_diff` | Forward-mode differentiation (`parseForwardDifferentiate`) |
 | `__bwd_diff`, `bwd_diff` | Reverse-mode differentiation (`parseBackwardDifferentiate`) |
 | `__apply` | Apply-for-backward higher-order expression (`parseApplyForBwd`); used inside `__func_extension` to expose the primal-with-context companion to a custom `bwd_diff`; experimental |
-| `new` | Heap-style allocation expression; parsed specially by the `AdvanceIf(parser, "new")` branch of `parsePrefixExpr` at [slang-parser.cpp line 10093](../../../../source/slang/slang-parser.cpp) (`parsePrefixExpr` defined at line 10085; not via `_makeParseExpr`) |
+| `new` | Heap-style allocation expression; parsed specially by the `AdvanceIf(parser, "new")` branch of `parsePrefixExpr` at [slang-parser.cpp line 10093](../../../../old-source/slang/slang-parser.cpp) (`parsePrefixExpr` defined at line 10085; not via `_makeParseExpr`) |
 | `__return_val` | Compiler-internal return-value reference |
 | `__func_as_type` | Function-as-type reflection |
 | `__dispatch_kernel` | Kernel-dispatch primitive |
@@ -433,17 +439,17 @@ not all of the rows are parenthesized:
 ## Core-module syntax declarations
 
 The four `*.meta.slang` files in
-[source/slang/](../../../../source/slang) contribute additional names
+[source/slang/](../../../../old-source/slang) contribute additional names
 to the default environment. They are not "keywords" in the parser-
 syntax-table sense: the parser's syntax lookup accepts only a
 `SyntaxDecl`, so these names are built-in vocabulary that the parser
 consults for limited type-name disambiguation, not parsing keywords.
 Process notes:
 
-- [core.meta.slang](../../../../source/slang/core.meta.slang) declares
+- [core.meta.slang](../../../../old-source/slang/core.meta.slang) declares
   the built-in scalar / vector / matrix types, the `Optional` and
   `Tuple` types, and core intrinsics.
-- [hlsl.meta.slang](../../../../source/slang/hlsl.meta.slang) layers in
+- [hlsl.meta.slang](../../../../old-source/slang/hlsl.meta.slang) layers in
   HLSL-compatibility names (`Texture2D`, `RWTexture2D`,
   `StructuredBuffer`, intrinsics like `mul`, `dot`, `length`, and the
   wave intrinsics). Two kinds of "wave builtin" live here and they are
@@ -457,7 +463,7 @@ Process notes:
   `__builtinGroupIndex` near the top of the file (lines 15 and 17); the
   module attaches no capability requirement to them, and which targets
   accept one is decided by entry-point varying-parameter legalization
-  ([slang-ir-legalize-varying-params.cpp](../../../../source/slang/slang-ir-legalize-varying-params.cpp)),
+  ([slang-ir-legalize-varying-params.cpp](../../../../old-source/slang/slang-ir-legalize-varying-params.cpp)),
   not here. In that file only two per-target contexts map `SV_WaveIndex`:
   the Metal one (line 4608, to `simdgroup_index_in_threadgroup`) and the
   WGSL one (line 5380, to `subgroup_id`). It has no arm for it on any
@@ -479,9 +485,9 @@ Process notes:
   resource type declares an `__implicit_conversion` constructor taking
   the handle, so the concrete type is recovered from the assignment
   target, as in `RWStructuredBuffer<uint> buf = ResourceDescriptorHeap[0];`.
-- [glsl.meta.slang](../../../../source/slang/glsl.meta.slang) provides
+- [glsl.meta.slang](../../../../old-source/slang/glsl.meta.slang) provides
   GLSL-flavored names (`vec3`, `mat4`, `gl_Position`, ...).
-- [diff.meta.slang](../../../../source/slang/diff.meta.slang)
+- [diff.meta.slang](../../../../old-source/slang/diff.meta.slang)
   contributes the differentiable-pair types and helpers used by the
   autodiff machinery (see
   [../pipeline/05-ir-passes.md](../pipeline/05-ir-passes.md)).
@@ -528,7 +534,7 @@ user-defined name, including declaration keywords such as `func`,
 The one place the parser looks at a `__` prefix on a user-chosen name is
 inline SPIR-V assembly: when parsing the core module, a named `%id`
 register must start with `__` (an assertion at
-[slang-parser.cpp](../../../../source/slang/slang-parser.cpp) lines
+[slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp) lines
 9828-9831), so that the register reads as compiler-internal.
 
 The `__` prefix is the one that is really load-bearing, and it is

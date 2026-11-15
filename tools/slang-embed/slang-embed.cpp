@@ -407,7 +407,7 @@ struct App
         // task of outputting the generated source file is simple.
         //
         fprintf(outputFile, "// generated code; do not edit\n");
-        fprintf(outputFile, "#include \"../source/core/slang-basic.h\"\n");
+        fprintf(outputFile, "#include \"../old-source/core/slang-basic.h\"\n");
 
         fprintf(outputFile, "Slang::String get_%s()\n", variableName);
         fprintf(outputFile, "{\n");

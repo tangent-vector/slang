@@ -107,6 +107,46 @@ class SlangcExcludePatternsTests(unittest.TestCase):
             "source/compiler-core/slang-pretty-writer.cpp"
         ))
 
+    def test_legacy_auxiliary_files_excluded(self):
+        for path in (
+            "old-source/slang-core-module/slang-embedded-core-module.cpp",
+            "old-source/slang-glslang/slang-glslang.cpp",
+            "old-source/slang-record-replay/replay-context.cpp",
+            "old-source/slang/slang-language-server.cpp",
+            "old-source/compiler-core/slang-json-rpc.cpp",
+            "old-source/slang/slang-ast-expr.h",
+        ):
+            with self.subTest(path=path):
+                self.assertTrue(self._excluded(path))
+
+    def test_legacy_compiler_files_kept(self):
+        for path in (
+            "old-source/slang/slang-check.cpp",
+            "old-source/compiler-core/slang-name.cpp",
+            "old-source/core/slang-string.cpp",
+        ):
+            with self.subTest(path=path):
+                self.assertFalse(self._excluded(path))
+
+    def test_new_module_files_kept(self):
+        for path in (
+            "source/slang/foundation/text.cpp",
+            "source/slang/compiler/compilation.cpp",
+            "source/slang/runtime/support.cpp",
+        ):
+            with self.subTest(path=path):
+                self.assertFalse(self._excluded(path))
+
+    def test_preserved_generated_paths_excluded(self):
+        for path in (
+            "build/source/slang/capability/slang-generated-capability-defs.h",
+            "build/source/slang/fiddle/slang-rich-diagnostics.h.fiddle",
+            "build/source/slang/slang-lookup-tables/slang-lookup-GLSLstd450.cpp",
+            "build/source/slang-core-module/slang-core-module-generated.h",
+        ):
+            with self.subTest(path=path):
+                self.assertTrue(self._excluded(path))
+
     def test_backslash_paths_normalized(self):
         self.assertTrue(self._excluded(r"external\cmark\src\blocks.c"))
 
@@ -221,17 +261,21 @@ def _shell_patterns() -> set:
 
 
 class BashPythonPatternSyncTests(unittest.TestCase):
-    """Verify slang_filters.py and slangc-ignore-patterns.sh stay in
-    sync. The Python copy anchors each top-level segment with `^`
-    (because `re.search` is unanchored); the bash copy is fed to
-    `llvm-cov -ignore-filename-regex` which anchors implicitly.
-    Strip the leading `^` from the Python set before comparing.
+    """Tests for matching exclusions in Python and shell coverage wrappers.
+
+    The Python patterns anchor repository-relative paths and explicitly allow
+    `old-source/` alongside `source/`. The shell patterns already match both
+    roots because `source/` is a substring of `old-source/`.
+    We remove the Python `^` anchor and optional legacy prefix before comparing
+    the common exclusion expressions.
     """
 
     def test_pattern_sets_match(self):
         bash_set = _shell_patterns()
         python_set = {
-            p[1:] if p.startswith("^") else p
+            (p[1:] if p.startswith("^") else p).replace(
+                "(old-)?source/", "source/", 1
+            )
             for p in slang_filters.SLANGC_EXCLUDE_PATTERNS
         }
         self.assertEqual(

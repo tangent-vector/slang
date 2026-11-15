@@ -146,7 +146,7 @@ slang_add_target(
     LINK_WITH_PRIVATE core
     INCLUDE_DIRECTORIES_PUBLIC
         "${SLANG_CAPABILITY_OUTPUT_DIR}"
-        "${slang_SOURCE_DIR}/source/slang"
+        "${SLANG_LEGACY_SOURCE_DIR}/slang"
     EXCLUDE_FROM_ALL
     FOLDER generated
 )
@@ -182,8 +182,8 @@ set(SLANG_LOOKUP_GENERATED_SOURCE
     "${SLANG_LOOKUP_GENERATOR_OUTPUT_DIR}/slang-lookup-GLSLstd450.cpp"
 )
 set(SLANG_RECORD_REPLAY_SYSTEM
-    "${slang_SOURCE_DIR}/source/slang-record-replay"
-    "${slang_SOURCE_DIR}/source/slang-record-replay/proxy"
+    "${SLANG_LEGACY_SOURCE_DIR}/slang-record-replay"
+    "${SLANG_LEGACY_SOURCE_DIR}/slang-record-replay/proxy"
 )
 
 # When SLANG_ENABLE_RECORD_REPLAY is OFF we exclude the record-replay sources from both the slang
@@ -294,11 +294,11 @@ set(slang_build_args
     copy_slang_headers
     generate_standard_module_config_header
     PRECOMPILE_HEADERS
-    ${slang_SOURCE_DIR}/source/core/slang-basic.h
+    ${SLANG_LEGACY_SOURCE_DIR}/core/slang-basic.h
     # slang-compiler.h transitively includes generated .fiddle headers whose macros are keyed on
     # __LINE__. GCC can restore inconsistent FIDDLE macro state from its PCH even in a clean build,
     # so keep those headers out of the GCC PCH. See #12227.
-    "$<$<NOT:$<CXX_COMPILER_ID:GNU>>:${slang_SOURCE_DIR}/source/slang/slang-compiler.h>"
+    "$<$<NOT:$<CXX_COMPILER_ID:GNU>>:${SLANG_LEGACY_SOURCE_DIR}/slang/slang-compiler.h>"
 )
 set(slang_link_args
     LINK_WITH_PRIVATE

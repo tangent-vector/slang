@@ -7,7 +7,7 @@ Mermaid flowcharts. Run this script from anywhere:
     python3 extras/generate-capability-dependency.py
 
 Options:
-    --input PATH    capdef file (default: source/slang/slang-capabilities.capdef)
+    --input PATH    capdef file (default: old-source/slang/slang-capabilities.capdef)
     --output PATH   Markdown file (default: docs/slang-capability-dependency.md)
     --check         do not write; exit with 1 if the output file is out of date
 
@@ -38,7 +38,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_INPUT = REPO_ROOT / "source" / "slang" / "slang-capabilities.capdef"
+DEFAULT_INPUT = REPO_ROOT / "old-source" / "slang" / "slang-capabilities.capdef"
 DEFAULT_OUTPUT = REPO_ROOT / "docs" / "slang-capability-dependency.md"
 
 # Header groups from the `/// [Group]` tags in the capdef file. Atoms that have no tag

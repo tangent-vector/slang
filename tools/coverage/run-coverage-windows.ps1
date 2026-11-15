@@ -113,30 +113,47 @@ OpenCppCoverage.exe not found. Install options:
 # (build\source\slang-core-module\) and the vs2022-dev preset output
 # (build\windows-vs2022-dev\source\slang-core-module\). This is also the
 # shape llvm-cov -ignore-filename-regex uses on Linux via substring matching.
+# Generated files retain their build-tree paths under `source`; implementation files
+# can also be under `old-source` while modules are migrated.
 $SlangcExcludePatterns = @(
     '\prelude\'
     '\source\slang\capability\'
     '\source\slang\fiddle\'
     '\source\slang\slang-lookup-tables\'
     '\source\slang-core-module\'
+    '\old-source\slang-core-module\'
     '\external\'
     '\include\'
     '\source\slang-glslang\'
+    '\old-source\slang-glslang\'
     '\source\slang-record-replay\'
+    '\old-source\slang-record-replay\'
     '\tools\'
     '\source\slang\slang-language-server'
+    '\old-source\slang\slang-language-server'
     '\source\slang\slang-doc-markdown-writer'
+    '\old-source\slang\slang-doc-markdown-writer'
     '\source\slang\slang-doc-ast'
+    '\old-source\slang\slang-doc-ast'
     '\source\slang\slang-ast-dump'
+    '\old-source\slang\slang-ast-dump'
     '\source\slang\slang-repro'
+    '\old-source\slang\slang-repro'
     '\source\slang\slang-workspace-version'
+    '\old-source\slang\slang-workspace-version'
     # Language-server / doc-only files that live in compiler-core.
     '\source\compiler-core\slang-language-server-protocol'
+    '\old-source\compiler-core\slang-language-server-protocol'
     '\source\compiler-core\slang-json-rpc'
+    '\old-source\compiler-core\slang-json-rpc'
     '\source\compiler-core\slang-doc-extractor'
+    '\old-source\compiler-core\slang-doc-extractor'
     '\source\slang\slang-ast-expr.h'
+    '\old-source\slang\slang-ast-expr.h'
     '\source\slang\slang-ast-modifier.h'
+    '\old-source\slang\slang-ast-modifier.h'
     '\source\slang\slang-ast-stmt.h'
+    '\old-source\slang\slang-ast-stmt.h'
 )
 $SlangcExcluded = $SlangcExcludePatterns
 

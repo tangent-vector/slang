@@ -1150,7 +1150,9 @@ jobs:
             // commit sample, horizon). Event and sweep mode share these constants.
             const FILE_MULTIPLIERS = [
               ["source/slang/**", 3.0],
+              ["old-source/slang/**", 3.0],
               ["source/**", 2.0],
+              ["old-source/**", 2.0],
               ["tools/**", 1.5],
               ["tests/**", 1.0],
               ["docs/**", 0.5],

@@ -10,6 +10,15 @@ SPDX-License-Identifier: CC-BY-4.0
 Slang is a shading-language compiler and runtime implemented primarily in C++20 and built with
 CMake.
 
+This branch is an architecture and refactoring prototype.
+The legacy implementation resides in `old-source/`; `source/` contains the persistent module
+documents and any implementations already ported into that hierarchy.
+Pre-existing implementation paths under `source/core/`, `source/compiler-core/`, and
+`source/slang/` in the guidance below refer to their `old-source/` counterparts until the relevant
+module is ported.
+The module documents and current CMake inputs identify the actual ownership and locations.
+The branch-local `.claude/skills/slang-refactor-trial/SKILL.md` describes the staged workflow.
+
 Key directories:
 
 - `source/`: core implementation, including `source/slang/`, `source/core/`,

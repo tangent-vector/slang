@@ -7,6 +7,12 @@ watched_paths_digest: fbf01df9017d66463a64e01622276ae0c4dd5286d0596b4b1a494ffe03
 warning: "Auto-generated. May drift from source. Do not edit by hand."
 ---
 
+<!--
+Local implementation link destinations were mechanically relocated from
+source/ to old-source/ for this checkout.
+The `source_commit` and `watched_paths_digest` above still record the original generation inputs.
+-->
+
 # Types Reference
 
 The reference for every concrete `Type` subclass in the Slang AST,
@@ -21,19 +27,19 @@ modifier values) lives in [values.md](values.md).
 ## Source
 
 Concrete type classes are declared in
-[slang-ast-type.h](../../../../source/slang/slang-ast-type.h). The `Type`
+[slang-ast-type.h](../../../../old-source/slang/slang-ast-type.h). The `Type`
 and `Val` abstract bases are in
-[slang-ast-base.h](../../../../source/slang/slang-ast-base.h), where
+[slang-ast-base.h](../../../../old-source/slang/slang-ast-base.h), where
 `Type` adds `getCanonicalType()` — a thin wrapper over `Val::resolve()` —
 and the protected `m_astBuilderForReflection` back-pointer that exists
 for the reflection API only. The sibling non-Type `Val` classes that show
 up in type operands (`IntVal`s for extents, `SubtypeWitness`es for
 conformance evidence) are declared in
-[slang-ast-val.h](../../../../source/slang/slang-ast-val.h) and are
+[slang-ast-val.h](../../../../old-source/slang/slang-ast-val.h) and are
 documented in [values.md](values.md).
 
 The parsed type grammar enters through
-[slang-parser.cpp](../../../../source/slang/slang-parser.cpp):
+[slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp):
 `_parseSimpleTypeSpec` reads the base type specifier,
 `parsePostfixTypeSuffix` attaches array and pointer suffixes,
 `parseFuncTypeExpr` builds function types, and `parseExpandExpr` /
@@ -41,8 +47,8 @@ The parsed type grammar enters through
 
 Many of the classes below are *magic types*: the C++ class carries the
 behavior, but the declaration a user actually names is written in the
-core module ([core.meta.slang](../../../../source/slang/core.meta.slang),
-[hlsl.meta.slang](../../../../source/slang/hlsl.meta.slang), and the
+core module ([core.meta.slang](../../../../old-source/slang/core.meta.slang),
+[hlsl.meta.slang](../../../../old-source/slang/hlsl.meta.slang), and the
 GLSL/HLSL compatibility modules) and bound to the C++ class by a
 `__magic_type(...)` attribute. Both of those module sources are among this
 page's watched paths; the GLSL/HLSL compatibility modules are not, so a
@@ -51,7 +57,7 @@ magic type added only there does not mark this page stale.
 To test whether an arbitrary `Type*` is a `DeclRefType` naming a
 particular declaration, use the `isDeclRefTypeOf<T>` template declared
 immediately after `DeclRefType` in
-[slang-ast-type.h](../../../../source/slang/slang-ast-type.h) rather than
+[slang-ast-type.h](../../../../old-source/slang/slang-ast-type.h) rather than
 re-deriving the cast at the call site.
 
 ## Family hierarchy
@@ -288,7 +294,7 @@ for that class (see
 
 ### NamedExpressionType
 
-Its `_toTextOverride` ([slang-ast-type.cpp](../../../../source/slang/slang-ast-type.cpp) line 1392) prints the alias's `declRef`, so formatting *this* node shows the alias name. `_createCanonicalTypeOverride` (line 1400) resolves it to the aliased type, so a consumer that canonicalizes first shows the resolved type. Type-mismatch diagnostics and emitted target code are in the second category: given `typealias Celsius = float`, they say `float`.
+Its `_toTextOverride` ([slang-ast-type.cpp](../../../../old-source/slang/slang-ast-type.cpp) line 1392) prints the alias's `declRef`, so formatting *this* node shows the alias name. `_createCanonicalTypeOverride` (line 1400) resolves it to the aliased type, so a consumer that canonicalizes first shows the resolved type. Type-mismatch diagnostics and emitted target code are in the second category: given `typealias Celsius = float`, they say `float`.
 
 ### DeclRefType
 
@@ -309,7 +315,7 @@ builtins are registered through `__builtin_type(...)` instead). A builtin
 declared with `__intrinsic_type(...)` alone — for example the
 work-graph record types `NodeOutputArray` and `EmptyNodeOutputArray`
 in
-[workgraph.slang](../../../../source/standard-modules/experimental/workgraph.slang)
+[workgraph.slang](../../../../old-source/standard-modules/experimental/workgraph.slang)
 — has no `Type` subclass and is simply a `DeclRefType` naming the
 core-module `struct`. Such types therefore have no row in the table
 above; their compiler-side identity lives at the IR level instead
@@ -320,7 +326,7 @@ above; their compiler-side identity lives at the IR level instead
 
 The arithmetic-type leaves. They are `DeclRefType` descendants
 because each is canonically introduced as a declaration in
-[core.meta.slang](../../../../source/slang/core.meta.slang); the
+[core.meta.slang](../../../../old-source/slang/core.meta.slang); the
 dedicated subclasses exist so that arithmetic-specific helper APIs
 (scalar-type-of, element-count, layout) can be exposed without
 crawling the decl-ref.
@@ -328,13 +334,13 @@ crawling the decl-ref.
 Value boundaries belong to the leaf, not to the AST node. Each scalar
 leaf is one fixed-width machine type, emitted once per `BaseType` tag
 by the `__builtin_type` loop in
-[core.meta.slang](../../../../source/slang/core.meta.slang), and its
+[core.meta.slang](../../../../old-source/slang/core.meta.slang), and its
 operators are intrinsic ops, so arithmetic is the target's native
 arithmetic at that width: an unsigned add past the top of the range
 wraps rather than saturating or being diagnosed, so a `uint` holding
 `0xFFFFFFFF` plus `1u` is `0`. The front end does step in for integer
 *literals*: `_determineIntegerLiteralType` in
-[slang-parser.cpp](../../../../source/slang/slang-parser.cpp) picks
+[slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp) picks
 the narrowest type that holds the value — `int`, then `int64`, for an
 unsuffixed decimal — and diagnoses `IntegerLiteralTooLarge` for an
 signed decimal literal of `INT64_MAX + 2` or more instead of truncating
@@ -386,19 +392,19 @@ the three by-reference modes), which a caller must unwrap to recover the
 plain type and the passing mode. `FuncType::getParamInfo` does that
 through `getParamInfoFromTypeWithModeWrapper`, which returns a
 `ParamInfo` (value `type` plus separate `mode`, declared in
-[slang-ast-support-types.h](../../../../source/slang/slang-ast-support-types.h))
+[slang-ast-support-types.h](../../../../old-source/slang/slang-ast-support-types.h))
 and asserts that the value type is not itself a mode wrapper, so a mode
 has exactly one representation. An `in` parameter has no wrapper type.
 The
 error-type slot is always present rather than optional: a callable that
 cannot fail records the bottom type there — spelled `never` when
 printed (`BottomType::_toTextOverride`,
-[slang-ast-type.cpp](../../../../source/slang/slang-ast-type.cpp) line
+[slang-ast-type.cpp](../../../../old-source/slang/slang-ast-type.cpp) line
 124) and represented by the C++ class `BottomType`
-([slang-ast-type.h](../../../../source/slang/slang-ast-type.h) line
+([slang-ast-type.h](../../../../old-source/slang/slang-ast-type.h) line
 50). Neither spelling is surface syntax: no declaration of the name
 exists in
-[core.meta.slang](../../../../source/slang/core.meta.slang), so writing
+[core.meta.slang](../../../../old-source/slang/core.meta.slang), so writing
 it in a `.slang` program is just an undefined identifier. It is a type
 the compiler forms, not one a user names. With the bottom type in the
 error slot only the failure
@@ -427,10 +433,10 @@ introduced through the core module and inherit from
 is shared. The declarations that bind a user-nameable type to each of
 these classes are the `__magic_type(TextureType)` and
 `__magic_type(HLSLByteAddressBufferType)` intrinsics in
-[hlsl.meta.slang](../../../../source/slang/hlsl.meta.slang), and the
+[hlsl.meta.slang](../../../../old-source/slang/hlsl.meta.slang), and the
 `__magic_type(ConstantBufferType)`, `__magic_type(ParameterBlockType)`,
 and `__magic_type(SamplerStateType, ...)` intrinsics in
-[core.meta.slang](../../../../source/slang/core.meta.slang).
+[core.meta.slang](../../../../old-source/slang/core.meta.slang).
 
 ### UntypedResourceHandleType and UntypedSamplerHandleType
 
@@ -443,7 +449,7 @@ Writing `ResourceDescriptorHeap[i]` subscripts the core-module value
 Only those two result types are magic: they are bound to
 `UntypedResourceHandleType` and `UntypedSamplerHandleType` by
 `__magic_type` in
-[hlsl.meta.slang](../../../../source/slang/hlsl.meta.slang), while the
+[hlsl.meta.slang](../../../../old-source/slang/hlsl.meta.slang), while the
 two heap structs themselves are plain `DeclRefType`s. The surface is
 capability-gated: both heap subscripts and both handle constructors
 carry `[require(glsl_hlsl_spirv_wgsl, descriptor_handle)]`, so writing

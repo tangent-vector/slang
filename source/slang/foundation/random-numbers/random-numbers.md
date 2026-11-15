@@ -59,7 +59,7 @@ Each generator has mutable state without synchronization of draws or resets; cli
 ## Clients and Reproducibility
 
 Clients own seed selection and the order of operations that consume each sequence.
-For example, `obfuscateModuleLocs` in `source/slang/slang-ir-obfuscate-loc.cpp` hashes module location information to choose a seed, fills bytes for an obfuscated filename, then selects indices from a shrinking bag.
+For example, `obfuscateModuleLocs` in `old-source/slang/slang-ir-obfuscate-loc.cpp` hashes module location information to choose a seed, fills bytes for an obfuscated filename, then selects indices from a shrinking bag.
 The compiler pass owns the hash inputs, location ordering, and mapping policy; Random Numbers owns the draws and their state consumption.
 
 The render-test input-layout parser uses a caller-supplied generator to construct signed, unsigned, and floating-point buffer values.
@@ -76,11 +76,11 @@ The two generators are not interchangeable implementations of one seeded sequenc
 
 The following assignments cover the two random-generator files completely and only the random-number portion of the math header:
 
-| Existing File                            | Assigned Responsibility                                                                                                                                                                |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `source/core/slang-random-generator.h`   | The `RandomGenerator` interface and inline operations, the complete public `Mt19937RandomGenerator` declaration including its protected state, and the `DefaultRandomGenerator` alias. |
-| `source/core/slang-random-generator.cpp` | Common scalar and bounded-value operations, byte filling and its file-local `_nextData` fragment routine, the default factory, and the complete concrete generator implementation.     |
-| `source/core/slang-math.h`               | Only the complete `Random` class and its inline implementation. The `Math` class, arithmetic utilities, and floating-point conversions remain outside this module.                     |
+| Existing File                                | Assigned Responsibility                                                                                                                                                                |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `old-source/core/slang-random-generator.h`   | The `RandomGenerator` interface and inline operations, the complete public `Mt19937RandomGenerator` declaration including its protected state, and the `DefaultRandomGenerator` alias. |
+| `old-source/core/slang-random-generator.cpp` | Common scalar and bounded-value operations, byte filling and its file-local `_nextData` fragment routine, the default factory, and the complete concrete generator implementation.     |
+| `old-source/core/slang-math.h`               | Only the complete `Random` class and its inline implementation. The `Math` class, arithmetic utilities, and floating-point conversions remain outside this module.                     |
 
 Callers remain with their owning compiler or tool concerns.
 The random-generator implementation currently compiles into both `core` and the separately compiled `slang-rt` consumer described by [Foundation](../foundation.md#build-consumers-and-ancestor-decisions).

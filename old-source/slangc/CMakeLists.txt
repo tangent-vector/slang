@@ -23,7 +23,7 @@ if(SLANG_ENABLE_SLANGC)
             ${SLANG_GLSL_MODULE_DEPENDENCY}
             ${SLANG_CORE_MODULE_CACHE_DEPENDENCY}
         PRECOMPILE_HEADERS
-            ${slang_SOURCE_DIR}/source/core/slang-basic.h
+            ${SLANG_LEGACY_SOURCE_DIR}/core/slang-basic.h
         INSTALL
         EXPORT_SET_NAME SlangTargets
     )

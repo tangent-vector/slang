@@ -7,11 +7,17 @@ watched_paths_digest: 7003d9ffd97f502ef36deaf8cec832320bcf008e9a79f32f8c5f257028
 warning: "Auto-generated. May drift from source. Do not edit by hand."
 ---
 
+<!--
+Local implementation link destinations were mechanically relocated from
+source/ to old-source/ for this checkout.
+The `source_commit` and `watched_paths_digest` above still record the original generation inputs.
+-->
+
 # Decorations
 
 This page is the per-opcode reference for the `Decoration` family —
 the largest single family in
-[slang-ir-insts.lua](../../../../source/slang/slang-ir-insts.lua),
+[slang-ir-insts.lua](../../../../old-source/slang/slang-ir-insts.lua),
 spanning lines 1763-2738 and holding 201 concrete opcodes at
 `source_commit`. Decorations attach metadata to other IR
 instructions: names, layout binding, control-flow hints,
@@ -23,29 +29,29 @@ variable and trying to identify what each decoration says about it.
 ## Source
 
 The opcodes live under the top-level `Decoration` entry of
-[slang-ir-insts.lua](../../../../source/slang/slang-ir-insts.lua) at
+[slang-ir-insts.lua](../../../../old-source/slang/slang-ir-insts.lua) at
 line 1763. Per-opcode info (mnemonics, fixed operand counts, op
 flags) is registered in the generated `kIROps` table in
-[slang-ir-insts-info.cpp](../../../../source/slang/slang-ir-insts-info.cpp).
+[slang-ir-insts-info.cpp](../../../../old-source/slang/slang-ir-insts-info.cpp).
 C++ wrappers are declared in
-[slang-ir-insts.h](../../../../source/slang/slang-ir-insts.h). Of the
+[slang-ir-insts.h](../../../../old-source/slang/slang-ir-insts.h). Of the
 201 wrappers, 64 are hand-written there and marked `‡` in the
 `C++ wrapper` column; the generator
-([slang-ir.h.lua](../../../../source/slang/slang-ir.h.lua)) skips any
+([slang-ir.h.lua](../../../../old-source/slang/slang-ir.h.lua)) skips any
 struct already defined and emits only the remaining 137 (see
 [../cross-cutting/ir-instructions.md](../cross-cutting/ir-instructions.md)).
 Infrastructure (op flags, `IRBuilder` helpers such as
 `addSimpleDecoration<T>` and the per-decoration `add*Decoration`
 emitters) is split between
-[slang-ir.h](../../../../source/slang/slang-ir.h) for the op flags,
-[slang-ir-insts.h](../../../../source/slang/slang-ir-insts.h) for
+[slang-ir.h](../../../../old-source/slang/slang-ir.h) for the op flags,
+[slang-ir-insts.h](../../../../old-source/slang/slang-ir-insts.h) for
 `addSimpleDecoration<T>` and most inline `add*Decoration` helpers, and
-[slang-ir.cpp](../../../../source/slang/slang-ir.cpp) for the
+[slang-ir.cpp](../../../../old-source/slang/slang-ir.cpp) for the
 out-of-line helper definitions such as `addLayoutDecoration`.
 
 Most decorations originate from AST-side modifiers and attributes.
 In
-[slang-lower-to-ir.cpp](../../../../source/slang/slang-lower-to-ir.cpp)
+[slang-lower-to-ir.cpp](../../../../old-source/slang/slang-lower-to-ir.cpp)
 the main producers are `addVarDecorations` (line 3160) for
 parameters, fields, and global variables; `addLinkageDecoration`
 (line 1431) for the import / export / public / extern family;
@@ -241,13 +247,13 @@ semantic buckets of this page, not Lua nodes.
 ### Work-graph nodes
 
 The work-graph attributes are declared as `attribute_syntax` in
-[workgraph.slang](../../../../source/standard-modules/experimental/workgraph.slang)
+[workgraph.slang](../../../../old-source/standard-modules/experimental/workgraph.slang)
 rather than in `core.meta.slang`; see
 [../ast-reference/modifiers.md](../ast-reference/modifiers.md) for the
 AST classes. The function-level ones are lowered by
 `lowerFuncDeclInContext` (line 14545 onward) and the parameter-level
 ones by `addVarDecorations` (line 3304 onward) in
-[slang-lower-to-ir.cpp](../../../../source/slang/slang-lower-to-ir.cpp).
+[slang-lower-to-ir.cpp](../../../../old-source/slang/slang-lower-to-ir.cpp).
 
 | Opcode | C++ wrapper | Operands | Flags | AST origin | Summary |
 | --- | --- | --- | --- | --- | --- |
@@ -415,7 +421,7 @@ and an `IRStringLit` operand carrying the target-language source
 code or instruction name. A predicate-bearing target intrinsic adds
 two more: an `IRStringLit` predicate and a type scrutinee, so
 `IRBuilder::addTargetIntrinsicDecoration`
-([slang-ir-insts.h](../../../../source/slang/slang-ir-insts.h) lines
+([slang-ir-insts.h](../../../../old-source/slang/slang-ir-insts.h) lines
 4938-4981) builds either the two- or the four-operand form. The same
 function inst can carry
 several `targetIntrinsic` decorations — one per target. Backends
@@ -455,16 +461,16 @@ that need to preserve insts across rewrites.
 operands are the profile (an `IRIntLit` tag), the user-visible
 name, and an optional module name. The tag is a `Profile::RawVal`,
 not a bare stage code: `IREntryPointDecoration::getProfile`
-([slang-ir-insts.h](../../../../source/slang/slang-ir-insts.h) line
+([slang-ir-insts.h](../../../../old-source/slang/slang-ir-insts.h) line
 382) rebuilds a `Profile` from it, and `Profile`
-([slang-profile.h](../../../../source/slang/slang-profile.h) lines
+([slang-profile.h](../../../../old-source/slang/slang-profile.h) lines
 68-116) packs the `ProfileVersion` in the high 16 bits and the
 `Stage` in the low 16. An entry point compiled with `-stage vertex`
 and no explicit profile version therefore prints as `1`, the raw
 `Stage` value. The `Stage` values are the `SlangStage` enumerators in
 [slang.h](../../../../include/slang.h) (lines 907-923), bound to
 `Stage` by `PROFILE_STAGE` entries
-([slang-profile.h](../../../../source/slang/slang-profile.h) lines
+([slang-profile.h](../../../../old-source/slang/slang-profile.h) lines
 50-58):
 
 | Tag | Stage | Tag | Stage |
@@ -508,7 +514,7 @@ These two opcodes are declared but have no producer or consumer at
 "reserved for stable IR serialization" because newer work-graph records
 use the dedicated `Type.WorkGraphRecordTypeBase` opcodes instead. Both
 have entries in
-[slang-ir-insts-stable-names.lua](../../../../source/slang/slang-ir-insts-stable-names.lua),
+[slang-ir-insts-stable-names.lua](../../../../old-source/slang/slang-ir-insts-stable-names.lua),
 which is what makes the reservation meaningful — a stable name is
 assigned once and never reused, so retaining the entries keeps those
 identities from being handed to a future, unrelated opcode.
@@ -517,7 +523,7 @@ identities from being handed to a future, unrelated opcode.
 
 `shader64BitIndexing` is nullary and is attached only to an entry-point
 function, by `lowerFrontEndEntryPointToIR`
-([slang-lower-to-ir.cpp](../../../../source/slang/slang-lower-to-ir.cpp)
+([slang-lower-to-ir.cpp](../../../../old-source/slang/slang-lower-to-ir.cpp)
 line 15280, via `lowerEntryPointShader64BitIndexingRequirement`
 at line 15260, which `TargetProgram::createIRModuleForLayout` also
 calls at line 16565). It is not lowered from the `[Shader64BitIndexing]`
@@ -540,7 +546,7 @@ No AST modifier lowers directly to `requireCapabilityAtom`. A
 decoration on that function; it feeds the entry point's
 `inferredCapabilityRequirements`. The decoration is added only while
 `TargetProgram::createIRModuleForLayout` builds the layout IR module
-([slang-lower-to-ir.cpp](../../../../source/slang/slang-lower-to-ir.cpp)
+([slang-lower-to-ir.cpp](../../../../old-source/slang/slang-lower-to-ir.cpp)
 lines 16563-16577): for each entry point it walks every atom of every
 alternative in that set and calls `addRequireCapabilityAtomDecoration`
 for those in the SPIR-V version range (`_spirv_1_0` through the latest
@@ -567,14 +573,14 @@ decoration on `computeMain`.
 ### `BuiltinDecoration`
 
 `BuiltinDecoration` is attached by `visitInterfaceDecl`
-([slang-lower-to-ir.cpp](../../../../source/slang/slang-lower-to-ir.cpp)
+([slang-lower-to-ir.cpp](../../../../old-source/slang/slang-lower-to-ir.cpp)
 lines 12423-12425) and only to an `interface` carrying `[builtin]`;
 the core and HLSL modules declare it on interfaces such as
 `__BuiltinType` and `IBufferDataLayout`. It is therefore absent from
 structs, functions, and user declarations, but present on every such
 core-module interface that a program links. Declaring a
 `RWStructuredBuffer<float>` is enough to pull in `IBufferDataLayout`
-([hlsl.meta.slang](../../../../source/slang/hlsl.meta.slang) line 24),
+([hlsl.meta.slang](../../../../old-source/slang/hlsl.meta.slang) line 24),
 so a search of a dump for `BuiltinDecoration` matches those library
 interfaces; searching for a user symbol first narrows the dump to the
 code of interest.
@@ -600,7 +606,7 @@ file scope as a global `uniform float scale` moves it to
 `GlobalParams` — but only because that global is *ordinary* data,
 since global collection is skipped when the global scope holds nothing
 but resources
-([slang-ir-collect-global-uniforms.cpp](../../../../source/slang/slang-ir-collect-global-uniforms.cpp)
+([slang-ir-collect-global-uniforms.cpp](../../../../old-source/slang/slang-ir-collect-global-uniforms.cpp)
 lines 120-122). Both passes run during target lowering rather than AST
 lowering, so neither struct is in the `LOWER-TO-IR` snapshot of a
 `-dump-ir` trace; the decoration first appears under
@@ -612,9 +618,9 @@ lowering, so neither struct is in the `LOWER-TO-IR` snapshot of a
 The `modeOperand` is a plain integer `IRInterpolationMode` value, not
 a bit mask: `Linear` 0, `NoPerspective` 1, `NoInterpolation` 2,
 `Centroid` 3, `Sample` 4, `PerVertex` 5
-([slang-ir-insts.h](../../../../source/slang/slang-ir-insts.h) lines
+([slang-ir-insts.h](../../../../old-source/slang/slang-ir-insts.h) lines
 181-190). `addVarDecorations`
-([slang-lower-to-ir.cpp](../../../../source/slang/slang-lower-to-ir.cpp)
+([slang-lower-to-ir.cpp](../../../../old-source/slang/slang-lower-to-ir.cpp)
 lines 3165-3187) maps one source modifier to one value —
 `linear`, `noperspective`, `nointerpolation`, `centroid`, `sample`,
 and Slang's own `pervertex` respectively — so a dump that shows
@@ -625,7 +631,7 @@ and Slang's own `pervertex` respectively — so a dump that shows
 These two nullary decorations record a *constrained* `gl_FragDepth`
 output. They are not produced from a modifier directly; instead the
 GLSL legalization pass in
-[slang-ir-glsl-legalize.cpp](../../../../source/slang/slang-ir-glsl-legalize.cpp)
+[slang-ir-glsl-legalize.cpp](../../../../old-source/slang/slang-ir-glsl-legalize.cpp)
 recognizes the HLSL `SV_DepthGreaterEqual` / `SV_DepthLessEqual`
 system-value semantics on a fragment output and attaches the
 matching decoration to the *entry-point function* (not the
@@ -663,7 +669,7 @@ the built-in requirement it stands for — for example the
 `Differential` type or differential-witness requirements of
 `IDifferentiable`. It is attached during requirement-key lowering
 in
-[slang-lower-to-ir.cpp](../../../../source/slang/slang-lower-to-ir.cpp)
+[slang-lower-to-ir.cpp](../../../../old-source/slang/slang-lower-to-ir.cpp)
 to the `IRBuiltinRequirementKey` produced for a requirement decl
 that carries an AST `BuiltinRequirementModifier`. Unlike an
 ordinary requirement, a recognized built-in requirement is keyed

@@ -7,6 +7,12 @@ watched_paths_digest: 8ab8bbe9091c2f5b7cdba8789fd7fe31e3c94786be663f97327c6d08d6
 warning: "Auto-generated. May drift from source. Do not edit by hand."
 ---
 
+<!--
+Local implementation link destinations were mechanically relocated from
+source/ to old-source/ for this checkout.
+The `source_commit` and `watched_paths_digest` above still record the original generation inputs.
+-->
+
 # Name Resolution
 
 This subtree documents the *algorithmic rules* by which Slang turns an
@@ -49,10 +55,10 @@ assuming a mechanism lives wholly on one page.
 
 | Page | Topic | Primary source |
 | --- | --- | --- |
-| [scopes.md](scopes.md) | The `Scope` record, which AST nodes own a scope, sibling scopes, and the order scopes are consulted | [slang-ast-base.h](../../../../source/slang/slang-ast-base.h), [slang-parser.cpp](../../../../source/slang/slang-parser.cpp), [slang-check-decl.cpp](../../../../source/slang/slang-check-decl.cpp) |
-| [lookup.md](lookup.md) | The lookup entry points; masks and option bits, inheritance and transparent-member walks, breadcrumbs, shadowing | [slang-lookup.h](../../../../source/slang/slang-lookup.h), [slang-lookup.cpp](../../../../source/slang/slang-lookup.cpp) |
-| [visibility.md](visibility.md) | `public` / `internal` / `private`, the per-language-version defaults, and where the visibility filter runs | [slang-ast-modifier.h](../../../../source/slang/slang-ast-modifier.h), [slang-check-decl.cpp](../../../../source/slang/slang-check-decl.cpp), [slang-check-expr.cpp](../../../../source/slang/slang-check-expr.cpp) |
-| [overload-resolution.md](overload-resolution.md) | Candidate filtering, conversion-cost ranking, partial generic application, operator overloading | [slang-check-overload.cpp](../../../../source/slang/slang-check-overload.cpp), [slang-check-expr.cpp](../../../../source/slang/slang-check-expr.cpp) |
+| [scopes.md](scopes.md) | The `Scope` record, which AST nodes own a scope, sibling scopes, and the order scopes are consulted | [slang-ast-base.h](../../../../old-source/slang/slang-ast-base.h), [slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp), [slang-check-decl.cpp](../../../../old-source/slang/slang-check-decl.cpp) |
+| [lookup.md](lookup.md) | The lookup entry points; masks and option bits, inheritance and transparent-member walks, breadcrumbs, shadowing | [slang-lookup.h](../../../../old-source/slang/slang-lookup.h), [slang-lookup.cpp](../../../../old-source/slang/slang-lookup.cpp) |
+| [visibility.md](visibility.md) | `public` / `internal` / `private`, the per-language-version defaults, and where the visibility filter runs | [slang-ast-modifier.h](../../../../old-source/slang/slang-ast-modifier.h), [slang-check-decl.cpp](../../../../old-source/slang/slang-check-decl.cpp), [slang-check-expr.cpp](../../../../old-source/slang/slang-check-expr.cpp) |
+| [overload-resolution.md](overload-resolution.md) | Candidate filtering, conversion-cost ranking, partial generic application, operator overloading | [slang-check-overload.cpp](../../../../old-source/slang/slang-check-overload.cpp), [slang-check-expr.cpp](../../../../old-source/slang/slang-check-expr.cpp) |
 
 ## Flow diagram
 
@@ -115,7 +121,7 @@ flowchart TD
   not all built by the parser: namespaces and `using` decls acquire
   their `nextSibling` links when a decl is driven to
   `DeclCheckState::ScopesWired`
-  ([slang-ast-support-types.h](../../../../source/slang/slang-ast-support-types.h)),
+  ([slang-ast-support-types.h](../../../../old-source/slang/slang-ast-support-types.h)),
   a state that sits between modifier checking and signature checking.
   Imported modules are spliced in later, by
   `SemanticsDeclHeaderVisitor::visitImportDecl` at

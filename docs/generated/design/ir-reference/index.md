@@ -7,11 +7,17 @@ watched_paths_digest: 140c480b4017179b5ab6b107590ef9acc166eff6d0552fce305aa2d000
 warning: "Auto-generated. May drift from source. Do not edit by hand."
 ---
 
+<!--
+Local implementation link destinations were mechanically relocated from
+source/ to old-source/ for this checkout.
+The `source_commit` and `watched_paths_digest` above still record the original generation inputs.
+-->
+
 # IR Reference
 
 This subtree of `docs/generated/design/` is a per-family reference for the
 Slang Intermediate Representation. Every concrete opcode declared in
-[../../../../source/slang/slang-ir-insts.lua](../../../../source/slang/slang-ir-insts.lua)
+[../../../../source/slang/slang-ir-insts.lua](../../../../old-source/slang/slang-ir-insts.lua)
 appears in a family page below, tabulated with its C++ wrapper
 struct, its operand shape, its op-flags (`H` hoistable, `P` parent,
 `G` global), the producer that constructs it, and a one-line summary.
@@ -84,7 +90,7 @@ with the rest of the alignment/stride family, not with the
 compile-time `sizeOf` / `alignOf` queries on [misc.md](misc.md).
 
 Line numbers in the **Lua entry root** column refer to
-[../../../../source/slang/slang-ir-insts.lua](../../../../source/slang/slang-ir-insts.lua),
+[../../../../source/slang/slang-ir-insts.lua](../../../../old-source/slang/slang-ir-insts.lua),
 which is 3655 lines at this commit; both the counts and the line
 numbers drift as opcodes are added, removed, or moved between
 families.
@@ -94,7 +100,7 @@ families.
 The AST-origin column on every family page names the *producer* that
 constructs a given opcode: where that producer is AST lowering, the
 citation is one of the more than 200 `visit*` member functions in
-[../../../../source/slang/slang-lower-to-ir.cpp](../../../../source/slang/slang-lower-to-ir.cpp)
+[../../../../source/slang/slang-lower-to-ir.cpp](../../../../old-source/slang/slang-lower-to-ir.cpp)
 (for example, `visitVarDecl` at line 11812 emits `var`), and the AST
 side of that mapping is documented in the
 [../ast-reference/](../ast-reference) subtree — chiefly
@@ -109,9 +115,9 @@ ordinary `InvokeExpr` of a core-module function declared with
 `__intrinsic_op` (`visitInvokeExpr`, line 6706). An opcode with no
 direct AST source names its producing pass or function instead — an
 `__intrinsic_op` declaration in
-[../../../../source/slang/core.meta.slang](../../../../source/slang/core.meta.slang),
-[../../../../source/slang/hlsl.meta.slang](../../../../source/slang/hlsl.meta.slang),
-or [../../../../source/slang/diff.meta.slang](../../../../source/slang/diff.meta.slang),
+[../../../../source/slang/core.meta.slang](../../../../old-source/slang/core.meta.slang),
+[../../../../source/slang/hlsl.meta.slang](../../../../old-source/slang/hlsl.meta.slang),
+or [../../../../source/slang/diff.meta.slang](../../../../old-source/slang/diff.meta.slang),
 or a named IR pass cited with the file and line that builds the
 instruction — while an opcode that nothing in `source/` constructs is
 marked **no producer at HEAD**. The old catch-alls `(synthesized)` and

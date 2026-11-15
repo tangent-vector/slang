@@ -54,7 +54,7 @@ function(fetch_or_build_slang_llvm)
             clangFrontendTool
         )
         slang_add_target(
-            source/slang-llvm
+            ${SLANG_LEGACY_SOURCE_DIR}/slang-llvm
             MODULE
             LINK_WITH_PRIVATE core compiler-core clang-dep
             # We include slang.h, but don't need to link with it

@@ -7,6 +7,12 @@ watched_paths_digest: 524db519639c68c87df847957eafdee39c8abdb2e708167900770ba629
 warning: "Auto-generated. May drift from source. Do not edit by hand."
 ---
 
+<!--
+Local implementation link destinations were mechanically relocated from
+source/ to old-source/ for this checkout.
+The `source_commit` and `watched_paths_digest` above still record the original generation inputs.
+-->
+
 # Targets, Capabilities, and Profiles
 
 This document describes the supported compilation targets and the
@@ -29,26 +35,26 @@ are dispatched by `CodeGenTarget` further down the pipeline.
 
 | Target group | Public `SlangCompileTarget` values | Output | Emit file(s) |
 | --- | --- | --- | --- |
-| HLSL | `SLANG_HLSL`, `SLANG_DXBC`, `SLANG_DXBC_ASM`, `SLANG_DXIL`, `SLANG_DXIL_ASM` | HLSL text plus downstream DXBC/DXIL produced via FXC / DXC | [slang-emit-hlsl.cpp](../../../../source/slang/slang-emit-hlsl.cpp) (DXBC/DXIL are downstream-compiled) |
-| GLSL | `SLANG_GLSL`, plus the retained-but-removed `SLANG_GLSL_VULKAN_DEPRECATED` and `SLANG_GLSL_VULKAN_ONE_DESC_DEPRECATED` enumerators | GLSL text (typically forwarded to glslang for SPIR-V) | [slang-emit-glsl.cpp](../../../../source/slang/slang-emit-glsl.cpp) |
-| SPIR-V (direct) | `SLANG_SPIRV`, `SLANG_SPIRV_ASM` | SPIR-V binary or assembly | [slang-emit-spirv.cpp](../../../../source/slang/slang-emit-spirv.cpp) |
-| Metal Shading Language | `SLANG_METAL`, `SLANG_METAL_LIB`, `SLANG_METAL_LIB_ASM` | MSL text, Metal library, Metal library assembly | [slang-emit-metal.cpp](../../../../source/slang/slang-emit-metal.cpp) (`*_LIB`/`*_LIB_ASM` go through Metal's downstream tools) |
-| WGSL | `SLANG_WGSL`, `SLANG_WGSL_SPIRV`, `SLANG_WGSL_SPIRV_ASM` | WGSL text, plus SPIR-V binary/assembly produced via WGSL | [slang-emit-wgsl.cpp](../../../../source/slang/slang-emit-wgsl.cpp) |
-| C++ shader | `SLANG_CPP_SOURCE`, `SLANG_CPP_HEADER` | C++ text linked against `slang-rt`; header variant emits a declarations-only file | [slang-emit-cpp.cpp](../../../../source/slang/slang-emit-cpp.cpp) |
+| HLSL | `SLANG_HLSL`, `SLANG_DXBC`, `SLANG_DXBC_ASM`, `SLANG_DXIL`, `SLANG_DXIL_ASM` | HLSL text plus downstream DXBC/DXIL produced via FXC / DXC | [slang-emit-hlsl.cpp](../../../../old-source/slang/slang-emit-hlsl.cpp) (DXBC/DXIL are downstream-compiled) |
+| GLSL | `SLANG_GLSL`, plus the retained-but-removed `SLANG_GLSL_VULKAN_DEPRECATED` and `SLANG_GLSL_VULKAN_ONE_DESC_DEPRECATED` enumerators | GLSL text (typically forwarded to glslang for SPIR-V) | [slang-emit-glsl.cpp](../../../../old-source/slang/slang-emit-glsl.cpp) |
+| SPIR-V (direct) | `SLANG_SPIRV`, `SLANG_SPIRV_ASM` | SPIR-V binary or assembly | [slang-emit-spirv.cpp](../../../../old-source/slang/slang-emit-spirv.cpp) |
+| Metal Shading Language | `SLANG_METAL`, `SLANG_METAL_LIB`, `SLANG_METAL_LIB_ASM` | MSL text, Metal library, Metal library assembly | [slang-emit-metal.cpp](../../../../old-source/slang/slang-emit-metal.cpp) (`*_LIB`/`*_LIB_ASM` go through Metal's downstream tools) |
+| WGSL | `SLANG_WGSL`, `SLANG_WGSL_SPIRV`, `SLANG_WGSL_SPIRV_ASM` | WGSL text, plus SPIR-V binary/assembly produced via WGSL | [slang-emit-wgsl.cpp](../../../../old-source/slang/slang-emit-wgsl.cpp) |
+| C++ shader | `SLANG_CPP_SOURCE`, `SLANG_CPP_HEADER` | C++ text linked against `slang-rt`; header variant emits a declarations-only file | [slang-emit-cpp.cpp](../../../../old-source/slang/slang-emit-cpp.cpp) |
 | C source (declared only) | `SLANG_C_SOURCE` | No working emitter: `CodeGenTarget::CSource` maps to `SourceLanguage::C` in `slang-emit-c-like.cpp`, and the dispatcher in `emitEntryPointsSourceFromIR` has no `C` case, so it diagnoses `UnableToGenerateCodeForTarget` | none |
-| C++ host | `SLANG_HOST_CPP_SOURCE` | Host-side C++ source | [slang-emit-cpp.cpp](../../../../source/slang/slang-emit-cpp.cpp) |
-| CUDA | `SLANG_CUDA_SOURCE`, `SLANG_PTX`, `SLANG_CUDA_OBJECT_CODE`, `SLANG_CUDA_HEADER` | CUDA text, PTX, object code, header | [slang-emit-cuda.cpp](../../../../source/slang/slang-emit-cuda.cpp) (PTX and object code via NVRTC / nvcc) |
-| Torch glue | `SLANG_CPP_PYTORCH_BINDING` | C++ PyTorch binding | [slang-emit-torch.cpp](../../../../source/slang/slang-emit-torch.cpp) |
-| CPU binaries / host-callable | `SLANG_HOST_HOST_CALLABLE`, `SLANG_SHADER_HOST_CALLABLE`, `SLANG_HOST_OBJECT_CODE`, `SLANG_OBJECT_CODE`, `SLANG_HOST_SHARED_LIBRARY`, `SLANG_SHADER_SHARED_LIBRARY`, `SLANG_HOST_EXECUTABLE`, `SLANG_HOST_LLVM_IR`, `SLANG_SHADER_LLVM_IR` | LLVM-IR, object code, JIT-callable code, shared libraries, executables | [slang-emit-llvm.cpp](../../../../source/slang/slang-emit-llvm.cpp) when `isCPUTargetViaLLVM`: `emitLLVMForEntryPoints` in [slang-emit.cpp](../../../../source/slang/slang-emit.cpp) calls `emitLLVMObjectFromIR`, `emitLLVMAssemblyFromIR` or `emitLLVMJITFromIR` by target; otherwise routed to a downstream C++ compiler from [slang-code-gen.cpp](../../../../source/slang/slang-code-gen.cpp) |
-| VM | `SLANG_HOST_VM` | Slang interpreter bytecode | [slang-emit-vm.cpp](../../../../source/slang/slang-emit-vm.cpp) |
-| Slang round-trip | (no public target and no `CodeGenTarget` value) | Unimplemented stub: `emitSlangDeclarationsForEntryPoints` ignores its inputs and writes no source; its only caller is `emitHostVMCode` in [slang-emit.cpp](../../../../source/slang/slang-emit.cpp) | [slang-emit-slang.cpp](../../../../source/slang/slang-emit-slang.cpp) |
+| C++ host | `SLANG_HOST_CPP_SOURCE` | Host-side C++ source | [slang-emit-cpp.cpp](../../../../old-source/slang/slang-emit-cpp.cpp) |
+| CUDA | `SLANG_CUDA_SOURCE`, `SLANG_PTX`, `SLANG_CUDA_OBJECT_CODE`, `SLANG_CUDA_HEADER` | CUDA text, PTX, object code, header | [slang-emit-cuda.cpp](../../../../old-source/slang/slang-emit-cuda.cpp) (PTX and object code via NVRTC / nvcc) |
+| Torch glue | `SLANG_CPP_PYTORCH_BINDING` | C++ PyTorch binding | [slang-emit-torch.cpp](../../../../old-source/slang/slang-emit-torch.cpp) |
+| CPU binaries / host-callable | `SLANG_HOST_HOST_CALLABLE`, `SLANG_SHADER_HOST_CALLABLE`, `SLANG_HOST_OBJECT_CODE`, `SLANG_OBJECT_CODE`, `SLANG_HOST_SHARED_LIBRARY`, `SLANG_SHADER_SHARED_LIBRARY`, `SLANG_HOST_EXECUTABLE`, `SLANG_HOST_LLVM_IR`, `SLANG_SHADER_LLVM_IR` | LLVM-IR, object code, JIT-callable code, shared libraries, executables | [slang-emit-llvm.cpp](../../../../old-source/slang/slang-emit-llvm.cpp) when `isCPUTargetViaLLVM`: `emitLLVMForEntryPoints` in [slang-emit.cpp](../../../../old-source/slang/slang-emit.cpp) calls `emitLLVMObjectFromIR`, `emitLLVMAssemblyFromIR` or `emitLLVMJITFromIR` by target; otherwise routed to a downstream C++ compiler from [slang-code-gen.cpp](../../../../old-source/slang/slang-code-gen.cpp) |
+| VM | `SLANG_HOST_VM` | Slang interpreter bytecode | [slang-emit-vm.cpp](../../../../old-source/slang/slang-emit-vm.cpp) |
+| Slang round-trip | (no public target and no `CodeGenTarget` value) | Unimplemented stub: `emitSlangDeclarationsForEntryPoints` ignores its inputs and writes no source; its only caller is `emitHostVMCode` in [slang-emit.cpp](../../../../old-source/slang/slang-emit.cpp) | [slang-emit-slang.cpp](../../../../old-source/slang/slang-emit-slang.cpp) |
 
 `SLANG_TARGET_UNKNOWN` and `SLANG_TARGET_NONE` are sentinel values
 that do not select an emit backend. `SLANG_TARGET_COUNT_OF` is the
 enumerator terminator and is not a usable target.
 
 `SourceLanguage` (input flavor) is declared in
-[slang-profile.h](../../../../source/slang/slang-profile.h):
+[slang-profile.h](../../../../old-source/slang/slang-profile.h):
 
 ```cpp
 enum class SourceLanguage : SlangSourceLanguageIntegral
@@ -72,17 +78,17 @@ enum class SourceLanguage : SlangSourceLanguageIntegral
 
 The capability system tracks features that a target supports. It is
 declared in
-[slang-capabilities.capdef](../../../../source/slang/slang-capabilities.capdef)
+[slang-capabilities.capdef](../../../../old-source/slang/slang-capabilities.capdef)
 and processed by `slang-capability-generator` (a build-time tool that
 emits `slang-generated-capability-defs.h` and
 `slang-generated-capability-defs-impl.h` consumed via the
 `slang-capability-defs` and `slang-capability-lookup` targets in
-[source/slang/CMakeLists.txt](../../../../source/slang/CMakeLists.txt)).
+[source/slang/CMakeLists.txt](../../../../old-source/slang/CMakeLists.txt)).
 
 ### Vocabulary
 
 From the comments at the top of
-[slang-capabilities.capdef](../../../../source/slang/slang-capabilities.capdef):
+[slang-capabilities.capdef](../../../../old-source/slang/slang-capabilities.capdef):
 
 - A *capability atom* is the smallest unit; it represents one
   target / extension / hardware feature. Examples (paraphrased from
@@ -101,11 +107,11 @@ From the comments at the top of
   `_GLSL_460`), the SPIR-V chain, and the MetalLib chain. Membership
   is tested by `isTargetVersionAtom` (any family) and the per-family
   `isSpirvVersionAtom` in
-  [slang-capability.h](../../../../source/slang/slang-capability.h).
+  [slang-capability.h](../../../../old-source/slang/slang-capability.h).
 - A name whose spelling begins with `_` is *internal*: it is a
   building block that user code is not expected to name directly.
   `isInternalCapabilityName` in
-  [slang-capability.cpp](../../../../source/slang/slang-capability.cpp)
+  [slang-capability.cpp](../../../../old-source/slang/slang-capability.cpp)
   is just a leading-underscore test. Most public atoms are a
   non-underscored `alias` over one or more internal `def`s.
 
@@ -121,7 +127,7 @@ Three forms of declaration in `.capdef`:
 Each version family carries a `*_latest` alias naming its highest
 version (e.g. `alias _sm_latest = _sm_6_10;`), reachable from C++
 through the `getLatest*Atom()` accessors in
-[slang-capability.h](../../../../source/slang/slang-capability.h).
+[slang-capability.h](../../../../old-source/slang/slang-capability.h).
 
 The arithmetic of compatibility:
 
@@ -145,9 +151,9 @@ raises the effective version, which is user-visible; see the
 ### Runtime representation
 
 The C++ side declares `Capability` and `CapabilitySet` in
-[slang-capability.h](../../../../source/slang/slang-capability.h);
+[slang-capability.h](../../../../old-source/slang/slang-capability.h);
 implementation in
-[slang-capability.cpp](../../../../source/slang/slang-capability.cpp).
+[slang-capability.cpp](../../../../old-source/slang/slang-capability.cpp).
 A `CapabilitySet` is the disjunction-of-conjunctions normal form
 described above. Operations:
 
@@ -164,7 +170,7 @@ described above. Operations:
 
 Whether a shortfall in that join is fatal is a command-line choice:
 `maybeDiagnoseWarningOrError` in
-[slang-compiler.h](../../../../source/slang/slang-compiler.h) selects
+[slang-compiler.h](../../../../old-source/slang/slang-compiler.h) selects
 the error form under `-restrictive-capability-check` and the warning
 form otherwise, and `maybeDiagnose` drops the diagnostic under
 `-ignore-capabilities`.
@@ -183,7 +189,7 @@ the form `/// [GROUP]` selects the reference-page heading the entry
 files under, and only six groups are accepted: `[Target]`,
 `[Stage]`, `[EXT]`, `[Version]`, `[Compound]`, `[Other]`. The rules
 are spelled out in the header comment of
-[slang-capabilities.capdef](../../../../source/slang/slang-capabilities.capdef).
+[slang-capabilities.capdef](../../../../old-source/slang/slang-capabilities.capdef).
 
 Because a feature is usually an internal `def` plus a public `alias`,
 the doc-comment must sit on the **public alias** (e.g. `alias node =
@@ -206,17 +212,17 @@ on GLSL / SPIR-V is likewise a compound alias.
 
 A profile pins a stage and a feature-level version; it does not
 carry a target format. The declaration is in
-[slang-profile.h](../../../../source/slang/slang-profile.h);
+[slang-profile.h](../../../../old-source/slang/slang-profile.h);
 implementation in
-[slang-profile.cpp](../../../../source/slang/slang-profile.cpp); the
+[slang-profile.cpp](../../../../old-source/slang/slang-profile.cpp); the
 table of profile names is in
-[slang-profile-defs.h](../../../../source/slang/slang-profile-defs.h)
+[slang-profile-defs.h](../../../../old-source/slang/slang-profile-defs.h)
 (an X-macro included in several places).
 
 A `Profile` carries:
 
 - A `Stage`, declared by the `PROFILE_STAGE` X-macro rows in
-  [slang-profile-defs.h](../../../../source/slang/slang-profile-defs.h)
+  [slang-profile-defs.h](../../../../old-source/slang/slang-profile-defs.h)
   (compute, vertex, fragment, geometry, hull, domain, the raytracing
   stages, mesh, amplification, dispatch, and the work-graph `node`
   stage).
@@ -231,7 +237,7 @@ A `Profile` carries:
 
 Profiles map onto capability sets at the input to the back-end, but
 the target keyhole is chosen first. `TargetRequest::getTargetCaps` in
-[slang-target.cpp](../../../../source/slang/slang-target.cpp) adds the
+[slang-target.cpp](../../../../old-source/slang/slang-target.cpp) adds the
 target's own atom (`llvm` when `isCPUTargetViaLLVM` holds, `cpp`
 otherwise), then filters the profile's set: on the direct SPIR-V path
 it copies only the SPIR-V version and extension atoms and falls back
@@ -261,16 +267,16 @@ target version above what the profile asked for. The option parser
 detects that case rather than letting the two options disagree
 quietly:
 `doRequestedCapabilitiesRaiseTargetVersionAboveProfile` in
-[slang-capability.cpp](../../../../source/slang/slang-capability.cpp)
+[slang-capability.cpp](../../../../old-source/slang/slang-capability.cpp)
 takes the profile's `CapabilitySet`, the list of requested
 `-capability` names, and the version family in question, and folds
 the requested capabilities in one at a time using the same
 compatibility guard as `TargetRequest::getTargetCaps` in
-[slang-target.cpp](../../../../source/slang/slang-target.cpp). If the resulting highest version in
+[slang-target.cpp](../../../../old-source/slang/slang-target.cpp). If the resulting highest version in
 the family exceeds the pinned one, the call site in
-[slang-options.cpp](../../../../source/slang/slang-options.cpp)
+[slang-options.cpp](../../../../old-source/slang/slang-options.cpp)
 reports `conflicting-explicit-capability-and-profile`, defined in
-[slang-diagnostics.lua](../../../../source/slang/slang-diagnostics.lua).
+[slang-diagnostics.lua](../../../../old-source/slang/slang-diagnostics.lua).
 When the profile pins no version of that family, the function
 returns false and nothing is diagnosed.
 
@@ -293,7 +299,7 @@ An unrecognised `-capability` atom is rejected by `findCapabilityName`
 but reported as `unknown profile '<name>'`, the same diagnostic
 `Profile::lookUp` gives an unrecognised `-profile`, because the
 `-capability` handler in
-[slang-options.cpp](../../../../source/slang/slang-options.cpp)
+[slang-options.cpp](../../../../old-source/slang/slang-options.cpp)
 reuses it.
 
 ## How target choice affects IR
@@ -311,7 +317,7 @@ shows through:
    `specializeStageSwitch`, which takes only the IR module and
    specializes per referencing entry point's stage. `__target_switch`
    is used throughout
-   [core.meta.slang](../../../../source/slang/core.meta.slang); its
+   [core.meta.slang](../../../../old-source/slang/core.meta.slang); its
    case labels are capability atom names, arms fall through, and
    `default:` covers every target with no arm of its own:
 
@@ -328,19 +334,19 @@ shows through:
    With no matching arm and no `default:`, the entry point that
    reaches the function is rejected, not the switch.
 2. **Target-specific lowering passes** named by target acronym:
-   - HLSL: [slang-ir-hlsl-legalize.cpp](../../../../source/slang/slang-ir-hlsl-legalize.cpp)
-   - GLSL: [slang-ir-glsl-legalize.cpp](../../../../source/slang/slang-ir-glsl-legalize.cpp), [slang-ir-glsl-liveness.cpp](../../../../source/slang/slang-ir-glsl-liveness.cpp)
-   - SPIR-V: [slang-ir-spirv-legalize.cpp](../../../../source/slang/slang-ir-spirv-legalize.cpp), [slang-ir-spirv-snippet.cpp](../../../../source/slang/slang-ir-spirv-snippet.cpp)
-   - Metal: [slang-ir-metal-legalize.cpp](../../../../source/slang/slang-ir-metal-legalize.cpp)
-   - WGSL: [slang-ir-wgsl-legalize.cpp](../../../../source/slang/slang-ir-wgsl-legalize.cpp)
-   - CUDA: [slang-ir-cuda-immutable-load.cpp](../../../../source/slang/slang-ir-cuda-immutable-load.cpp), [slang-ir-lower-cuda-builtin-types.cpp](../../../../source/slang/slang-ir-lower-cuda-builtin-types.cpp)
-   - Vulkan: [slang-ir-vk-invert-y.cpp](../../../../source/slang/slang-ir-vk-invert-y.cpp)
-   - Torch: [slang-ir-pytorch-cpp-binding.cpp](../../../../source/slang/slang-ir-pytorch-cpp-binding.cpp)
+   - HLSL: [slang-ir-hlsl-legalize.cpp](../../../../old-source/slang/slang-ir-hlsl-legalize.cpp)
+   - GLSL: [slang-ir-glsl-legalize.cpp](../../../../old-source/slang/slang-ir-glsl-legalize.cpp), [slang-ir-glsl-liveness.cpp](../../../../old-source/slang/slang-ir-glsl-liveness.cpp)
+   - SPIR-V: [slang-ir-spirv-legalize.cpp](../../../../old-source/slang/slang-ir-spirv-legalize.cpp), [slang-ir-spirv-snippet.cpp](../../../../old-source/slang/slang-ir-spirv-snippet.cpp)
+   - Metal: [slang-ir-metal-legalize.cpp](../../../../old-source/slang/slang-ir-metal-legalize.cpp)
+   - WGSL: [slang-ir-wgsl-legalize.cpp](../../../../old-source/slang/slang-ir-wgsl-legalize.cpp)
+   - CUDA: [slang-ir-cuda-immutable-load.cpp](../../../../old-source/slang/slang-ir-cuda-immutable-load.cpp), [slang-ir-lower-cuda-builtin-types.cpp](../../../../old-source/slang/slang-ir-lower-cuda-builtin-types.cpp)
+   - Vulkan: [slang-ir-vk-invert-y.cpp](../../../../old-source/slang/slang-ir-vk-invert-y.cpp)
+   - Torch: [slang-ir-pytorch-cpp-binding.cpp](../../../../old-source/slang/slang-ir-pytorch-cpp-binding.cpp)
 
 Some passes are conditional within a backend by inspecting the
 profile (e.g. an HLSL Shader Model gate). The orchestrator that
 picks which passes run is `linkAndOptimizeIR` in
-[slang-emit.cpp](../../../../source/slang/slang-emit.cpp).
+[slang-emit.cpp](../../../../old-source/slang/slang-emit.cpp).
 
 ## Per-target pass pipelines
 
@@ -381,17 +387,17 @@ backend-registration steps):
    value before the terminal count sentinel and assign it an
    explicit integer.
 2. **Emit backend.** Add `slang-emit-<target>.{h,cpp}` under
-   [source/slang/](../../../../source/slang). For a textual target,
+   [source/slang/](../../../../old-source/slang). For a textual target,
    subclass `CLikeSourceEmitter` from
-   [slang-emit-c-like.h](../../../../source/slang/slang-emit-c-like.h).
+   [slang-emit-c-like.h](../../../../old-source/slang/slang-emit-c-like.h).
 3. **Dispatchers.** Add the internal `CodeGenTarget` value in
-   [slang-target.h](../../../../source/slang/slang-target.h), mapping
+   [slang-target.h](../../../../old-source/slang/slang-target.h), mapping
    it to a `SourceLanguage` in `slang-emit-c-like.cpp` where needed.
    For a textual target, wire the backend into
-   [slang-emit.cpp](../../../../source/slang/slang-emit.cpp) (the
+   [slang-emit.cpp](../../../../old-source/slang/slang-emit.cpp) (the
    `#include` and the arm in `emitEntryPointsSourceFromIR`) and list
    the target in `CodeGenContext::emitEntryPoints` in
-   [slang-code-gen.cpp](../../../../source/slang/slang-code-gen.cpp).
+   [slang-code-gen.cpp](../../../../old-source/slang/slang-code-gen.cpp).
    A direct backend instead needs its own emit function routed from
    `CodeGenContext::_emitEntryPoints`; an unlisted target reaches
    `SLANG_UNEXPECTED("unhandled code generation target")`.
@@ -399,15 +405,15 @@ backend-registration steps):
    the prelude source under [prelude/](../../../../prelude) and
    register its embedded string for the new `SourceLanguage` in the
    `Session` constructor in
-   [slang-global-session.cpp](../../../../source/slang/slang-global-session.cpp),
+   [slang-global-session.cpp](../../../../old-source/slang/slang-global-session.cpp),
    alongside the CUDA, C++, and HLSL preludes.
    `emitEntryPointsSourceFromIR` in
-   [slang-emit.cpp](../../../../source/slang/slang-emit.cpp) then
+   [slang-emit.cpp](../../../../old-source/slang/slang-emit.cpp) then
    writes that string into the generated source itself. Emit a
    `#include` only for a separate runtime header you intend to ship
    next to the generated output.
 5. **Capability atoms.** Add atoms to
-   [slang-capabilities.capdef](../../../../source/slang/slang-capabilities.capdef)
+   [slang-capabilities.capdef](../../../../old-source/slang/slang-capabilities.capdef)
    so the front-end can reject features the new target does not
    support.
 6. **Target-specific IR passes.** If the target needs custom
@@ -416,9 +422,9 @@ backend-registration steps):
    [../pipeline/05-ir-passes.md](../pipeline/05-ir-passes.md).
 7. **Profile entries.** If the new target supports versioned
    profiles, extend
-   [slang-profile-defs.h](../../../../source/slang/slang-profile-defs.h)
+   [slang-profile-defs.h](../../../../old-source/slang/slang-profile-defs.h)
    and the supporting tables in
-   [slang-profile.cpp](../../../../source/slang/slang-profile.cpp).
+   [slang-profile.cpp](../../../../old-source/slang/slang-profile.cpp).
 8. **Tests.** Add fixtures under [tests/](../../../../tests),
    including HLSL/GLSL parity tests where applicable. See
    [CLAUDE.md](../../../../CLAUDE.md) for the test-directive
@@ -429,10 +435,10 @@ backend-registration steps):
 ## What is not in this document
 
 - The full list of capability atoms — it lives in
-  [slang-capabilities.capdef](../../../../source/slang/slang-capabilities.capdef)
+  [slang-capabilities.capdef](../../../../old-source/slang/slang-capabilities.capdef)
   and the auto-generated reference page.
 - The detailed profile-version table — it lives in
-  [slang-profile-defs.h](../../../../source/slang/slang-profile-defs.h).
+  [slang-profile-defs.h](../../../../old-source/slang/slang-profile-defs.h).
 - The user-facing target documentation — see
   [../../../user-guide/](../../../user-guide) and
   [../../../command-line-slangc-reference.md](../../../command-line-slangc-reference.md).

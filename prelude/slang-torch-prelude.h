@@ -27,7 +27,7 @@
 #include <string.h>
 #endif // SLANG_LLVM
 
-#include "../source/core/slang-string.h"
+#include "../old-source/core/slang-string.h"
 
 #if defined(_MSC_VER)
 #define SLANG_PRELUDE_SHARED_LIB_EXPORT __declspec(dllexport)

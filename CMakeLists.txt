@@ -16,6 +16,9 @@ get_git_version(
 project(slang VERSION "${SLANG_VERSION_NUMERIC}" LANGUAGES)
 set(PROJECT_VERSION "${SLANG_VERSION_FULL}")
 
+# We compile the remaining legacy implementation from `old-source/` during migration.
+set(SLANG_LEGACY_SOURCE_DIR "${slang_SOURCE_DIR}/old-source")
+
 #
 # Global CMake options
 #
@@ -747,17 +750,31 @@ endif()
 # Our targets
 #
 
-add_subdirectory(source/core)
-add_subdirectory(source/slang-rt)
-add_subdirectory(source/compiler-core)
-add_subdirectory(source/slang-wasm)
-add_subdirectory(source/slang-glslang)
+# We keep generated files under the existing `source/...` binary directories because
+# sibling targets include those files through relative paths.
+add_subdirectory("${SLANG_LEGACY_SOURCE_DIR}/core" "source/core")
+add_subdirectory("${SLANG_LEGACY_SOURCE_DIR}/slang-rt" "source/slang-rt")
+add_subdirectory(
+    "${SLANG_LEGACY_SOURCE_DIR}/compiler-core"
+    "source/compiler-core"
+)
+add_subdirectory("${SLANG_LEGACY_SOURCE_DIR}/slang-wasm" "source/slang-wasm")
+add_subdirectory(
+    "${SLANG_LEGACY_SOURCE_DIR}/slang-glslang"
+    "source/slang-glslang"
+)
 add_subdirectory(tools)
 add_subdirectory(prelude)
-add_subdirectory(source/slang-core-module)
-add_subdirectory(source/slang-glsl-module)
-add_subdirectory(source/slang)
-add_subdirectory(source/slangc)
+add_subdirectory(
+    "${SLANG_LEGACY_SOURCE_DIR}/slang-core-module"
+    "source/slang-core-module"
+)
+add_subdirectory(
+    "${SLANG_LEGACY_SOURCE_DIR}/slang-glsl-module"
+    "source/slang-glsl-module"
+)
+add_subdirectory("${SLANG_LEGACY_SOURCE_DIR}/slang" "source/slang")
+add_subdirectory("${SLANG_LEGACY_SOURCE_DIR}/slangc" "source/slangc")
 if(TARGET slangc)
     # Keep DXC runtime artifacts and headers staged for targeted slangc builds.
     foreach(_dxc_stage_target copy-dxcompiler copy-dxil stage-dxc-headers)
@@ -766,13 +783,22 @@ if(TARGET slangc)
         endif()
     endforeach()
 endif()
-add_subdirectory(source/slang-dispatcher)
-add_subdirectory(source/standard-modules)
+add_subdirectory(
+    "${SLANG_LEGACY_SOURCE_DIR}/slang-dispatcher"
+    "source/slang-dispatcher"
+)
+add_subdirectory(
+    "${SLANG_LEGACY_SOURCE_DIR}/standard-modules"
+    "source/standard-modules"
+)
 if(SLANG_BUILD_MONOLITHIC_STANDARD_MODULE_LIBRARY)
     # Optional single-library packaging of the standard modules. Added after
     # standard-modules so the SLANG_STANDARD_MODULE_FILES manifest it depends on
     # is already populated.
-    add_subdirectory(source/slang-monolithic-standard-module-library)
+    add_subdirectory(
+        "${SLANG_LEGACY_SOURCE_DIR}/slang-monolithic-standard-module-library"
+        "source/slang-monolithic-standard-module-library"
+    )
 endif()
 add_subdirectory(examples)
 

@@ -16,6 +16,7 @@ on:
     types: [opened, synchronize, ready_for_review, reopened]
     paths:
       - "source/**"
+      - "old-source/**"
       - "tests/**"
       - "prelude/**"
       - "include/**"

@@ -13,7 +13,7 @@
 #
 
 # List of *.meta.slang headers
-set(core_module_meta_source_dir "${slang_SOURCE_DIR}/source/slang")
+set(core_module_meta_source_dir "${SLANG_LEGACY_SOURCE_DIR}/slang")
 glob_append(
     core_module_meta_source
     "${core_module_meta_source_dir}/*.meta.slang"

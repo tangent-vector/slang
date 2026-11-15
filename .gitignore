@@ -74,22 +74,22 @@ tools/gfx-unit-test/test-tmp-*
 !tests/spvdb/**/*.spv
 
 # Intermediate source files generated during build process
-/source/slang/slang-generated-*.h
-/source/slang/slang-lookup-*.cpp
-/source/slang/*.meta.slang.h
+/old-source/slang/slang-generated-*.h
+/old-source/slang/slang-lookup-*.cpp
+/old-source/slang/*.meta.slang.h
 prelude/*.h.cpp
-/source/slang/cpp.hint
-/source/slang/slang-value-generated.h
-/source/slang/slang-value-generated-macro.h
-/source/slang/slang-ref-object-generated.h
-/source/slang/slang-ref-object-generated-macro.h
-/source/slang/slang-ast-generated.h
-/source/slang/slang-ast-generated-macro.h
+/old-source/slang/cpp.hint
+/old-source/slang/slang-value-generated.h
+/old-source/slang/slang-value-generated-macro.h
+/old-source/slang/slang-ref-object-generated.h
+/old-source/slang/slang-ref-object-generated-macro.h
+/old-source/slang/slang-ast-generated.h
+/old-source/slang/slang-ast-generated-macro.h
 /docs/_site
 /docs/Gemfile.lock
 /docs/Gemfile
 /docs/stdlib-reference
-/source/slang/slang-core-module-generated.h
+/old-source/slang/slang-core-module-generated.h
 
 /examples/heterogeneous-hello-world/shader.cpp
 /external/slang-llvm/

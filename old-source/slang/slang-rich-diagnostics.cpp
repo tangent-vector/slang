@@ -19,7 +19,7 @@ namespace Diagnostics
 // The 'name' field uses lowerCamelCase which matches the convention expected
 // by DiagnosticsLookup::findDiagnosticByName (which converts from kebab-case).
 #if 0 // FIDDLE TEMPLATE:
-% local lua_module = require("source/slang/slang-rich-diagnostics.h.lua")
+% local lua_module = require("old-source/slang/slang-rich-diagnostics.h.lua")
 % local diagnostics = lua_module.getDiagnostics()
 % for _, diagnostic in ipairs(diagnostics) do
 %     local camel_name = lua_module.toLowerCamelCase(diagnostic.name)
@@ -186,7 +186,7 @@ String declVisibilityToPrintableString(DeclVisibility visibility)
 //
 //
 #if 0 // FIDDLE TEMPLATE:
-% local lua_module = require("source/slang/slang-rich-diagnostics.h.lua")
+% local lua_module = require("old-source/slang/slang-rich-diagnostics.h.lua")
 % local diagnostics = lua_module.getDiagnostics()
 % for _, diagnostic in ipairs(diagnostics) do
 %     local class_name = lua_module.toPascalCase(diagnostic.name)

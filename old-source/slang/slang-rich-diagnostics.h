@@ -31,7 +31,7 @@ Index getRichDiagnosticsInfoCount();
 
 // Generate parameter structures for all diagnostics
 #if 0 // FIDDLE TEMPLATE:
-% local lua_module = require("source/slang/slang-rich-diagnostics.h.lua")
+% local lua_module = require("old-source/slang/slang-rich-diagnostics.h.lua")
 % local diagnostics = lua_module.getDiagnostics()
 % for _, diagnostic in ipairs(diagnostics) do
 %     local class_name = lua_module.toPascalCase(diagnostic.name)

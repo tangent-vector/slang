@@ -7,6 +7,12 @@ watched_paths_digest: d36bd32950d8e216a645e2f63012cb6f30c73a414e519ae8b99f0ce0aa
 warning: "Auto-generated. May drift from source. Do not edit by hand."
 ---
 
+<!--
+Local implementation link destinations were mechanically relocated from
+source/ to old-source/ for this checkout.
+The `source_commit` and `watched_paths_digest` above still record the original generation inputs.
+-->
+
 # AST-to-IR Lowering
 
 This document covers the stage where a fully checked AST is translated
@@ -48,7 +54,7 @@ opcode that the lowering step must produce.
 ## Lowering driver
 
 The entry point is in
-[slang-lower-to-ir.h](../../../../source/slang/slang-lower-to-ir.h):
+[slang-lower-to-ir.h](../../../../old-source/slang/slang-lower-to-ir.h):
 
 ```cpp
 RefPtr<IRModule> generateIRForTranslationUnit(
@@ -62,7 +68,7 @@ how a `SpecializedComponentType` binds specialization parameters, and
 as a public symbol so linking keeps the witness table alive.
 
 The implementation lives in
-[slang-lower-to-ir.cpp](../../../../source/slang/slang-lower-to-ir.cpp).
+[slang-lower-to-ir.cpp](../../../../old-source/slang/slang-lower-to-ir.cpp).
 The lowering visitor descends the AST top-down: it walks decls,
 allocates corresponding IR instructions, recurses into bodies (whose
 unparsed forms have by now been parsed and checked, see
@@ -111,9 +117,9 @@ module rather than part of the `Val`-to-IR mapping.
 ## IRBuilder and instruction creation
 
 `IRBuilder` (declared in
-[slang-ir-insts.h](../../../../source/slang/slang-ir-insts.h) line 3201
+[slang-ir-insts.h](../../../../old-source/slang/slang-ir-insts.h) line 3201
 and forward-declared in
-[slang-ir.h](../../../../source/slang/slang-ir.h)) is the canonical way
+[slang-ir.h](../../../../old-source/slang/slang-ir.h)) is the canonical way
 to create IR instructions:
 
 - It owns the current insertion point inside a block / function /
@@ -121,7 +127,7 @@ to create IR instructions:
 - It hash-conses *hoistable* values (types, constants, certain pure
   operators) so that two structurally equal values share one `IRInst*`.
   The flag bit `kIROpFlag_Hoistable` declared in
-  [slang-ir.h](../../../../source/slang/slang-ir.h) tags opcodes that are
+  [slang-ir.h](../../../../old-source/slang/slang-ir.h) tags opcodes that are
   deduplicated this way. The separate `kIROpFlag_Global` flag marks
   opcodes that are always hoisted to module scope but are **never**
   deduplicated.
@@ -135,15 +141,15 @@ Hoistable / global value semantics are the topic of
 [../cross-cutting/ir-instructions.md](../cross-cutting/ir-instructions.md).
 
 The build-time generated `slang-ir-insts-enum.h`, derived from
-[slang-ir-insts.lua](../../../../source/slang/slang-ir-insts.lua) and
-included by [slang-ir.h](../../../../source/slang/slang-ir.h), provides the
+[slang-ir-insts.lua](../../../../old-source/slang/slang-ir-insts.lua) and
+included by [slang-ir.h](../../../../old-source/slang/slang-ir.h), provides the
 `IROp` enum used throughout lowering.
 
 ## Mapping AST constructs to IR
 
 The lowering visitor maps each AST family to a small set of IR
 constructs. This table is illustrative; the code in
-[slang-lower-to-ir.cpp](../../../../source/slang/slang-lower-to-ir.cpp)
+[slang-lower-to-ir.cpp](../../../../old-source/slang/slang-lower-to-ir.cpp)
 is authoritative.
 
 | AST | Resulting IR |
@@ -187,7 +193,7 @@ Most built-in arithmetic does not lower as a call. During checking, a
 recognized scalar/vector/matrix operator on builtin numeric or `bool`
 operands is rewritten to a `BuiltinOperatorExpr` carrying a resolved
 `BuiltinOperationKind` (see `convertToBuiltinArithmeticOp` in
-[slang-check-expr.cpp](../../../../source/slang/slang-check-expr.cpp)).
+[slang-check-expr.cpp](../../../../old-source/slang/slang-check-expr.cpp)).
 `lowerBuiltinOperatorExpr` (line 4859) switches on that enum and emits the
 matching pure IR op directly via `emitIntrinsicInst`, skipping callable
 resolution entirely. The element type only matters for `%`, which picks `kIROp_FRem` or
@@ -198,7 +204,7 @@ through their dedicated control-flow paths and are `SLANG_UNEXPECTED` here.
 
 Compile-time integer expressions take a parallel path on the `Val`
 side. `visitBuiltinOperationIntVal` (line 1936) in
-[slang-lower-to-ir.cpp](../../../../source/slang/slang-lower-to-ir.cpp)
+[slang-lower-to-ir.cpp](../../../../old-source/slang/slang-lower-to-ir.cpp)
 lowers a `BuiltinOperationIntVal` (the checked, folded form of a
 constant operator expression) to the hoistable `constexpr*` opcode keyed
 on its `BuiltinOperationKind` (`emitConstexprAdd`, `emitConstexprDiv`,
@@ -224,7 +230,7 @@ IR remain target-agnostic and keeps the lowering step relatively
 small.
 
 Witness tables (computed by
-[slang-check-conformance.cpp](../../../../source/slang/slang-check-conformance.cpp))
+[slang-check-conformance.cpp](../../../../old-source/slang/slang-check-conformance.cpp))
 become `IRWitnessTable` insts whose entries map interface
 requirements to the concrete implementations.
 `visitInheritanceDecl` (line 10983) creates the table and
@@ -251,7 +257,7 @@ no interface parameter stays flat, while one inherited from the
 interface's default implementation carries an inner `specialize` binding
 the interface's own parameters, then an outer one supplying the
 conforming type and its witness table. Names in a `-dump-ir` listing go
-through `scrubName` ([slang-ir.cpp](../../../../source/slang/slang-ir.cpp)
+through `scrubName` ([slang-ir.cpp](../../../../old-source/slang/slang-ir.cpp)
 line 7752), which escapes every non-alphanumeric byte as `x` plus its hex
 value, so `IFoo_zero` prints as `IFoox5Fzero`.
 
@@ -289,7 +295,7 @@ is the `inner` of a `GenericDecl`.
 
 Which constraint decls become *generic parameters* at all is decided by
 `isGenericConstraintParameterDecl` (declared in
-[slang-ast-decl.h](../../../../source/slang/slang-ast-decl.h) line 1244);
+[slang-ast-decl.h](../../../../old-source/slang/slang-ast-decl.h) line 1244);
 `emitGenericDecl` and the substitution-argument walk in
 `ExprLoweringContext` both consult it. Constraints that are instead
 interface requirements are lowered as requirement keys.
@@ -324,7 +330,7 @@ representation:
 
 Each interface requirement is identified by a *requirement key*.
 `getInterfaceRequirementKey` (line 1748) in
-[slang-lower-to-ir.cpp](../../../../source/slang/slang-lower-to-ir.cpp)
+[slang-lower-to-ir.cpp](../../../../old-source/slang/slang-lower-to-ir.cpp)
 returns an `IRInst*` (cached per requirement `Decl` in
 `SharedIRGenContext::interfaceRequirementKeys`) of one of two shapes:
 
@@ -351,7 +357,7 @@ type*: a `[Differentiable]` function `f` gets a synthesized
 (and the backward analogue), where
 `IForwardDifferentiable<FType>` / `IBackwardDifferentiable<FType>` are
 declared in
-[core.meta.slang](../../../../source/slang/core.meta.slang) at lines 767
+[core.meta.slang](../../../../old-source/slang/core.meta.slang) at lines 767
 and 786. See
 [03-semantic-check.md](03-semantic-check.md#differentiability-as-interface-conformance)
 for how that representation is built. Lowering consumes it in three places:
@@ -382,7 +388,7 @@ for how that representation is built. Lowering consumes it in three places:
 A function-typed conformance also changes what `this` means for the
 synthesized extension's members, but the redirect lives in checking:
 lowering asks `findEffectiveThisParamInfo` (declared in
-[slang-syntax.h](../../../../source/slang/slang-syntax.h)) for the
+[slang-syntax.h](../../../../old-source/slang/slang-syntax.h)) for the
 recorded type and passing mode and adds it in `addThisParameter`
 (line 3961).
 
@@ -421,7 +427,7 @@ handful of constructs become problems only when lowering tries to
 encode them — typically because a feature is unsupported on a given
 target or a synthesized witness cannot be produced. For example, when
 the assignment-lowering switch in
-[slang-lower-to-ir.cpp](../../../../source/slang/slang-lower-to-ir.cpp)
+[slang-lower-to-ir.cpp](../../../../old-source/slang/slang-lower-to-ir.cpp)
 reaches an assignment whose left-hand side it cannot encode, it emits
 `Diagnostics::UnsupportedAssignmentTarget` (line 10382), recovering the
 nearest non-zero source location from the builder's source-loc info,
@@ -479,7 +485,7 @@ an entry point:
   [04c-layout-ir.md](04c-layout-ir.md).
 
 The caller in
-[slang-compile-request.cpp](../../../../source/slang/slang-compile-request.cpp)
+[slang-compile-request.cpp](../../../../old-source/slang/slang-compile-request.cpp)
 installs the returned module on the AST-level `Module` with
 `setIRModule` (line 774).
 
@@ -515,7 +521,7 @@ the `experimental.workgraph` standard module, so the shader must
 
 Lowering decides per construct whether to attach source-level debug
 information. Notably, `isSynthesizedConstructorDecl` (line 9551) in
-[slang-lower-to-ir.cpp](../../../../source/slang/slang-lower-to-ir.cpp)
+[slang-lower-to-ir.cpp](../../../../old-source/slang/slang-lower-to-ir.cpp)
 makes `maybeEmitDebugLine` and `maybeAddDebugLocationDecoration`
 skip a Slang-synthesized initializer (a `ConstructorDecl` with the
 `SynthesizedDefault` or `SynthesizedMemberInit` flavor). Such a function

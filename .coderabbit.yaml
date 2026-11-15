@@ -35,6 +35,17 @@ reviews:
         (5) Null pointer safety and proper error handling via diagnostics.
         (6) Cross-backend consistency — changes to one emitter may need parallel changes in others.
 
+    - path: "old-source/slang/**"
+      instructions: >-
+        This is the core compiler AND all target emitters (slang-emit-*.cpp).
+        Review for:
+        (1) IR pass correctness — ensure SSA form and type invariants are maintained.
+        (2) Proper use of FIDDLE macros for AST/IR node definitions.
+        (3) Emit logic should stay simple; heavy transforms belong in IR passes.
+        (4) Check that new IR instructions are registered in slang-ir-insts.lua.
+        (5) Null pointer safety and proper error handling via diagnostics.
+        (6) Cross-backend consistency — changes to one emitter may need parallel changes in others.
+
     - path: "source/core/**"
       instructions: >-
         Core utilities shared across the compiler. Check for:
@@ -42,7 +53,19 @@ reviews:
         (2) Memory management — Slang uses reference counting (RefPtr/ComPtr).
         (3) Platform portability (Windows, Linux, macOS).
 
+    - path: "old-source/core/**"
+      instructions: >-
+        Core utilities shared across the compiler. Check for:
+        (1) Thread safety if the utility may be used concurrently.
+        (2) Memory management — Slang uses reference counting (RefPtr/ComPtr).
+        (3) Platform portability (Windows, Linux, macOS).
+
     - path: "source/compiler-core/**"
+      instructions: >-
+        Compiler infrastructure (diagnostics, source locations, codegen utilities).
+        Ensure diagnostic messages are clear and include source locations.
+
+    - path: "old-source/compiler-core/**"
       instructions: >-
         Compiler infrastructure (diagnostics, source locations, codegen utilities).
         Ensure diagnostic messages are clear and include source locations.

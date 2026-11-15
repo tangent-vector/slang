@@ -3545,7 +3545,7 @@ local insts = {
 -- Annotates instructions with whether they are a leaf or not
 -- Calculates flags from the parent flags
 local function process(insts)
-	local stable_names_file = "source/slang/slang-ir-insts-stable-names.lua"
+	local stable_names_file = "old-source/slang/slang-ir-insts-stable-names.lua"
 
 	local function to_pascal_case(str)
 		local result = str:gsub("_(.)", function(c)

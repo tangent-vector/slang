@@ -7,11 +7,17 @@ watched_paths_digest: 84e367782040254240d2878794cbff2815f0a6ccd2df6af1a236785a54
 warning: "Auto-generated. May drift from source. Do not edit by hand."
 ---
 
+<!--
+Local implementation link destinations were mechanically relocated from
+source/ to old-source/ for this checkout.
+The `source_commit` and `watched_paths_digest` above still record the original generation inputs.
+-->
+
 # Slang Grammar (Reverse-Engineered)
 
 This document is an EBNF-style approximation of the surface syntax
 that Slang's parser accepts. It is **reverse-engineered** from
-[slang-parser.cpp](../../../../source/slang/slang-parser.cpp), not
+[slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp), not
 designed; mismatches with the implementation are bugs in this
 grammar. The intended reader is a tooling developer (syntax
 highlighter, formatter, language server) who needs an approximate
@@ -64,7 +70,7 @@ canonical names are the `TokenType` enumerators.
 
 For brevity, every non-terminal cites the parser function that
 implements it (in
-[slang-parser.cpp](../../../../source/slang/slang-parser.cpp)).
+[slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp)).
 
 ## Top-level structure
 
@@ -114,7 +120,7 @@ NameOrSubscript ::= IDENT | '__subscript'                     -- ParseStaticMemb
 A string-literal module name or import path is *not* unescaped: both
 `parseModuleDeclarationDecl` and `parseFileReferenceDeclBase` decode it
 with `getFileNameTokenValue`
-([slang-lexer.cpp](../../../../source/compiler-core/slang-lexer.cpp)),
+([slang-lexer.cpp](../../../../old-source/compiler-core/slang-lexer.cpp)),
 which only strips the surrounding quotes, so the backslash in
 `import "foo\bar";` stays literal instead of starting an escape.
 
@@ -237,12 +243,12 @@ Two of the `StructDecl` alternatives are easy to misread as their C or
 `typealias` counterparts, and neither behaves that way.
 
 The `'=' Type` form sets `aliasedType`
-([slang-parser.cpp](../../../../source/slang/slang-parser.cpp) line
+([slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp) line
 6766) and is a **link-time symbol alias**, not a type alias. Its
 intended spelling carries `export`, as in
 `export struct Foo : IFoo = Bar;`, and lowering turns it into an
 `IRSymbolAlias`
-([slang-lower-to-ir.cpp](../../../../source/slang/slang-lower-to-ir.cpp)
+([slang-lower-to-ir.cpp](../../../../old-source/slang/slang-lower-to-ir.cpp)
 lines 12519-12530). The name is therefore resolved when modules are linked,
 not while the declaring module is checked — which is why
 `isConcreteFieldOwningAggregate` (line 6107 in the same file) treats an
@@ -263,7 +269,7 @@ inherited legacy of C forward declarations" as the reason — and for
 every other flavor of declaration falls through to
 "we do not allow duplicate declarations with the same name", reporting
 `Redeclaration` (E30200) plus `SeePreviousDeclarationOf`
-([slang-check-decl.cpp](../../../../source/slang/slang-check-decl.cpp)
+([slang-check-decl.cpp](../../../../old-source/slang/slang-check-decl.cpp)
 lines 14893-14913). A `struct Fwd;` followed by
 `struct Fwd { int v; }` is thus two conflicting declarations rather
 than a declaration completed by its definition, and a subsequent use of
@@ -376,7 +382,7 @@ accepts it only when an initializer supplies the type
 (`deriveVarTypeFromInitExpr`): `func f(x) {...}` is rejected with
 `ParamWithoutTypeMustHaveInitializer` (E30621), whereas
 `func f(x = 1) {...}` takes its type from the default value
-([slang-check-decl.cpp](../../../../source/slang/slang-check-decl.cpp)
+([slang-check-decl.cpp](../../../../old-source/slang/slang-check-decl.cpp)
 lines 15084-15094).
 
 A `__func_extension` names the higher-order form it is defining and
@@ -384,12 +390,12 @@ then gives that form's signature. Its parameters go through
 `parseModernParamList`, so either parameter spelling is accepted, and
 the body is an ordinary `FuncBody`. User code must be compiled with
 `-experimental-feature` (declared in
-[slang-options.cpp](../../../../source/slang/slang-options.cpp), line
+[slang-options.cpp](../../../../old-source/slang/slang-options.cpp), line
 1282); without it `visitFuncExtensionDecl` reports
 `FuncExtensionRequiresExperimentalFeature` (warning 30131) and stops
 processing the declaration, while declarations from the core module are
 exempt
-([slang-check-decl.cpp](../../../../source/slang/slang-check-decl.cpp)
+([slang-check-decl.cpp](../../../../old-source/slang/slang-check-decl.cpp)
 lines 17462-17471). A head other than `fwd_diff`, `bwd_diff`, or
 `__apply` is diagnosed as `FuncExtensionUnsupportedOperator` or
 `FuncExtensionUnsupportedTarget`.
@@ -487,7 +493,7 @@ program being compiled. The core module is where the two forms are
 used, and it supplies a readable example of each — the first installs
 a modifier keyword, the second an attribute together with its
 parameters
-([core.meta.slang](../../../../source/slang/core.meta.slang)):
+([core.meta.slang](../../../../old-source/slang/core.meta.slang)):
 
 ```
 syntax constexpr : ConstExprModifier;
@@ -586,7 +592,7 @@ without a type; the checker gives it type `int` with a `const` modifier,
 and both `Range` arguments must be integer constants
 (`checkExpressionAndExpectIntegerConstant` with link-time folding), with
 an omitted first argument defaulting to 0
-([slang-check-stmt.cpp](../../../../source/slang/slang-check-stmt.cpp)
+([slang-check-stmt.cpp](../../../../old-source/slang/slang-check-stmt.cpp)
 lines 361-390).
 
 The statement dispatcher also recognizes a set of compiler-internal
@@ -608,7 +614,7 @@ is an expression keyword (see `KeywordExpr` below).
 
 The expression grammar follows a precedence ladder implemented by a
 family of `parse...Expr` functions in
-[slang-parser.cpp](../../../../source/slang/slang-parser.cpp). Lower
+[slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp). Lower
 numbers in the table below bind tighter (atom-level), higher numbers
 bind looser (assignment).
 
@@ -631,7 +637,7 @@ bind looser (assignment).
 | 14 | `=` `+=` `-=` `*=` `/=` `%=` `<<=` `>>=` `&=` `\|=` `^=` | right |
 | 15 | `,` (comma operator; the loosest level, and the default for `ParseExpression`) | left |
 
-The `Precedence` enum ([slang-parser.cpp](../../../../source/slang/slang-parser.cpp))
+The `Precedence` enum ([slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp))
 runs in the opposite direction from the table: `Comma` is its lowest
 enumerator and `Postfix` its highest, and `GetOpLevel` maps an operator
 token to one of them. `Parser::ParseExpression` takes the level to stop
@@ -720,7 +726,7 @@ AssignOp        ::= '=' | '+=' | '-=' | '*=' | '/=' | '%='
 A `LambdaExpr` is recognized in `parseAtomicExpr` when a parenthesized
 group is followed directly by `=>`. The value it produces is consumed
 through the `IFunc` interface declared in
-[core.meta.slang](../../../../source/slang/core.meta.slang) (line 2101),
+[core.meta.slang](../../../../old-source/slang/core.meta.slang) (line 2101),
 whose requirement is `TR operator()(expand each TP p)`. The runnable
 shape of the production is therefore a lambda passed to (or stored in)
 an `IFunc`-typed binding, which is what supplies the call syntax; a
@@ -746,10 +752,10 @@ literal forms (`true`, `false`, `nullptr`, `none`) have no dedicated
 token kind: the lexer emits them as `Identifier`, and the parser
 recognises them through entries in the keyword syntax-decl table
 (`_makeParseExpr("true", parseTrueExpr)` and friends in
-[slang-parser.cpp](../../../../source/slang/slang-parser.cpp)). They
+[slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp)). They
 are nonetheless grouped under `Literal` here because they map onto
 concrete `LiteralExpr` subclasses in
-[slang-ast-expr.h](../../../../source/slang/slang-ast-expr.h)
+[slang-ast-expr.h](../../../../old-source/slang/slang-ast-expr.h)
 (`BoolLiteralExpr`, `NullPtrLiteralExpr`, `NoneLiteralExpr`)
 alongside `IntegerLiteralExpr`, `FloatingPointLiteralExpr`, and
 `StringLiteralExpr`. `CHAR_LIT` is also a `Literal` but lowers to an
@@ -762,7 +768,7 @@ case of `parseAtomicExpr`, so `"a" "b"` is one literal. A numeric
 literal's suffix stays part of its token text, so there is no syntactic
 distinction between a `half`, `float`, and `double` literal;
 `parseFloatingPointLiteralExpr` asks `getFloatingPointLiteralValue`
-([slang-lexer.cpp](../../../../source/compiler-core/slang-lexer.cpp))
+([slang-lexer.cpp](../../../../old-source/compiler-core/slang-lexer.cpp))
 to classify the suffix and reports a `FloatingPointLiteralType` of
 `BadSignificand` or `BadSuffix` as a diagnostic.
 
@@ -794,7 +800,7 @@ Inside a generic argument list the ladder itself changes: while
 `genericDepth` is non-zero, `GetOpLevel` returns `Precedence::Invalid`
 for `>`, `>=`, and `>>`, so those tokens cannot be consumed as
 operators and are available to close the argument list
-([slang-parser.cpp](../../../../source/slang/slang-parser.cpp) lines
+([slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp) lines
 8193-8206). `<`, `<=`, and the rest keep their normal precedence.
 
 The asymmetry is absolute, and parentheses do not rescue it.
@@ -937,7 +943,7 @@ creating an ordinary `GenericTypeParamDecl` and then a
 `GenericTypeConstraintDecl` whose comment says "Create a
 func-type-constraint and add it" — but that constraint is never given a
 `sub` or `sup` and is never `AddMember`ed to the generic
-([slang-parser.cpp](../../../../source/slang/slang-parser.cpp) lines
+([slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp) lines
 1731-1740). What survives is therefore an unconstrained type parameter
 with a dangling constraint node. The consequences follow from that: an
 optional `: Type` is handled by the shared tail below (lines

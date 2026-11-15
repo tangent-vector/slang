@@ -3,7 +3,7 @@
 #
 
 # PCH header for tools that use slang core types
-set(SLANG_TOOLS_PCH ${slang_SOURCE_DIR}/source/core/slang-basic.h)
+set(SLANG_TOOLS_PCH ${SLANG_LEGACY_SOURCE_DIR}/core/slang-basic.h)
 
 add_custom_target(
     all-generators
@@ -123,7 +123,7 @@ generator(slang-lookup-generator LINK_WITH_PRIVATE compiler-core)
 generator(slang-capability-generator LINK_WITH_PRIVATE compiler-core)
 generator(slang-spirv-embed-generator LINK_WITH_PRIVATE compiler-core)
 generator(
-    ${slang_SOURCE_DIR}/source/slangc
+    ${SLANG_LEGACY_SOURCE_DIR}/slangc
     TARGET_NAME
     slang-bootstrap
     USE_FEWER_WARNINGS
@@ -494,7 +494,7 @@ if(SLANG_ENABLE_TESTS AND SLANG_ENABLE_SLANG_RHI)
             Threads::Threads
         LINK_WITH_FRAMEWORK Foundation Metal
         INCLUDE_DIRECTORIES_PRIVATE
-            ${slang_SOURCE_DIR}/source
+            ${SLANG_LEGACY_SOURCE_DIR}
             ${slang_SOURCE_DIR}/examples
         PRECOMPILE_HEADERS ${SLANG_TOOLS_PCH}
         OUTPUT_NAME slang-unit-test-tool
@@ -508,7 +508,7 @@ if(SLANG_ENABLE_TESTS AND SLANG_ENABLE_SLANG_RHI)
     target_sources(
         slang-unit-test
         PRIVATE
-            ${slang_SOURCE_DIR}/source/slang/slang-repro-validator.cpp
+            ${SLANG_LEGACY_SOURCE_DIR}/slang/slang-repro-validator.cpp
             ${slang_SOURCE_DIR}/tools/slang-test/test-context.cpp
             ${slang_SOURCE_DIR}/tools/slang-test/test-output-path-util.cpp
             ${slang_SOURCE_DIR}/tools/slang-test/test-reporter.cpp
@@ -565,7 +565,7 @@ if(SLANG_ENABLE_REPLAYER)
         # so we only add include directories here, not EXTRA_SOURCE_DIRS
         LINK_WITH_PRIVATE core compiler-core slang
         INCLUDE_DIRECTORIES_PUBLIC
-            ${slang_SOURCE_DIR}/source/slang-record-replay
+            ${SLANG_LEGACY_SOURCE_DIR}/slang-record-replay
         PRECOMPILE_HEADERS ${SLANG_TOOLS_PCH}
         FOLDER test
     )
@@ -600,7 +600,7 @@ if(
         USE_FEWER_WARNINGS
         LINK_WITH_PRIVATE core compiler-core unit-test slang Threads::Threads
         INCLUDE_DIRECTORIES_PRIVATE
-            ${slang_SOURCE_DIR}/source
+            ${SLANG_LEGACY_SOURCE_DIR}
             ${slang_SOURCE_DIR}/tools
         PRECOMPILE_HEADERS ${SLANG_TOOLS_PCH}
         FOLDER test

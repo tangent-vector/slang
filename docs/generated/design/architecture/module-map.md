@@ -7,6 +7,12 @@ watched_paths_digest: ad5cfc68952f75bc650d1948578b7524c289308afe465ed1d94f5fa2dd
 warning: "Auto-generated. May drift from source. Do not edit by hand."
 ---
 
+<!--
+Local implementation link destinations were mechanically relocated from
+source/ to old-source/ for this checkout.
+The `source_commit` and `watched_paths_digest` above still record the original generation inputs.
+-->
+
 # Module Map
 
 This document is the look-up table that complements
@@ -39,7 +45,7 @@ depends on nothing else in the project.
 
 | Logical unit | Files | Responsibility |
 | --- | --- | --- |
-| Containers and basic types | [slang-basic.h](../../../../source/core/slang-basic.h), `slang-array.h`, `slang-array-view.h`, `slang-dictionary.h`, `slang-list.h`, `slang-chunked-list.h` | Slang-specific replacements for `std::vector`, `std::array`, hash maps |
+| Containers and basic types | [slang-basic.h](../../../../old-source/core/slang-basic.h), `slang-array.h`, `slang-array-view.h`, `slang-dictionary.h`, `slang-list.h`, `slang-chunked-list.h` | Slang-specific replacements for `std::vector`, `std::array`, hash maps |
 | Strings and char encoding | `slang-string.h`, `slang-string-util.h`, `slang-char-encode.h`, `slang-char-util.h` | UTF-8 / UTF-16 strings and helpers |
 | Smart pointers and reference counting | `slang-smart-pointer.h`, `slang-com-object.h`, `slang-castable.h` | Intrusive refcounting and COM-style smart pointers |
 | File system | `slang-file-system.h`, `slang-archive-file-system.h`, `slang-implicit-directory-collector.h` | Abstract file-system interfaces and archive-backed implementations |
@@ -69,10 +75,10 @@ language. May depend on `source/core/` but not on `source/slang/`.
 
 | Logical unit | Files | Responsibility |
 | --- | --- | --- |
-| Lexer | [slang-lexer.h](../../../../source/compiler-core/slang-lexer.h), [slang-lexer.cpp](../../../../source/compiler-core/slang-lexer.cpp) | Token producer over a source buffer |
+| Lexer | [slang-lexer.h](../../../../old-source/compiler-core/slang-lexer.h), [slang-lexer.cpp](../../../../old-source/compiler-core/slang-lexer.cpp) | Token producer over a source buffer |
 | Tokens | `slang-token.h`, `slang-token.cpp`, `slang-token-defs.h` | `Token` and `TokenKind` types; see [../syntax-reference/tokens.md](../syntax-reference/tokens.md) |
 | Source locations | `slang-source-loc.h`, `slang-source-loc.cpp` | Compact integer source-location encoding and `SourceManager` |
-| Diagnostic sink | [slang-diagnostic-sink.h](../../../../source/compiler-core/slang-diagnostic-sink.h), `slang-diagnostic-sink.cpp` | Generic interface for emitting diagnostics |
+| Diagnostic sink | [slang-diagnostic-sink.h](../../../../old-source/compiler-core/slang-diagnostic-sink.h), `slang-diagnostic-sink.cpp` | Generic interface for emitting diagnostics |
 | Diagnostic core catalog | `slang-core-diagnostics.h`, `slang-core-diagnostics.cpp`, `slang-json-diagnostic-defs.h`, `slang-json-diagnostics.cpp`, `slang-lexer-diagnostic-defs.h`, `slang-misc-diagnostic-defs.h` | Diagnostic codes shared across languages |
 | Doc extractor | `slang-doc-extractor.h`, `slang-doc-extractor.cpp` | Pulls doc comments out of token streams |
 | Artifact model | `slang-artifact.h`, `slang-artifact-impl.cpp`, `slang-artifact-handler-impl.cpp`, `slang-artifact-representation*` | Polymorphic compiled-output containers used by the public API |
@@ -107,28 +113,28 @@ lives in the [pipeline](../pipeline) and
 
 | Logical unit | Files | Responsibility |
 | --- | --- | --- |
-| Front-end compile request | [slang-compile-request.h](../../../../source/slang/slang-compile-request.h), `slang-compile-request.cpp` | Drives parsing, checking, lowering for a translation unit |
+| Front-end compile request | [slang-compile-request.h](../../../../old-source/slang/slang-compile-request.h), `slang-compile-request.cpp` | Drives parsing, checking, lowering for a translation unit |
 | End-to-end compile request | `slang-end-to-end-request.cpp` | Backs a single `slangc` / public-API compile invocation |
 | Translation unit | `slang-translation-unit.h`, `slang-translation-unit.cpp` | `TranslationUnitRequest`: the group of source files parsed together into one module |
 | Back-end code generation | `slang-code-gen.h`, `slang-code-gen.cpp` | `CodeGenContext`: the back-end context that runs IR passes and emit for a set of entry points on one target |
 | Target request and program | `slang-target.h`, `slang-target.cpp`, `slang-target-program.h`, `slang-target-program.cpp` | `TargetRequest` (output format plus profile) and `TargetProgram`, a component type bound to one target so layout and kernel code can be computed |
 | Repro capture and replay | `slang-repro.h`, `slang-repro.cpp`, `slang-repro-validator.h`, `slang-repro-validator.cpp` | Serializes a compile request for `-extract-repro` / `-load-repro`; the validator checks repro inputs before they are used |
-| Module | [slang-module.h](../../../../source/slang/slang-module.h), `slang-module.cpp` | Holds AST + IR for a translation unit; implements `IModule` |
+| Module | [slang-module.h](../../../../old-source/slang/slang-module.h), `slang-module.cpp` | Holds AST + IR for a translation unit; implements `IModule` |
 | Module library | `slang-module-library.h`, `slang-module-library.cpp` | Bundles compiled modules into reusable libraries |
 | Linkage | `slang-session.h`, `slang-session.cpp` | The class behind the public `slang::ISession` — a per-configuration scope owning search paths, target settings, and the source manager |
 | Linkable components | `slang-linkable.h`, `slang-linkable.cpp`, `slang-linkable-impls.h`, `slang-linkable-impls.cpp` | `IComponentType` and its composite / specialized variants — the linkable-program abstraction used by the back-end |
 | Session (global) | `slang-global-session.h`, `slang-global-session.cpp` | Global-session-scoped `Session` class behind `slang::IGlobalSession` |
-| Name lookup | [slang-lookup.h](../../../../source/slang/slang-lookup.h), `slang-lookup.cpp`, `slang-lookup-spirv.h` | Scope and member lookup filtered by a `LookupMask` of declaration kinds |
-| Name mangling | [slang-mangle.h](../../../../source/slang/slang-mangle.h), `slang-mangle.cpp` | Mangled linkage names for declarations and their hashed forms |
-| Parameter binding and layout | [slang-parameter-binding.h](../../../../source/slang/slang-parameter-binding.h), `slang-parameter-binding.cpp`, [slang-type-layout.h](../../../../source/slang/slang-type-layout.h), `slang-type-layout.cpp` | Assigns binding locations or registers to shader parameters, using the per-target layout rules for types |
-| Bytecode interpreter | [slang-vm.h](../../../../source/slang/slang-vm.h), `slang-vm.cpp`, `slang-vm-bytecode.h`, `slang-vm-bytecode.cpp`, `slang-vm-inst-impl.h`, `slang-vm-inst-impl.cpp` | `ByteCodeInterpreter` and the bytecode format that executes the VM emitter's output |
+| Name lookup | [slang-lookup.h](../../../../old-source/slang/slang-lookup.h), `slang-lookup.cpp`, `slang-lookup-spirv.h` | Scope and member lookup filtered by a `LookupMask` of declaration kinds |
+| Name mangling | [slang-mangle.h](../../../../old-source/slang/slang-mangle.h), `slang-mangle.cpp` | Mangled linkage names for declarations and their hashed forms |
+| Parameter binding and layout | [slang-parameter-binding.h](../../../../old-source/slang/slang-parameter-binding.h), `slang-parameter-binding.cpp`, [slang-type-layout.h](../../../../old-source/slang/slang-type-layout.h), `slang-type-layout.cpp` | Assigns binding locations or registers to shader parameters, using the per-target layout rules for types |
+| Bytecode interpreter | [slang-vm.h](../../../../old-source/slang/slang-vm.h), `slang-vm.cpp`, `slang-vm-bytecode.h`, `slang-vm-bytecode.cpp`, `slang-vm-inst-impl.h`, `slang-vm-inst-impl.cpp` | `ByteCodeInterpreter` and the bytecode format that executes the VM emitter's output |
 
 ### Frontend (lex / preprocess / parse)
 
 | Logical unit | Files | Responsibility |
 | --- | --- | --- |
-| Preprocessor | [slang-preprocessor.h](../../../../source/slang/slang-preprocessor.h), [slang-preprocessor.cpp](../../../../source/slang/slang-preprocessor.cpp) | `#include`, macros, conditional directives |
-| Parser | [slang-parser.h](../../../../source/slang/slang-parser.h), [slang-parser.cpp](../../../../source/slang/slang-parser.cpp) | Recursive-descent parser that produces the AST; two-stage model |
+| Preprocessor | [slang-preprocessor.h](../../../../old-source/slang/slang-preprocessor.h), [slang-preprocessor.cpp](../../../../old-source/slang/slang-preprocessor.cpp) | `#include`, macros, conditional directives |
+| Parser | [slang-parser.h](../../../../old-source/slang/slang-parser.h), [slang-parser.cpp](../../../../old-source/slang/slang-parser.cpp) | Recursive-descent parser that produces the AST; two-stage model |
 | Syntax declarations | `slang-syntax.h`, `slang-syntax.cpp` | Syntax-as-declaration: keyword → parser-callback registry |
 
 ### AST
@@ -159,11 +165,11 @@ visitor and serialization support. One logical unit per node family.
 ### Semantic checking
 
 One file per checking concern; all collaborate through
-[slang-check-impl.h](../../../../source/slang/slang-check-impl.h).
+[slang-check-impl.h](../../../../old-source/slang/slang-check-impl.h).
 
 | Logical unit | Files | Responsibility |
 | --- | --- | --- |
-| Top-level driver | [slang-check.h](../../../../source/slang/slang-check.h), [slang-check.cpp](../../../../source/slang/slang-check.cpp) | Visitor orchestration; entry point for AST checking |
+| Top-level driver | [slang-check.h](../../../../old-source/slang/slang-check.h), [slang-check.cpp](../../../../old-source/slang/slang-check.cpp) | Visitor orchestration; entry point for AST checking |
 | Internal interface | `slang-check-impl.h` | Shared state passed between check files |
 | Declaration checking | `slang-check-decl.cpp` | Resolves and validates `Decl` nodes |
 | Expression checking | `slang-check-expr.cpp` | Type-checks `Expr` nodes |
@@ -183,14 +189,14 @@ One file per checking concern; all collaborate through
 
 | Logical unit | Files | Responsibility |
 | --- | --- | --- |
-| Lowering driver | [slang-lower-to-ir.h](../../../../source/slang/slang-lower-to-ir.h), [slang-lower-to-ir.cpp](../../../../source/slang/slang-lower-to-ir.cpp) | Walks the checked AST and emits IR via `IRBuilder` |
+| Lowering driver | [slang-lower-to-ir.h](../../../../old-source/slang/slang-lower-to-ir.h), [slang-lower-to-ir.cpp](../../../../old-source/slang/slang-lower-to-ir.cpp) | Walks the checked AST and emits IR via `IRBuilder` |
 
 ### IR core
 
 | Logical unit | Files | Responsibility |
 | --- | --- | --- |
-| IR types and instructions | [slang-ir.h](../../../../source/slang/slang-ir.h), [slang-ir.cpp](../../../../source/slang/slang-ir.cpp) | `IRInst`, `IRModule`, `IRBuilder`, traversal helpers |
-| Instruction definitions | [slang-ir-insts.h](../../../../source/slang/slang-ir-insts.h), [slang-ir-insts.lua](../../../../source/slang/slang-ir-insts.lua) | Lua-driven catalog of opcodes; see [../cross-cutting/ir-instructions.md](../cross-cutting/ir-instructions.md) |
+| IR types and instructions | [slang-ir.h](../../../../old-source/slang/slang-ir.h), [slang-ir.cpp](../../../../old-source/slang/slang-ir.cpp) | `IRInst`, `IRModule`, `IRBuilder`, traversal helpers |
+| Instruction definitions | [slang-ir-insts.h](../../../../old-source/slang/slang-ir-insts.h), [slang-ir-insts.lua](../../../../old-source/slang/slang-ir-insts.lua) | Lua-driven catalog of opcodes; see [../cross-cutting/ir-instructions.md](../cross-cutting/ir-instructions.md) |
 
 ### IR passes
 
@@ -242,7 +248,7 @@ of the categories visible from filenames:
 
 | Logical unit | Files | Responsibility |
 | --- | --- | --- |
-| Emit dispatcher | [slang-emit.cpp](../../../../source/slang/slang-emit.cpp) | Selects backend per `TargetRequest` |
+| Emit dispatcher | [slang-emit.cpp](../../../../old-source/slang/slang-emit.cpp) | Selects backend per `TargetRequest` |
 | Common base | `slang-emit-base.h`, `slang-emit-base.cpp` | Shared state between backends |
 | C-like text base | `slang-emit-c-like.h`, `slang-emit-c-like.cpp` | Shared parent for HLSL/GLSL/Metal/WGSL/CPP/CUDA |
 | HLSL | `slang-emit-hlsl.cpp`, `slang-emit-hlsl.h`, `slang-emit-hlsl-prelude.cpp` | HLSL text output |
@@ -266,7 +272,7 @@ These prefixes have their own dedicated docs in
 [../cross-cutting/](../cross-cutting):
 
 - Diagnostics (`slang-diagnostics*`,
-  [diagnostics/](../../../../source/slang/diagnostics)) →
+  [diagnostics/](../../../../old-source/slang/diagnostics)) →
   [../cross-cutting/diagnostics.md](../cross-cutting/diagnostics.md).
 - Capability system (`slang-capability*`,
   `slang-capabilities.capdef`) →
@@ -309,27 +315,27 @@ per-feature helpers.
 | Compiled core-module embedding | `slang-embedded-core-module.cpp` | The generated binary core module; built as the `slang-embedded-core-module` target and linked into the compiler library, with `slang-no-embedded-core-module` as the empty alternative |
 
 The actual core-module source code lives in
-[source/slang/core.meta.slang](../../../../source/slang/core.meta.slang),
-[source/slang/hlsl.meta.slang](../../../../source/slang/hlsl.meta.slang),
+[source/slang/core.meta.slang](../../../../old-source/slang/core.meta.slang),
+[source/slang/hlsl.meta.slang](../../../../old-source/slang/hlsl.meta.slang),
 and
-[source/slang/diff.meta.slang](../../../../source/slang/diff.meta.slang).
+[source/slang/diff.meta.slang](../../../../old-source/slang/diff.meta.slang).
 See [../cross-cutting/core-module.md](../cross-cutting/core-module.md).
 
 ## source/slang-glsl-module/ — embedded GLSL module
 
 | Logical unit | Files | Responsibility |
 | --- | --- | --- |
-| Embedded source | `slang-embedded-glsl-module.cpp` | Embeds [glsl.meta.slang](../../../../source/slang/glsl.meta.slang) |
+| Embedded source | `slang-embedded-glsl-module.cpp` | Embeds [glsl.meta.slang](../../../../old-source/slang/glsl.meta.slang) |
 
 ## source/standard-modules/ — standard libraries
 
 | Logical unit | Files | Responsibility |
 | --- | --- | --- |
 | Configuration | `slang-standard-module-config.h.in` | CMake-templated configuration header carrying the standard-module directory and file names and the default-disabled note IDs (`SLANG_DISABLE_NOTE_IDS`) |
-| Neural module | [neural/](../../../../source/standard-modules/neural) | Standard module for neural / ML workloads |
-| Experimental modules | [experimental/](../../../../source/standard-modules/experimental) | Modules not yet promoted to the stable set; currently the work-graph module (`workgraph.slang`) |
-| Functional module | [functional/](../../../../source/standard-modules/functional) | Higher-order element operations (`map` and related) added by `extension` to fixed-size arrays, vectors, and matrices in `functional.slang`; marked `[ExperimentalModule]`, so importers must enable experimental features |
-| Numerics module | [numerics/](../../../../source/standard-modules/numerics) | Representation-independent numeric interfaces and generic operations, split across `interfaces.slang`, the `*-conformances.slang` files, `wrappers.slang`, and a parallel `differentiable-*` set; marked `[ExperimentalModule]`, so importers must enable experimental features |
+| Neural module | [neural/](../../../../old-source/standard-modules/neural) | Standard module for neural / ML workloads |
+| Experimental modules | [experimental/](../../../../old-source/standard-modules/experimental) | Modules not yet promoted to the stable set; currently the work-graph module (`workgraph.slang`) |
+| Functional module | [functional/](../../../../old-source/standard-modules/functional) | Higher-order element operations (`map` and related) added by `extension` to fixed-size arrays, vectors, and matrices in `functional.slang`; marked `[ExperimentalModule]`, so importers must enable experimental features |
+| Numerics module | [numerics/](../../../../old-source/standard-modules/numerics) | Representation-independent numeric interfaces and generic operations, split across `interfaces.slang`, the `*-conformances.slang` files, `wrappers.slang`, and a parallel `differentiable-*` set; marked `[ExperimentalModule]`, so importers must enable experimental features |
 
 ## prelude/ — per-target prelude headers
 
@@ -350,40 +356,40 @@ output can be compiled by the downstream toolchain.
 
 | Logical unit | Files | Responsibility |
 | --- | --- | --- |
-| LLVM bridge | [slang-llvm.cpp](../../../../source/slang-llvm/slang-llvm.cpp), `slang-llvm-builder.cpp`, `slang-llvm-jit-shared-library.cpp` | LLVM-based JIT / native compilation; built out-of-tree (see [dependency-graph.md](dependency-graph.md)) |
+| LLVM bridge | [slang-llvm.cpp](../../../../old-source/slang-llvm/slang-llvm.cpp), `slang-llvm-builder.cpp`, `slang-llvm-jit-shared-library.cpp` | LLVM-based JIT / native compilation; built out-of-tree (see [dependency-graph.md](dependency-graph.md)) |
 
 ## source/slang-glslang/ — Khronos glslang bridge
 
 | Logical unit | Files | Responsibility |
 | --- | --- | --- |
-| glslang shim | [slang-glslang.cpp](../../../../source/slang-glslang/slang-glslang.cpp), `slang-glslang.h`, `slang-glslang.version-script` | Bridge to Khronos glslang for SPIR-V via GLSL; the version script is the export list both the ELF and macOS builds derive from, so a new entry point must be added there as well as in the C++ |
+| glslang shim | [slang-glslang.cpp](../../../../old-source/slang-glslang/slang-glslang.cpp), `slang-glslang.h`, `slang-glslang.version-script` | Bridge to Khronos glslang for SPIR-V via GLSL; the version script is the export list both the ELF and macOS builds derive from, so a new entry point must be added there as well as in the C++ |
 
 ## source/slang-dispatcher/ — command-line dispatcher
 
 | Logical unit | Files | Responsibility |
 | --- | --- | --- |
-| Dispatcher entry | [main.cpp](../../../../source/slang-dispatcher/main.cpp) | Dispatches Slang CLI subcommands: `compile` delegates to `slangc`, `interpret` to `slangi`, plus `help` and `version` |
+| Dispatcher entry | [main.cpp](../../../../old-source/slang-dispatcher/main.cpp) | Dispatches Slang CLI subcommands: `compile` delegates to `slangc`, `interpret` to `slangi`, plus `help` and `version` |
 
 ## source/slang-rt/ — runtime library
 
 | Logical unit | Files | Responsibility |
 | --- | --- | --- |
-| Runtime | [slang-rt.cpp](../../../../source/slang-rt/slang-rt.cpp), `slang-rt.h` | Runtime library linked for host-style CPU outputs, including PyTorch C++ bindings; not used by CUDA output |
+| Runtime | [slang-rt.cpp](../../../../old-source/slang-rt/slang-rt.cpp), `slang-rt.h` | Runtime library linked for host-style CPU outputs, including PyTorch C++ bindings; not used by CUDA output |
 
 ## source/slang-record-replay/ — public-API record/replay
 
 | Logical unit | Files | Responsibility |
 | --- | --- | --- |
-| Recorder/replayer | [replay-context.cpp](../../../../source/slang-record-replay/replay-context.cpp), `replay-context-record.cpp`, `replay-handlers.cpp`, `replay-stream.cpp`, `replay-stream-decoder.cpp` | Public-API call recorder/replayer; sources are folded into `slang` (see [dependency-graph.md](dependency-graph.md)) |
+| Recorder/replayer | [replay-context.cpp](../../../../old-source/slang-record-replay/replay-context.cpp), `replay-context-record.cpp`, `replay-handlers.cpp`, `replay-stream.cpp`, `replay-stream-decoder.cpp` | Public-API call recorder/replayer; sources are folded into `slang` (see [dependency-graph.md](dependency-graph.md)) |
 
 ## source/slang-wasm/ — WebAssembly bindings
 
 | Logical unit | Files | Responsibility |
 | --- | --- | --- |
-| WASM bindings | [slang-wasm.cpp](../../../../source/slang-wasm/slang-wasm.cpp), `slang-wasm-bindings.cpp`, `slang-wasm.h` | WebAssembly bindings for the public API |
+| WASM bindings | [slang-wasm.cpp](../../../../old-source/slang-wasm/slang-wasm.cpp), `slang-wasm-bindings.cpp`, `slang-wasm.h` | WebAssembly bindings for the public API |
 
 ## source/slangc/ — command-line driver
 
 | Logical unit | Files | Responsibility |
 | --- | --- | --- |
-| Driver entry | [main.cpp](../../../../source/slangc/main.cpp) | Command-line driver for the compiler |
+| Driver entry | [main.cpp](../../../../old-source/slangc/main.cpp) | Command-line driver for the compiler |
