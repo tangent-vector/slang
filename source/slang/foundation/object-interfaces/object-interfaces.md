@@ -131,7 +131,8 @@ The assignment covers the complete declarations and definitions in the first thr
 | `slang-castable.cpp`                                                            | Existing-interface selection, adapter construction, adapter-first and forwarded lookup, and its borrowed one-entry cache.                                                                                                           |
 | Only the `ICastable` and `IClonable` aliases and `clone<T>` in `slang-common.h` | Convenient names for the existing product contracts and the raw clone request helper.                                                                                                                                               |
 
-The remaining scalar, C++ utility, assertion, assumption, and export declarations in `slang-common.h` retain [Foundation's other assignments](../foundation.md#existing-implementation-mapping).
+The C++ utility, assertion, assumption, and export declarations remaining in `slang-common.h` retain [Foundation's other assignments](../foundation.md#existing-implementation-mapping).
+That mixed header also exposes the scalar declarations through its include of Scalar Types' defining header, `source/slang/foundation/base-types/scalar-types/scalar-types.h`.
 `RefObject`, `RefPtr`, and the native cast overloads in `slang-smart-pointer.h` remain with Native Ownership.
 Concrete blobs, files, artifacts, compiler objects, and graphics objects remain clients; their interface lists, payloads, cloning policy, and `comFree` overrides are not assigned to this module.
 The general interface macros and smart pointer in `include/slang-com-helper.h` and `include/slang-com-ptr.h` remain existing product contracts, including their native-reference helper macros.

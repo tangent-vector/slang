@@ -8,7 +8,8 @@ SPDX-License-Identifier: CC-BY-4.0
 Base Types provides the scalar conventions and operations that other implementation services use to represent and manipulate individual values.
 It supplies arithmetic and numeric encodings, simple ranges, generic C++ utilities, and compatibility facilities for the supported C++ compilers and C runtimes.
 
-The implementation remains under `old-source/core/`.
+Scalar Types is implemented in `scalar-types/scalar-types.h` and reexported by `base-types.h` in `slang::foundation::base_types`.
+The other implementations remain under `old-source/core/`.
 This document proposes lower service boundaries within Foundation's assignment; the [boundary conditions](#boundary-conditions) distinguish that proposal from the current combined headers and unresolved Foundation dependencies.
 
 ## Concepts
@@ -67,7 +68,11 @@ Their purpose does not assign higher-level text formatting, file access, or runt
 
 ## Existing Implementation Mapping
 
-The following paths are relative to `old-source/core/`:
+Scalar Types defines its sixteen aliases and three maximum constants in `scalar-types/scalar-types.h`, retaining their canonical `Slang` identities.
+Its leaf namespace, `base-types.h`, and Foundation's primary header explicitly reexport the same nineteen entities.
+The legacy `old-source/core/slang-common.h` includes the scalar header, preserving its existing clients' scalar exposure.
+
+The following remaining paths are relative to `old-source/core/`:
 
 - C++ Utilities owns `slang-type-traits.h`'s compile-time type-relation and conditional-declaration facilities, including their supporting result and conversion types, and `slang-range.h`'s bounded range representation and construction helper.
 - Bit Scanning owns `slang-byte-encode-util.h` and `slang-byte-encode-util.cpp`: the byte and 32-bit most-significant-bit queries, compiler-specific implementation branch, and shared byte lookup table.
@@ -76,13 +81,14 @@ The following paths are relative to `old-source/core/`:
   The separate seeded `Random` class has already moved to [Random Numbers](../random-numbers/random-numbers.md).
 - C Runtime Compatibility owns `slang-secure-crt.h`'s platform- and availability-guarded definitions, including memory, character-buffer, formatting, and stdio operations.
 - Only part of `slang-common.h` belongs to Base Types.
-  Scalar Types owns its scalar and character aliases and limits.
+  Its scalar and character aliases and limits are now defined in Scalar Types' header and exposed through the retained include.
   C++ Utilities owns its move, swap, bit-test, and bit-copy utilities; deferred cleanup; componentwise equality; compiler compatibility, warning, printf-annotation, and unused-value helpers; and runtime visibility macros.
   The assertion and assumption facilities, including the assumption fallback function, belong to Failure Reporting.
   The `ICastable` and `IClonable` aliases and `clone` helper belong to [Object Interfaces](../object-interfaces/object-interfaces.md).
 
 The implementation is predominantly in headers; the byte lookup table is an out-of-line definition.
-The current `core` target compiles the legacy implementation, and enabled `slang-rt` separately compiles the same core files under its runtime export settings.
+The current `core` target compiles the remaining legacy implementation, and enabled `slang-rt` separately compiles the same core files under its runtime export settings.
+Base Types' CMake entry enters the migrated Scalar Types child, whose header is listed on both existing targets without adding a translation unit or artifact.
 Migration preserves both consumers under the [root's staged migration contracts](../../slang.md#staged-migration-contracts).
 The implementation headers are not installed product headers, but that fact does not establish that their declarations are irrelevant to binary compatibility.
 Scalar aliases participate in the layout and signatures of other services, and `SLANG_RT_API` controls declarations used across the existing runtime boundary.
@@ -99,9 +105,10 @@ At that coarse granularity, Base Types depends on Failure Reporting, Failure Rep
 
 The proposed children distinguish the assert-free services used by Text from the checked Bit Scanning service.
 Text can depend on those public children without depending on the assembled Base Types interface, and Bit Scanning can depend on Failure Reporting without splitting `ByteEncodeUtil`'s members or changing its assertion behavior.
-This is an ownership proposal, not a completed header extraction or code port.
-Removing `slang-common.h`'s include of the signal header alone would not establish that separation.
+That separation remains an ownership proposal for the unported children.
+Only Scalar Types' assert-free declarations have moved to their own header; the common header still includes both that header and the signal header.
+The signal header still includes common, so the scalar extraction retains the common/signal include cycle as well as the behavioral dependencies described above.
+Removing the signal include alone would not establish the proposed service separation.
 
 The proposal does not resolve Foundation's existing [Failure Reporting, Text, and Memory cycle](../foundation.md#failure-reporting-and-basic-data-services).
 That condition remains relevant to Bit Scanning's failure-reporting dependency.
-The child documents still require their own refinement and review, and no migration is authorized by this document.

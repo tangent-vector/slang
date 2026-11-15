@@ -4,6 +4,7 @@
 // Foundation assembles the public APIs of its migrated children.
 // The remaining services described in `foundation.md` still use their legacy headers.
 
+#include "slang/foundation/base-types/base-types.h"
 #include "slang/foundation/compression/compression.h"
 #include "slang/foundation/digests/digests.h"
 #include "slang/foundation/hashing/hashing.h"
@@ -11,6 +12,27 @@
 
 namespace slang::foundation
 {
+
+// We reexport Base Types' scalar declarations without introducing new types or maximum objects.
+using base_types::Int32;
+using base_types::UInt32;
+using base_types::Int64;
+using base_types::UInt64;
+using base_types::Int;
+using base_types::UInt;
+using base_types::kMaxUInt;
+using base_types::kMaxInt;
+using base_types::PtrInt;
+using base_types::Index;
+using base_types::kMaxIndex;
+using base_types::UIndex;
+using base_types::Count;
+using base_types::UCount;
+using base_types::Byte;
+using base_types::Size;
+using base_types::Char8;
+using base_types::Char16;
+using base_types::Char32;
 
 using compression::CompressionStyle;
 using compression::CompressionSystemType;

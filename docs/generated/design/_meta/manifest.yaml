@@ -74,6 +74,10 @@ documents:
       - source/slang/foundation/digests/digests.cpp
       - source/slang/foundation/hashing/CMakeLists.txt
       - source/slang/foundation/hashing/hashing.h
+      - source/slang/foundation/base-types/CMakeLists.txt
+      - source/slang/foundation/base-types/base-types.h
+      - source/slang/foundation/base-types/scalar-types/CMakeLists.txt
+      - source/slang/foundation/base-types/scalar-types/scalar-types.h
     depends_on:
       - architecture/overview.md
     size_cap_bytes: 32768
@@ -88,6 +92,8 @@ documents:
       - source/slang/foundation/compression/CMakeLists.txt
       - source/slang/foundation/digests/CMakeLists.txt
       - source/slang/foundation/hashing/CMakeLists.txt
+      - source/slang/foundation/base-types/CMakeLists.txt
+      - source/slang/foundation/base-types/scalar-types/CMakeLists.txt
     depends_on:
       - architecture/module-map.md
     size_cap_bytes: 16384

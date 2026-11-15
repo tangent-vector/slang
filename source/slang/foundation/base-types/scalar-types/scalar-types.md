@@ -7,7 +7,8 @@ SPDX-License-Identifier: CC-BY-4.0
 
 Scalar Types provides integer and byte conventions, character-code-unit types, and maximum default integer and index values for implementation services.
 The common names distinguish sequence positions, element counts, and byte sizes from integers whose exact binary width matters.
-The implementation remains part of `old-source/core/slang-common.h`; the boundaries below describe the proposed leaf rather than a completed header extraction.
+The declarations are defined in `scalar-types.h` in this directory.
+The mixed legacy header `old-source/core/slang-common.h` includes that header, so its existing clients still obtain the scalar declarations together with the common header's other facilities.
 
 ## Concepts
 
@@ -18,7 +19,7 @@ The [root concepts](../../../slang.md#concepts) define implementation visibility
   In particular, `Index` expresses an ordinal use and `Count` expresses a cardinal use, but both are signed aliases of `Int`.
   A consuming service determines which negative values, if any, have meaning.
 - An explicitly sized integer is appropriate when a stored representation requires a fixed number of bits.
-  The default `Int` instead follows the product API's `SlangInt`, whose width is selected for the host pointer size.
+  The default `Int` instead follows the product API's `SlangInt`, with the same size as `void*` in the C++ implementation.
   Equal width does not establish equal C++ type identity: the product header deliberately chooses fixed-width integer types rather than `intptr_t` or `size_t` for its default integers.
 - Character aliases describe storage capacity rather than a guarantee of valid encoded text.
   `Char8` is `char`, with the host's `char` signedness; `Char16` and `Char32` are unsigned integers rather than C++'s distinct `char16_t` and `char32_t` types.
@@ -32,8 +33,15 @@ The [root concepts](../../../slang.md#concepts) define implementation visibility
   These inputs supply type definitions; Scalar Types performs no operating-system operation or numeric conversion.
 
 The assigned aliases and constants do not call another implementation service.
-Although their current combined header includes `slang-signal.h` and contains assertions and generic utilities, those facilities do not create a service dependency from this leaf to Failure Reporting or C++ Utilities.
-Header extraction must separate those declarations before the proposed dependencies describe the physical includes.
+The standalone `scalar-types.h` includes `slang.h`, `<cstddef>`, and `<stdint.h>`, in that order.
+It does not include the mixed common header, the signal header, or a parent module header.
+The product configuration hook therefore runs before the standard headers, just as it does through the legacy common header.
+Callers using `SLANG_NO_INTTYPES` or `SLANG_NO_STDDEF` still have to supply the prerequisites required by the product header before that header uses them.
+The product header's configuration selection and pointer-size assertion remain authoritative; Scalar Types supplies no replacement selection rule.
+
+The retained `slang-common.h` includes `slang-signal.h` and contains assertions and generic utilities.
+Those facilities do not create a service dependency from the standalone scalar leaf to Failure Reporting or C++ Utilities.
+Clients that need the common header's other facilities continue to include that mixed header.
 
 ## Principal Services
 
@@ -53,7 +61,8 @@ Scalar Types supplies representations and limits without taking ownership of tho
 
 ## Existing Implementation Mapping
 
-Only the following declarations in `old-source/core/slang-common.h`, all within `namespace Slang`, belong to this leaf:
+The following declarations have moved from `old-source/core/slang-common.h` to `scalar-types.h` in this directory.
+All definitions remain in canonical `namespace Slang`:
 
 | Concern                | Declarations and Existing Definitions                                                                          |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------- |
@@ -65,11 +74,19 @@ Only the following declarations in `old-source/core/slang-common.h`, all within 
 | Bytes and byte sizes   | `Byte` aliases `unsigned char`, and `Size` aliases `size_t`.                                                   |
 | Character storage      | `Char8`, `Char16`, and `Char32` alias `char`, `uint16_t`, and `uint32_t`, respectively.                        |
 
-The rest of the common header remains outside this assignment.
+`slang::foundation::base_types::scalar_types` explicitly reexports all nineteen names with `using` declarations.
+The Base Types and Foundation primary headers reexport those same entities through `slang::foundation::base_types` and `slang::foundation`.
+No reexport introduces another type or maximum-value object.
+
+The common header retains an include of the scalar header and all its non-scalar declarations.
+The latter remain outside this assignment.
 [C++ Utilities](../cpp-utilities/cpp-utilities.md) owns its move, swap, bit-test, and bit-copy helpers, deferred cleanup, componentwise equality, compiler compatibility facilities, unused-value helpers, and runtime visibility macros.
 [Failure Reporting](../../failure-reporting/failure-reporting.md) owns its assertion and assumption facilities, including the assumption fallback function.
 [Object Interfaces](../../object-interfaces/object-interfaces.md) owns `ICastable`, `IClonable`, and `clone`.
 The product scalar definitions in `include/slang.h` remain product declarations rather than implementations assigned for relocation.
+
+The leaf's `CMakeLists.txt` lists `scalar-types.h` on the existing `core` target and, when enabled, the existing `slang-rt` target.
+Base Types enters this ordinary child without adding a target, and the header registration adds no translation unit.
 
 ## Preservation Constraints
 
@@ -82,6 +99,6 @@ For example, the runtime-exported `StringRepresentation` in `old-source/core/sla
 The [root's staged migration contracts](../../../slang.md#staged-migration-contracts) therefore still require preservation of canonical type identity and binary interfaces; implementation-only visibility is not evidence that those contracts can change.
 The same contracts preserve both the static `core` consumer and enabled `slang-rt`'s separate compilation of Foundation code.
 
-The proposed scalar leaf requires no new service boundary decision from an ancestor.
-Its assert-free declarations can be separated without resolving Base Types' [Bit Scanning dependency](../base-types.md#boundary-conditions) or Foundation's existing Failure Reporting, Text, and Memory cycle.
-Those ancestor conditions remain open, and this document does not authorize migration.
+The assert-free scalar extraction does not resolve Base Types' [Bit Scanning dependency](../base-types.md#boundary-conditions) or Foundation's existing Failure Reporting, Text, and Memory cycle.
+The mixed common and signal headers still include each other.
+Those ancestor conditions remain open; the scalar move does not establish an acyclic implementation for the other services.

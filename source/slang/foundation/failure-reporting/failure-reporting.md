@@ -64,7 +64,8 @@ The following files remain in `old-source/core/`:
 - `slang-signal.h` and `slang-signal.cpp` provide signal kinds, reporting and assertion handlers, reporting macros, message formatting and storage, and the last-message accessor.
 - `slang-exception.h` provides the base exception and its invalid-operation, internal-error, and abort-compilation subclasses, together with exception-try and exception-type-visibility macros.
 - Only the assumption and assertion facilities in `slang-common.h` belong to this concern: `SLANG_ASSUME`, its fallback function, `SLANG_ASSERT`, and `SLANG_RELEASE_ASSERT`.
-  The remaining scalar, portability, export, and object-interface facilities retain the assignments in [Foundation's mapping](../foundation.md#existing-implementation-mapping).
+  The remaining portability, export, and object-interface facilities retain the assignments in [Foundation's mapping](../foundation.md#existing-implementation-mapping).
+  The mixed common header also exposes Scalar Types' declarations through its include of their defining header, `source/slang/foundation/base-types/scalar-types/scalar-types.h`.
 
 The `ToolReturnCode` enum in `slang-test-tool-util.h` belongs to [Tool Status Codes](../tool-status-codes/tool-status-codes.md).
 The no-exception branch of `handleSignal` uses that shared declaration.
@@ -84,5 +85,6 @@ The signal handler builds and retains a `String`, whose storage construction and
 Disabling exceptions does not remove the string construction that starts this path.
 
 Foundation must establish a coherent ownership boundary or behavior-preserving separation for those mutually dependent services before migration can be accepted.
-The assertion/assumption portion of `slang-common.h` can be separated from scalar declarations, but that header change does not answer the behavioral ownership question.
+The scalar declarations now have their own defining header, which `slang-common.h` includes alongside its unchanged signal-header include.
+The assertion/assumption portion remains in common, and the common/signal headers still include each other; the scalar extraction does not answer the behavioral ownership question.
 No replacement failure mechanism or broader data-service grouping is selected by this refinement.

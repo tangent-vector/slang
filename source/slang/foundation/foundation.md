@@ -13,6 +13,7 @@ Its children below are candidate ordinary modules within that artifact; they do 
 This decomposition is incomplete because several service dependencies are cyclic.
 The [unresolved boundaries](#unresolved-boundaries) identify the cycles and the ownership decisions required before the affected services can be migrated.
 [Compression](compression/compression.md), [Digests](digests/digests.md), [Hashing](hashing/hashing.md), and [Random Numbers](random-numbers/random-numbers.md) are implemented in this hierarchy and reexported by `foundation.h` in `slang::foundation`.
+Base Types' [Scalar Types](base-types/scalar-types/scalar-types.md) declarations are also defined in this hierarchy and reexported through the Base Types and Foundation primary headers.
 The other services still use their legacy implementations and headers; these ports do not settle their unresolved boundaries.
 
 ## Concepts
@@ -148,7 +149,9 @@ They propose service ownership and do not authorize moving a file wholesale.
 
 - **Base Types:** `slang-type-traits.h`, `slang-range.h`, `slang-secure-crt.h`, `slang-byte-encode-util.{h,cpp}`, and the arithmetic, bit, and numeric-conversion facilities in `slang-math.h`.
   The separate seeded `Random` class formerly in the math header now resides in Random Numbers.
-  The scalar aliases, character-code-unit types, move/swap/bit helpers, deferred cleanup utility, componentwise equality macros, compiler compatibility and warning macros, unused-value macros, and runtime export declarations in `slang-common.h` also belong here.
+  Scalar aliases, character-code-unit types, and their maximum constants now reside in `base-types/scalar-types/scalar-types.h` in this directory.
+  They retain their canonical `Slang` identities; the leaf, Base Types, and Foundation primary headers explicitly reexport the same nineteen entities.
+  The mixed `slang-common.h` includes that header and still defines the move/swap/bit helpers, deferred cleanup utility, componentwise equality macros, compiler compatibility and warning macros, unused-value macros, and runtime export declarations assigned to Base Types.
 - **Failure Reporting:** `slang-signal.{h,cpp}` and `slang-exception.h`, together with the assertion and assumption macros in `slang-common.h`.
 - **Tool Status Codes:** only the `ToolReturnCode` enum in `slang-test-tool-util.h`.
   It distinguishes successful execution, ordinary tool or compilation failure, an internal compiler error, an ignored invocation, and an invocation that could not run.
@@ -228,7 +231,7 @@ Splitting an include file or relocating a definition does not by itself remove a
 ### Failure Reporting and Basic Data Services
 
 `slang-common.h` includes `slang-signal.h`, and the signal header includes the common header.
-Separating scalar declarations from failure declarations can remove that header cycle.
+The scalar declarations now have their own defining header, but common retains its scalar-header include and its signal-header include, so that extraction leaves the common/signal include cycle intact.
 The harder cycle is behavioral: `RefObject::releaseReference`, list accessors, and string operations use assertions, while `handleSignal` constructs and retains a `String` and throws string-bearing exceptions when exceptions are enabled.
 `String` also uses native reference counting, hashing, and encoding buffers implemented with `List`.
 `Array` and `Dictionary` include the exception header, but their implementations reach failure reporting through assertions and signals; those includes alone do not establish an additional service dependency.
@@ -275,7 +278,8 @@ Archives refinement must retain one explicit owner for archive format selection 
 Every transferred implementation must therefore preserve both the static-core consumer and this separately compiled runtime consumer.
 Moving files into candidate ordinary modules does not change that requirement or establish new installed libraries.
 For Compression, Digests, and Random Numbers, this directory's CMake entries add each leaf implementation to both existing targets, conditionally including `slang-rt` when runtime is enabled.
-Hashing lists its one header on both targets without adding a translation unit.
+Hashing and Scalar Types each list their one defining header on both targets without adding a translation unit.
+The Base Types CMake entry only enters its migrated Scalar Types child; it creates no additional artifact or target.
 Root CMake gives the migrated Foundation directory a separate binary directory so the compiler's existing `source/slang` generated-file paths remain available.
 The old targets retain their names and export settings; these unannotated Compression and generator declarations and their implementation headers are not installed product API.
 
