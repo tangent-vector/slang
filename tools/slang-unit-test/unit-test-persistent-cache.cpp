@@ -3,7 +3,7 @@
 #include "core/slang-io.h"
 #include "core/slang-persistent-cache.h"
 #include "core/slang-process.h"
-#include "core/slang-random-generator.h"
+#include "slang/foundation/foundation.h"
 #include "unit-test/slang-unit-test.h"
 
 #include <atomic>
@@ -16,7 +16,7 @@
 
 using namespace Slang;
 
-static DefaultRandomGenerator rng(0xdeadbeef);
+static slang::foundation::DefaultRandomGenerator rng(0xdeadbeef);
 
 inline ComPtr<ISlangBlob> createRandomBlob(size_t size)
 {

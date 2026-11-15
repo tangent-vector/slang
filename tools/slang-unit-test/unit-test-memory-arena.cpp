@@ -2,7 +2,7 @@
 
 #include "core/slang-list.h"
 #include "core/slang-memory-arena.h"
-#include "core/slang-random-generator.h"
+#include "slang/foundation/foundation.h"
 #include "unit-test/slang-unit-test.h"
 
 #include <stdio.h>
@@ -105,7 +105,7 @@ static bool hasValue(const uint8_t* data, size_t size, uint8_t value)
 
 SLANG_UNIT_TEST(memoryArena)
 {
-    DefaultRandomGenerator randGen(0x5346536a);
+    slang::foundation::DefaultRandomGenerator randGen(0x5346536a);
 
     {
         const size_t blockSize = 1024;

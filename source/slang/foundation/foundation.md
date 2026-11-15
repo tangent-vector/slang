@@ -12,7 +12,8 @@ Foundation is the implementation concern currently supplied by the static `core`
 Its children below are candidate ordinary modules within that artifact; they do not introduce additional libraries.
 This decomposition is incomplete because several service dependencies are cyclic.
 The [unresolved boundaries](#unresolved-boundaries) identify the cycles and the ownership decisions required before the affected services can be migrated.
-No implementation has moved into this hierarchy.
+[Random Numbers](random-numbers/random-numbers.md) is implemented in this hierarchy and reexported by `foundation.h` in `slang::foundation`.
+The other services still use their legacy implementations and headers; this first port does not settle their unresolved boundaries.
 
 ## Concepts
 
@@ -128,13 +129,13 @@ This list explains current relationships; the unresolved cycles prevent treating
 
 ## Existing Implementation Mapping
 
-All paths below refer to the current `old-source/core/` directory unless another directory is stated.
+Paths below refer to `old-source/core/` unless another directory is stated.
 A basename with `{h,cpp}` denotes both existing files; a name ending in `.h` identifies that header alone.
 These assignments cover the directory, including the partial-file and deferred assignments following the list.
 They propose service ownership and do not authorize moving a file wholesale.
 
 - **Base Types:** `slang-type-traits.h`, `slang-range.h`, `slang-secure-crt.h`, `slang-byte-encode-util.{h,cpp}`, and the arithmetic, bit, and numeric-conversion facilities in `slang-math.h`.
-  The separate seeded `Random` class at the end of the math header belongs to Random Numbers.
+  The separate seeded `Random` class formerly in the math header now resides in Random Numbers.
   The scalar aliases, character-code-unit types, move/swap/bit helpers, deferred cleanup utility, componentwise equality macros, compiler compatibility and warning macros, unused-value macros, and runtime export declarations in `slang-common.h` also belong here.
 - **Failure Reporting:** `slang-signal.{h,cpp}` and `slang-exception.h`, together with the assertion and assumption macros in `slang-common.h`.
   The `ToolReturnCode` and `ToolReturnCodeSpan` declarations in `slang-test-tool-util.h` need a common failure-status owner because the no-exception signal handler uses `InternalCompilerError`; that owner remains unresolved below.
@@ -168,7 +169,10 @@ They propose service ownership and do not authorize moving a file wholesale.
   `HTTPPacketConnection` supplies HTTP-style headers and content framing over an existing stream, rather than opening network connections.
   For example, compiler-support's `slang-json-rpc-connection.cpp` uses the framing beneath JSON RPC.
 - **Profiling:** `slang-performance-profiler.{h,cpp}`, including its adapter to the product `ISlangProfiler` interface.
-- **Random Numbers:** `slang-random-generator.{h,cpp}` and the separate seeded `Random` class in `slang-math.h`.
+- **Random Numbers:** `random-numbers/random-numbers.{h,cpp}` in this directory now owns the complete generator family and the separate seeded `Random` class formerly at the end of `slang-math.h`.
+  The transferred legacy generator files have been removed, and `slang-math.h` retains only the arithmetic and numeric-conversion services assigned to Base Types.
+  `foundation.h` explicitly reexports the four public generator names from `slang::foundation::random_numbers`.
+  Random Numbers temporarily includes `old-source/core/slang-smart-pointer.h` and uses the unchanged `Slang::RefObject` and `Slang::RefPtr` ownership contract while Memory remains unported.
 
 `slang-basic.h` is an aggregate header and the current precompiled-header input.
 It assembles services assigned to several children and therefore belongs to Foundation's integration surface, rather than defining another service module.
@@ -238,6 +242,9 @@ Archives refinement must retain one explicit owner for archive format selection 
 `old-source/slang-rt/CMakeLists.txt` also compiles the core implementations using runtime export settings, rather than linking the `core` archive.
 Every transferred implementation must therefore preserve both the static-core consumer and this separately compiled runtime consumer.
 Moving files into candidate ordinary modules does not change that requirement or establish new installed libraries.
+For Random Numbers, this directory's CMake entry adds the leaf implementation to both existing targets, conditionally including `slang-rt` when runtime is enabled.
+Root CMake gives the migrated Foundation directory a separate binary directory so the compiler's existing `source/slang` generated-file paths remain available.
+The old targets retain their names and export settings; the unannotated generator classes and implementation headers are not installed product API.
 
 The ancestor must settle the compiler-specific and tool-specific assignments listed above.
 Foundation remains pending while those ownership questions and the low-level service cycles are unresolved.

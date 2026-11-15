@@ -9,6 +9,7 @@
 #include "core/slang-string-util.h"
 #include "core/slang-test-tool-util.h"
 #include "options.h"
+#include "slang/foundation/foundation.h"
 
 #include <stdio.h>
 
@@ -721,7 +722,8 @@ static SlangResult compileProgram(
     }
 
     // Deterministic random generator
-    RefPtr<RandomGenerator> rand = RandomGenerator::create(0x34234);
+    RefPtr<slang::foundation::RandomGenerator> rand =
+        slang::foundation::RandomGenerator::create(0x34234);
 
     // Parse the layout
     layout.parse(rand, sourceText.getBuffer());

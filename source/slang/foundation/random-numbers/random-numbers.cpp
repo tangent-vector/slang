@@ -1,17 +1,23 @@
+// We implement the common generator's scalar conversions and bounded selections first,
+// followed by byte filling and default-generator creation. The concrete generator definitions then
+// cover construction, state-block updates, reset, and scalar or bulk consumption of that state.
+// These operations share a mutable sequence, so their draw counts and ordering matter to callers.
 
-#include "slang-random-generator.h"
+#include "slang/foundation/random-numbers/random-numbers.h"
 
-namespace Slang
+namespace slang::foundation::random_numbers
 {
 
-/* !!!!!!!!!!!!!!!!!!!!!!!!!!!! RandomGenerator !!!!!!!!!!!!!!!!!!!!!!!! */
+// # Common Scalar Values and Bounded Selection
 
+// TODO(tfoley-refactor): Explain the sign-bit mask and inclusive float endpoints in a narrative.
 float RandomGenerator::nextUnitFloat32()
 {
     int32_t intValue = nextInt32();
     return (intValue & 0x7fffffff) * (1.0f / float(0x7fffffff));
 }
 
+// TODO(tfoley-refactor): Explain the parity reduction and the bits that affect the result.
 bool RandomGenerator::nextBool()
 {
     uint32_t bits = uint32_t(nextInt32());
@@ -25,6 +31,8 @@ bool RandomGenerator::nextBool()
     return (bits & 1) != 0;
 }
 
+// TODO(tfoley-refactor): Review left shifting a negative signed `high` and sign extension of `low`.
+// TODO(tfoley-refactor): Explain the two draws and their combination in a running narrative.
 int64_t RandomGenerator::nextInt64()
 {
     const int32_t high = nextInt32();
@@ -33,6 +41,8 @@ int64_t RandomGenerator::nextInt64()
     return (int64_t(high) << 32) | low;
 }
 
+// TODO(tfoley-refactor): Explain reversed/single-value intervals and their draw consumption.
+// TODO(tfoley-refactor): Review modulo bias and the inaccurate 64-bit-arithmetic comment below.
 uint32_t RandomGenerator::nextUInt32InRange(uint32_t min, uint32_t max)
 {
     // Make sure max is at least in
@@ -48,6 +58,8 @@ uint32_t RandomGenerator::nextUInt32InRange(uint32_t min, uint32_t max)
 }
 
 
+// TODO(tfoley-refactor): Explain clamping, widened range arithmetic, and the constant-result cases.
+// TODO(tfoley-refactor): Decide whether bounded selection should remove modulo bias.
 int32_t RandomGenerator::nextInt32InRange(int32_t min, int32_t max)
 {
     // Make sure max is at least in
@@ -62,6 +74,8 @@ int32_t RandomGenerator::nextInt32InRange(int32_t min, int32_t max)
     return int32_t(int64_t(nextUInt32() % diff) + min);
 }
 
+// TODO(tfoley-refactor): Review signed overflow in `max - min` and modulo bias.
+// TODO(tfoley-refactor): Explain the range precondition and constant-result cases in a narrative.
 int64_t RandomGenerator::nextInt64InRange(int64_t min, int64_t max)
 {
     int64_t diff = max - min;
@@ -72,6 +86,10 @@ int64_t RandomGenerator::nextInt64InRange(int64_t min, int64_t max)
     return (nextPositiveInt64() % diff) + min;
 }
 
+// # Byte Filling and Generator Creation
+
+// TODO(tfoley-refactor): Rename `_nextData` to identify an at-most-four-byte fragment.
+// TODO(tfoley-refactor): Explain the zero-size case and low-byte extraction in a running narrative.
 static uint8_t* _nextData(RandomGenerator* rand, uint8_t* out, size_t size)
 {
     if (size)
@@ -88,6 +106,9 @@ static uint8_t* _nextData(RandomGenerator* rand, uint8_t* out, size_t size)
     return out + size;
 }
 
+// TODO(tfoley-refactor): Reconcile the declaration's `dst` and definition's `out` parameter names.
+// TODO(tfoley-refactor): Explain short fills, the alignment prefix, bulk words, and trailing bytes.
+// TODO(tfoley-refactor): Explain the alignment and end-pointer assertions as separate invariants.
 void RandomGenerator::nextData(void* out, size_t size)
 {
     uint8_t* dst = (uint8_t*)out;
@@ -128,7 +149,7 @@ void RandomGenerator::nextData(void* out, size_t size)
     return new DefaultRandomGenerator(seed);
 }
 
-/* !!!!!!!!!!!!!!!!!!!!!!!!!!!! Mt19937RandomGenerator !!!!!!!!!!!!!!!!!!!!!!!! */
+// # Concrete Generator Construction and State Updates
 
 Mt19937RandomGenerator::Mt19937RandomGenerator()
 {
@@ -145,6 +166,8 @@ Mt19937RandomGenerator::Mt19937RandomGenerator(int32_t seed)
     reset(seed);
 }
 
+// TODO(tfoley-refactor): Explain state-word mixing, the wrapped final word, and index reset.
+// TODO(tfoley-refactor): Replace opaque `o` and `y` names with their roles in the recurrence.
 void Mt19937RandomGenerator::_generate()
 {
     const uint32_t xorValue = 2567483615u;
@@ -181,6 +204,11 @@ void Mt19937RandomGenerator::_generate()
     m_index = 0;
 }
 
+// TODO(tfoley-refactor): Reconcile the declaration's `seed` and definition's `seedIn` names.
+// TODO(tfoley-refactor): Review whether starting at index zero intentionally skips an initial
+// twist.
+// TODO(tfoley-refactor): Explain the seed expansion and initial read position in a running
+// narrative.
 void Mt19937RandomGenerator::reset(int32_t seedIn)
 {
     m_index = 0;
@@ -191,6 +219,7 @@ void Mt19937RandomGenerator::reset(int32_t seedIn)
     }
 }
 
+// TODO(tfoley-refactor): Explain block exhaustion and the output tempering steps in a narrative.
 int32_t Mt19937RandomGenerator::nextInt32()
 {
     if (m_index >= kNumEntries)
@@ -201,12 +230,15 @@ int32_t Mt19937RandomGenerator::nextInt32()
     uint32_t y = m_mt[m_index++];
     y = y ^ (y >> 11);
     y = y ^ ((y << 7) & uint32_t(0x9d2c5680u));
+    // TODO(tfoley-refactor): Review whether shift-15 mask `0xefc6000u` intentionally differs
+    // from MT19937's `0xefc60000u`.
     y = y ^ ((y << 15) & uint32_t(0xefc6000u));
     y = y ^ (y >> 18);
 
     return int32_t(y);
 }
 
+// TODO(tfoley-refactor): Explain block-sized runs, tempering, and the three cursor updates.
 void Mt19937RandomGenerator::nextInt32s(int32_t* dst, size_t count)
 {
     while (count)
@@ -225,6 +257,8 @@ void Mt19937RandomGenerator::nextInt32s(int32_t* dst, size_t count)
             uint32_t y = src[i];
             y = y ^ (y >> 11);
             y = y ^ ((y << 7) & uint32_t(0x9d2c5680u));
+            // TODO(tfoley-refactor): Review whether shift-15 mask `0xefc6000u` intentionally
+            // differs from MT19937's `0xefc60000u`.
             y = y ^ ((y << 15) & uint32_t(0xefc6000u));
             y = y ^ (y >> 18);
 
@@ -237,4 +271,4 @@ void Mt19937RandomGenerator::nextInt32s(int32_t* dst, size_t count)
     }
 }
 
-} // namespace Slang
+} // namespace slang::foundation::random_numbers

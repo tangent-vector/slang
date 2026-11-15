@@ -2,8 +2,8 @@
 #define SLANG_TEST_SHADER_INPUT_LAYOUT_H
 
 #include "core/slang-basic.h"
-#include "core/slang-random-generator.h"
 #include "core/slang-writer.h"
+#include "slang/foundation/foundation.h"
 
 #include <slang-rhi.h>
 
@@ -341,7 +341,7 @@ public:
 
     Slang::Index findEntryIndexByName(const Slang::String& name) const;
 
-    void parse(Slang::RandomGenerator* rand, const char* source);
+    void parse(slang::foundation::RandomGenerator* rand, const char* source);
 
     /// Writes a binding, if bindRoot is set, will try to honor the underlying type when outputting.
     /// If not will dump as uint32_t hex.

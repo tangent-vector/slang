@@ -3,9 +3,9 @@
 
 #include "core/slang-castable.h"
 #include "core/slang-char-util.h"
-#include "core/slang-random-generator.h"
 #include "core/slang-stable-hash.h"
 #include "slang.h"
+#include "slang/foundation/foundation.h"
 
 namespace Slang
 {
@@ -158,7 +158,8 @@ SlangResult obfuscateModuleLocs(IRModule* module, SourceManager* sourceManager)
 
     // We need a seed to make this random on each run
     const uint32_t randomSeed = uint32_t(hash);
-    RefPtr<RandomGenerator> rand = RandomGenerator::create(randomSeed);
+    RefPtr<slang::foundation::RandomGenerator> rand =
+        slang::foundation::RandomGenerator::create(randomSeed);
 
     // We want a random unique name because we could have multiple obfuscated modules
     // and we need to identify each

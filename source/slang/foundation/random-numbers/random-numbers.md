@@ -10,7 +10,8 @@ The main generator interface lets clients restart a sequence from a seed or copy
 The module also owns a separate compact generator with its own scalar API and sequence.
 
 This document refines the public child assigned by [Foundation](../foundation.md#candidate-decomposition).
-It describes the existing implementation to be organized; no implementation has moved into this directory.
+The implementation is `random-numbers.h` and `random-numbers.cpp`, in `slang::foundation::random_numbers`.
+Foundation's `foundation.h` explicitly reexports all four public generator names in `slang::foundation`.
 
 ## Concepts
 
@@ -37,7 +38,8 @@ The `RandomGenerator` family uses the following sibling services within Foundati
 
 The C++ environment and product-header contracts inherited through [Foundation](../foundation.md#dependencies) supply integer types, byte counts, allocation, byte copying, and compatibility macros.
 The wider include graph through native ownership does not establish additional direct service dependencies.
-`Random` uses ordinary C++ arithmetic and has no dependency on the `Math` services that share its existing header.
+Memory and Failure Reporting are still supplied by legacy headers: this module includes `core/slang-smart-pointer.h` from `old-source/`, retaining the existing `Slang::RefObject` base and `Slang::RefPtr` ownership.
+`Random` uses ordinary C++ arithmetic and has no dependency on the `Math` services that shared its previous header.
 Clients may supply seeds explicitly; `Mt19937RandomGenerator` also has a default constructor that uses the fixed seed `21452`.
 Neither generator selects seeds from host entropy, clocks, or files.
 
@@ -73,16 +75,21 @@ Changing how a buffer fill is split can also change subsequent draws.
 The existing arithmetic, range behavior, and C++ evaluation choices constrain compatibility; a seed alone is not a cross-platform output specification.
 The two generators are not interchangeable implementations of one seeded sequence, and neither API defines a state serialization format.
 
-## Existing Implementation Mapping
+## Implementation Mapping
 
-The following assignments cover the two random-generator files completely and only the random-number portion of the math header:
+The public header groups the common generator interface, concrete generator state and lifetime, and compact scalar generation.
+The implementation groups common scalar selection, byte filling and creation, and concrete state operations.
+The following transfers preserve the existing names, signatures, algorithms, and inline choices apart from namespace qualification:
 
-| Existing File                                | Assigned Responsibility                                                                                                                                                                |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `old-source/core/slang-random-generator.h`   | The `RandomGenerator` interface and inline operations, the complete public `Mt19937RandomGenerator` declaration including its protected state, and the `DefaultRandomGenerator` alias. |
-| `old-source/core/slang-random-generator.cpp` | Common scalar and bounded-value operations, byte filling and its file-local `_nextData` fragment routine, the default factory, and the complete concrete generator implementation.     |
-| `old-source/core/slang-math.h`               | Only the complete `Random` class and its inline implementation. The `Math` class, arithmetic utilities, and floating-point conversions remain outside this module.                     |
+| Previous File                                | Current Location and Responsibility                                                                                                                                                                                           |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `old-source/core/slang-random-generator.h`   | `random-numbers.h` owns the complete `RandomGenerator` and `Mt19937RandomGenerator` declarations, including inline operations, protected state, and the `DefaultRandomGenerator` alias. The previous header has been removed. |
+| `old-source/core/slang-random-generator.cpp` | `random-numbers.cpp` owns all common operations, byte filling and its file-local fragment routine, the factory, and concrete generator definitions. The previous implementation file has been removed.                        |
+| `old-source/core/slang-math.h`               | Only the complete inline `Random` class moved to `random-numbers.h`. The `Math` class, arithmetic utilities, and floating-point conversions remain in the legacy header.                                                      |
 
 Callers remain with their owning compiler or tool concerns.
-The random-generator implementation currently compiles into both `core` and the separately compiled `slang-rt` consumer described by [Foundation](../foundation.md#build-consumers-and-ancestor-decisions).
-Preserving both build consumers is an integration requirement; this leaf does not introduce a new library or settle Foundation's unresolved dependency cycles.
+The compiler obfuscation pass, render-test input-layout code, and unit tools include the Foundation reexport and qualify its generator types.
+The leaf CMake entry adds `random-numbers.cpp` to both `core` and the separately compiled, optional `slang-rt` consumer described by [Foundation](../foundation.md#build-consumers-and-ancestor-decisions).
+The static target exposes the new implementation include root to clients; runtime also uses the new root while retaining the legacy root for unported dependencies.
+This leaf introduces no new library or installed header and does not settle Foundation's unresolved dependency cycles.
+Specific `TODO(tfoley-refactor)` comments preserve inherited naming, signature, arithmetic, initialization, and missing implementation-explanation concerns for a later phase rather than changing those behaviors during the transfer.

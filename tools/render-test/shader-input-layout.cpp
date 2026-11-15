@@ -80,9 +80,9 @@ public:
 struct ShaderInputLayoutParser
 {
     ShaderInputLayout* layout;
-    RandomGenerator* rand;
+    slang::foundation::RandomGenerator* rand;
 
-    ShaderInputLayoutParser(ShaderInputLayout* layout, RandomGenerator* rand)
+    ShaderInputLayoutParser(ShaderInputLayout* layout, slang::foundation::RandomGenerator* rand)
         : layout(layout), rand(rand)
     {
     }
@@ -1079,7 +1079,7 @@ struct ShaderInputLayoutParser
     }
 };
 
-void ShaderInputLayout::parse(RandomGenerator* rand, const char* source)
+void ShaderInputLayout::parse(slang::foundation::RandomGenerator* rand, const char* source)
 {
     rootVal = nullptr;
     globalSpecializationArgs.clear();

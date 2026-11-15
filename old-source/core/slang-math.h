@@ -441,28 +441,6 @@ inline float FloatE5M2ToFloat(unsigned int input)
     return IntAsFloat(sign | res_exp | res_mant);
 }
 
-class Random
-{
-private:
-    unsigned int seed;
-
-public:
-    Random(int seed) { this->seed = seed; }
-    int Next() // random between 0 and RandMax (currently 0x7fff)
-    {
-        return ((seed = ((seed << 12) + 150889L) % 714025) & 0x7fff);
-    }
-    int Next(int min, int max) // inclusive min, exclusive max
-    {
-        unsigned int a = ((seed = ((seed << 12) + 150889L) % 714025) & 0xFFFF);
-        unsigned int b = ((seed = ((seed << 12) + 150889L) % 714025) & 0xFFFF);
-        unsigned int r = (a << 16) + b;
-        return min + r % (max - min);
-    }
-    float NextFloat() { return ((Next() << 15) + Next()) / ((float)(1 << 30)); }
-    float NextFloat(float valMin, float valMax) { return valMin + (valMax - valMin) * NextFloat(); }
-    static int RandMax() { return 0x7fff; }
-};
 } // namespace Slang
 
 #endif

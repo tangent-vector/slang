@@ -5,7 +5,6 @@
 #include "core/slang-char-util.h"
 #include "core/slang-hash.h"
 #include "core/slang-performance-profiler.h"
-#include "core/slang-random-generator.h"
 #include "slang-check-impl.h"
 #include "slang-check.h"
 #include "slang-ir-autodiff.h"

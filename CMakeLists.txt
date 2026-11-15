@@ -754,6 +754,8 @@ endif()
 # sibling targets include those files through relative paths.
 add_subdirectory("${SLANG_LEGACY_SOURCE_DIR}/core" "source/core")
 add_subdirectory("${SLANG_LEGACY_SOURCE_DIR}/slang-rt" "source/slang-rt")
+# The compiler already owns the legacy `source/slang` binary directory.
+add_subdirectory(source/slang/foundation source/refactor-foundation)
 add_subdirectory(
     "${SLANG_LEGACY_SOURCE_DIR}/compiler-core"
     "source/compiler-core"

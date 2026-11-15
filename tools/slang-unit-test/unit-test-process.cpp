@@ -5,8 +5,8 @@
 #include "core/slang-io.h"
 #include "core/slang-platform.h"
 #include "core/slang-process-util.h"
-#include "core/slang-random-generator.h"
 #include "core/slang-string-util.h"
+#include "slang/foundation/foundation.h"
 #include "unit-test/slang-unit-test.h"
 
 #if defined(_WIN32)
@@ -50,7 +50,8 @@ static SlangResult _httpReflectTest(UnitTestContext* context)
         new BufferedReadStream(process->getStream(StdStreamType::Out)));
     RefPtr<HTTPPacketConnection> connection = new HTTPPacketConnection(readStream, writeStream);
 
-    RefPtr<RandomGenerator> rand = RandomGenerator::create(10000);
+    RefPtr<slang::foundation::RandomGenerator> rand =
+        slang::foundation::RandomGenerator::create(10000);
 
     for (Index i = 0; i < 100; i++)
     {

@@ -1,13 +1,13 @@
 // unit-test-riff.cpp
 
-#include "core/slang-random-generator.h"
 #include "core/slang-riff.h"
+#include "slang/foundation/foundation.h"
 #include "unit-test/slang-unit-test.h"
 
 using namespace Slang;
 
 static void _writeRandom(
-    RandomGenerator* rand,
+    slang::foundation::RandomGenerator* rand,
     size_t maxSize,
     RIFF::BuildCursor& cursor,
     List<uint8_t>& ioData)
@@ -296,7 +296,8 @@ SLANG_UNIT_TEST(riff)
         {
             SLANG_SCOPED_RIFF_BUILDER_DATA_CHUNK(cursor, markData);
 
-            RefPtr<RandomGenerator> rand = RandomGenerator::create(0x345234);
+            RefPtr<slang::foundation::RandomGenerator> rand =
+                slang::foundation::RandomGenerator::create(0x345234);
 
             List<uint8_t> data;
             _writeRandom(rand, builder._getMemoryArena().getBlockPayloadSize() / 2, cursor, data);
@@ -315,7 +316,8 @@ SLANG_UNIT_TEST(riff)
 
     // Test writing across multiple data blocks
     {
-        RefPtr<RandomGenerator> rand = RandomGenerator::create(0x345234);
+        RefPtr<slang::foundation::RandomGenerator> rand =
+            slang::foundation::RandomGenerator::create(0x345234);
 
         for (Int i = 0; i < 100; ++i)
         {

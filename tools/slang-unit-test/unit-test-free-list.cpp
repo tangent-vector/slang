@@ -2,7 +2,7 @@
 
 #include "core/slang-free-list.h"
 #include "core/slang-list.h"
-#include "core/slang-random-generator.h"
+#include "slang/foundation/foundation.h"
 #include "unit-test/slang-unit-test.h"
 
 #include <stdio.h>
@@ -15,7 +15,7 @@ SLANG_UNIT_TEST(freeList)
     FreeList freeList;
     freeList.init(sizeof(int), sizeof(void*), 10);
 
-    DefaultRandomGenerator randGen(0x24343);
+    slang::foundation::DefaultRandomGenerator randGen(0x24343);
 
     List<int*> allocs;
 

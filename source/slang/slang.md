@@ -12,6 +12,9 @@ This document describes a proposed organization of the implementation.
 The mapping below identifies the existing code and build targets from which that organization is being extracted; the proposed directories do not imply that the code has already moved or that new library boundaries have been established.
 The product API headers in the repository's `include/` directory remain an existing contract outside this implementation hierarchy.
 
+[Random Numbers](foundation/random-numbers/random-numbers.md) is the first service whose implementation has been transferred into this hierarchy.
+The owning module documents identify the current implementation locations and any remaining legacy dependencies.
+
 ## Concepts
 
 - A **module** is a named implementation concern, represented by a directory containing its documentation and implementation files.
