@@ -3,7 +3,6 @@
 
 #include "compiler-core/slang-artifact-util.h"
 #include "core/slang-blob.h"
-#include "core/slang-lz4-compression-system.h"
 #include "core/slang-shared-library.h"
 #include "slang-check-impl.h"
 #include "slang-compiler.h"
@@ -19,6 +18,7 @@
 #include "slang-serialize-ir.h"
 #include "slang-standard-module-config.h"
 #include "slang-tag-version.h"
+#include "slang/foundation/compression/compression.h"
 
 namespace Slang
 {
@@ -139,11 +139,12 @@ static ComPtr<ISlangBlob> tryLoadStandardModuleFromMonolithicLibrary(String cons
     // into a managed blob.
     List<unsigned char> decompressed;
     decompressed.setCount(Index(uncompressedSize));
-    if (SLANG_FAILED(LZ4CompressionSystem::getSingleton()->decompress(
-            compressed,
-            compressedSize,
-            uncompressedSize,
-            decompressed.getBuffer())))
+    if (SLANG_FAILED(
+            slang::foundation::compression::LZ4CompressionSystem::getSingleton()->decompress(
+                compressed,
+                compressedSize,
+                uncompressedSize,
+                decompressed.getBuffer())))
         return ComPtr<ISlangBlob>();
 
     return RawBlob::create(decompressed.getBuffer(), uncompressedSize);

@@ -10,7 +10,8 @@ It supplies a common contract and the existing DEFLATE and LZ4 implementations.
 Callers own the surrounding archive structure, file names, and serialized-program interpretation.
 
 This is a public leaf module within [Foundation](../foundation.md#candidate-decomposition).
-Its implementation remains in `old-source/core/`.
+Its public declarations are in `compression.h`, and `compression.cpp` implements both codecs.
+The public names belong to `slang::foundation::compression` and are reexported by Foundation.
 
 ## Concepts
 
@@ -36,7 +37,7 @@ The [root concepts](../../slang.md#concepts) define implementation visibility an
   The wrapper copies that allocation into a Slang-owned blob and releases the temporary with `mz_free`.
 - LZ4 supplies compression bounds, block compression, and decompression into supplied storage.
 
-The aggregate `slang-basic.h` includes do not establish additional service dependencies.
+The public header includes only the product interface header; the concrete ownership and codec dependencies remain in `compression.cpp`.
 In particular, the wrappers do not perform file I/O or interpret archive structure.
 The low-level service cycles recorded by [Foundation](../foundation.md#unresolved-boundaries) remain unresolved by this leaf's decomposition.
 
@@ -54,8 +55,7 @@ Its public implementation services are:
   Their COM `addRef` and `release` operations return a constant value and do not control singleton lifetime.
   The concrete implementation classes and their interface-discovery routines remain private implementation details within this leaf.
 
-The two small wrappers share the same buffer contract and ownership model.
-Their separate files do not require separate implementation modules.
+The two small wrappers share the same buffer contract and ownership model, so the leaf contains both codecs.
 
 ## Clients and Compatibility
 
@@ -69,19 +69,24 @@ The optional `slang-standard-modules` library exposes the compressed bytes and s
 That cross-library contract exchanges byte pointers and sizes rather than `ICompressionSystem` objects.
 The compression unit test and file-system unit tests also use these services.
 
-A later structural port must preserve the shared interface's UUID, method order, signatures, and calling convention, as well as singleton behavior, the encoding identifiers stored in RIFF archives, and the buffer formats used by both archive and embedded-module readers.
-The style and error behavior of the existing wrappers also remain unchanged by such a port.
+The migrated declarations preserve the shared interface's UUID, method order, signatures, and calling convention, as well as singleton behavior, the encoding identifiers stored in RIFF archives, and the buffer formats used by both archive and embedded-module readers.
+The wrappers' style and error behavior is unchanged.
 `ICompressionSystem` and the singleton access classes are implementation declarations, not installed product interfaces; `ISlangUnknown` and `ISlangBlob` retain their product API definitions.
+The unannotated Compression declarations now use the leaf namespace.
+The legacy native ownership and blob types keep their existing identities.
+Each separately compiled implementation has its own function-local static instances; the accessors do not promise one instance across libraries or executables.
 
 ## Existing Implementation Mapping
 
-All declarations and definitions in the following files belong to this leaf:
+The implementation is organized within this leaf as follows:
 
-- `old-source/core/slang-compression-system.h` defines the complete style descriptor, system identifier, and shared compression interface.
-- `old-source/core/slang-deflate-compression-system.h` and `.cpp` define the DEFLATE singleton accessor and its concrete implementation, including interface discovery, buffer conversion, and allocation handoff.
-- `old-source/core/slang-lz4-compression-system.h` and `.cpp` define the corresponding LZ4 accessor and implementation.
+- `compression.h` declares the complete style descriptor, encoding identifier, shared compression interface, and both singleton accessors.
+  It includes the product interface header without exposing concrete blob, allocator, or codec declarations.
+- `compression.cpp` defines the two concrete implementations in separate raw DEFLATE and LZ4 block sections, including interface discovery, buffer conversion, and allocation handoff.
+  It still uses `Slang::RefObject`, `Slang::RawBlob`, and `Slang::ScopedAllocation` through their legacy headers while those owning services remain unported.
+- `CMakeLists.txt` adds the same implementation file to the existing static `core` target and the optional separately compiled `slang-rt` target.
+  Both targets retain their private miniz and LZ4 links and their existing export settings.
 
+The five legacy Compression files under `old-source/core/` have been removed, and their clients include the new primary header.
 The archive implementations, embedding generator, compiler loader, and unit tests remain with their respective owners.
-The current `core` target compiles both wrapper implementations and links miniz and LZ4 privately.
-The optional `slang-rt` target separately compiles the same implementations with runtime export settings and links the same libraries.
-A transfer must account for both existing build consumers, as described by [Foundation](../foundation.md#build-consumers-and-ancestor-decisions), without introducing a library for this leaf.
+This source reuse follows [Foundation's existing build arrangement](../foundation.md#build-consumers-and-ancestor-decisions) without introducing a library for this leaf.

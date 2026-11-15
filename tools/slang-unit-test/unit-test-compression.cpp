@@ -1,19 +1,23 @@
 // unit-compression.cpp
-#include "core/slang-deflate-compression-system.h"
-#include "core/slang-lz4-compression-system.h"
+#include "core/slang-list.h"
+#include "slang-com-ptr.h"
+#include "slang/foundation/compression/compression.h"
 #include "unit-test/slang-unit-test.h"
+
+#include <string.h>
 
 using namespace Slang;
 
-static ICompressionSystem* _getCompressionSystem(CompressionSystemType type)
+static slang::foundation::compression::ICompressionSystem* _getCompressionSystem(
+    slang::foundation::compression::CompressionSystemType type)
 {
     switch (type)
     {
-    case CompressionSystemType::Deflate:
-        return DeflateCompressionSystem::getSingleton();
+    case slang::foundation::compression::CompressionSystemType::Deflate:
+        return slang::foundation::compression::DeflateCompressionSystem::getSingleton();
         break;
-    case CompressionSystemType::LZ4:
-        return LZ4CompressionSystem::getSingleton();
+    case slang::foundation::compression::CompressionSystemType::LZ4:
+        return slang::foundation::compression::LZ4CompressionSystem::getSingleton();
         break;
     default:
         break;
@@ -24,9 +28,11 @@ static ICompressionSystem* _getCompressionSystem(CompressionSystemType type)
 SLANG_UNIT_TEST(compression)
 {
     // Test out compression systems
-    for (Index i = 0; i < Count(CompressionSystemType::CountOf); ++i)
+    for (Index i = 0; i < Count(slang::foundation::compression::CompressionSystemType::CountOf);
+         ++i)
     {
-        ICompressionSystem* system = _getCompressionSystem(CompressionSystemType(i));
+        slang::foundation::compression::ICompressionSystem* system =
+            _getCompressionSystem(slang::foundation::compression::CompressionSystemType(i));
 
         if (!system)
         {
@@ -39,7 +45,7 @@ SLANG_UNIT_TEST(compression)
         ComPtr<ISlangBlob> compressedBlob;
 
         // Use the default style
-        CompressionStyle style;
+        slang::foundation::compression::CompressionStyle style;
 
         SLANG_CHECK(
             SLANG_SUCCEEDED(system->compress(&style, src, srcSize, compressedBlob.writeRef())));

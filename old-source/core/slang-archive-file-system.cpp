@@ -9,8 +9,7 @@
 #include "slang-string-util.h"
 
 // Compression systems
-#include "slang-deflate-compression-system.h"
-#include "slang-lz4-compression-system.h"
+#include "slang/foundation/compression/compression.h"
 
 // Zip file system
 #include "slang-riff.h"
@@ -69,12 +68,14 @@ SlangResult createArchiveFileSystem(
         }
     case SLANG_ARCHIVE_TYPE_RIFF_DEFLATE:
         {
-            outFileSystem = new RiffFileSystem(DeflateCompressionSystem::getSingleton());
+            outFileSystem = new RiffFileSystem(
+                slang::foundation::compression::DeflateCompressionSystem::getSingleton());
             return SLANG_OK;
         }
     case SLANG_ARCHIVE_TYPE_RIFF_LZ4:
         {
-            outFileSystem = new RiffFileSystem(LZ4CompressionSystem::getSingleton());
+            outFileSystem = new RiffFileSystem(
+                slang::foundation::compression::LZ4CompressionSystem::getSingleton());
             return SLANG_OK;
         }
     }

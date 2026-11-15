@@ -5,13 +5,13 @@
 #include "slang-com-ptr.h"
 
 // Compression systems
-#include "slang-deflate-compression-system.h"
-#include "slang-lz4-compression-system.h"
+#include "slang/foundation/compression/compression.h"
 
 namespace Slang
 {
 
-RiffFileSystem::RiffFileSystem(ICompressionSystem* compressionSystem)
+RiffFileSystem::RiffFileSystem(
+    slang::foundation::compression::ICompressionSystem* compressionSystem)
     : m_compressionSystem(compressionSystem)
 {
 }
@@ -142,23 +142,26 @@ SlangResult RiffFileSystem::loadArchive(const void* archive, size_t archiveSizeI
 
     const auto header = headerChunk->readPayloadAs<RiffFileSystemBinary::Header>();
 
-    CompressionSystemType compressionType = CompressionSystemType(header.compressionSystemType);
+    slang::foundation::compression::CompressionSystemType compressionType =
+        slang::foundation::compression::CompressionSystemType(header.compressionSystemType);
     switch (compressionType)
     {
-    case CompressionSystemType::None:
+    case slang::foundation::compression::CompressionSystemType::None:
         {
             // Null m_compressionSystem means no compression
             m_compressionSystem.setNull();
             break;
         }
-    case CompressionSystemType::Deflate:
+    case slang::foundation::compression::CompressionSystemType::Deflate:
         {
-            m_compressionSystem = DeflateCompressionSystem::getSingleton();
+            m_compressionSystem =
+                slang::foundation::compression::DeflateCompressionSystem::getSingleton();
             break;
         }
-    case CompressionSystemType::LZ4:
+    case slang::foundation::compression::CompressionSystemType::LZ4:
         {
-            m_compressionSystem = LZ4CompressionSystem::getSingleton();
+            m_compressionSystem =
+                slang::foundation::compression::LZ4CompressionSystem::getSingleton();
             break;
         }
     default:
@@ -253,9 +256,9 @@ SlangResult RiffFileSystem::storeArchive(bool blobOwnsContent, ISlangBlob** outB
 
     {
         RiffFileSystemBinary::Header header;
-        CompressionSystemType compressionSystemType = m_compressionSystem
-                                                          ? m_compressionSystem->getSystemType()
-                                                          : CompressionSystemType::None;
+        slang::foundation::compression::CompressionSystemType compressionSystemType =
+            m_compressionSystem ? m_compressionSystem->getSystemType()
+                                : slang::foundation::compression::CompressionSystemType::None;
         header.compressionSystemType = uint32_t(compressionSystemType);
         cursor.addDataChunk(RiffFileSystemBinary::kHeaderFourCC, &header, sizeof(header));
     }

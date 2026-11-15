@@ -3,7 +3,7 @@
 
 #include "slang-basic.h"
 #include "slang-com-ptr.h"
-#include "slang-compression-system.h"
+#include "slang/foundation/compression/compression.h"
 
 // Override at build time to allow larger individual entries in archive-backed file systems.
 // This cap is per loaded entry. Callers that load many entries should enforce their own
@@ -52,7 +52,8 @@ class IArchiveFileSystem : public ISlangCastable
     SLANG_NO_THROW virtual SlangResult SLANG_MCALL
     storeArchive(bool blobOwnsContent, ISlangBlob** outBlob) = 0;
     /// Set the compression - used for any subsequent items added
-    SLANG_NO_THROW virtual void SLANG_MCALL setCompressionStyle(const CompressionStyle& style) = 0;
+    SLANG_NO_THROW virtual void SLANG_MCALL
+    setCompressionStyle(const slang::foundation::compression::CompressionStyle& style) = 0;
 };
 
 SlangResult loadArchiveFileSystem(

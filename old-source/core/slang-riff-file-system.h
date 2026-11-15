@@ -76,14 +76,14 @@ public:
     loadArchive(const void* archive, size_t archiveSizeInBytes) SLANG_OVERRIDE;
     virtual SLANG_NO_THROW SlangResult SLANG_MCALL
     storeArchive(bool blobOwnsContent, ISlangBlob** outBlob) SLANG_OVERRIDE;
-    virtual SLANG_NO_THROW void SLANG_MCALL setCompressionStyle(const CompressionStyle& style)
-        SLANG_OVERRIDE
+    virtual SLANG_NO_THROW void SLANG_MCALL setCompressionStyle(
+        const slang::foundation::compression::CompressionStyle& style) SLANG_OVERRIDE
     {
         m_compressionStyle = style;
     }
 
     /// Pass in nullptr, if no compression is wanted.
-    explicit RiffFileSystem(ICompressionSystem* compressionSystem);
+    explicit RiffFileSystem(slang::foundation::compression::ICompressionSystem* compressionSystem);
 
     /// True if this appears to be Riff archive
     static bool isArchive(const void* data, size_t sizeInBytes);
@@ -92,9 +92,9 @@ protected:
     void* getInterface(const Guid& guid);
     void* getObject(const Guid& guid);
 
-    ComPtr<ICompressionSystem> m_compressionSystem;
+    ComPtr<slang::foundation::compression::ICompressionSystem> m_compressionSystem;
 
-    CompressionStyle m_compressionStyle;
+    slang::foundation::compression::CompressionStyle m_compressionStyle;
 };
 
 } // namespace Slang

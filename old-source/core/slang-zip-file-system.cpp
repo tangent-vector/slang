@@ -96,8 +96,8 @@ public:
     loadArchive(const void* archive, size_t archiveSizeInBytes) SLANG_OVERRIDE;
     virtual SLANG_NO_THROW SlangResult SLANG_MCALL
     storeArchive(bool blobOwnsContent, ISlangBlob** outBlob) SLANG_OVERRIDE;
-    virtual SLANG_NO_THROW void SLANG_MCALL setCompressionStyle(const CompressionStyle& style)
-        SLANG_OVERRIDE;
+    virtual SLANG_NO_THROW void SLANG_MCALL setCompressionStyle(
+        const slang::foundation::compression::CompressionStyle& style) SLANG_OVERRIDE;
 
     ZipFileSystemImpl();
     ~ZipFileSystemImpl();
@@ -914,20 +914,21 @@ SlangResult ZipFileSystemImpl::loadArchive(const void* archive, size_t archiveSi
     return SLANG_OK;
 }
 
-void ZipFileSystemImpl::setCompressionStyle(const CompressionStyle& style)
+void ZipFileSystemImpl::setCompressionStyle(
+    const slang::foundation::compression::CompressionStyle& style)
 {
     switch (style.m_type)
     {
-    case CompressionStyle::Type::BestSpeed:
+    case slang::foundation::compression::CompressionStyle::Type::BestSpeed:
         m_compressionLevel = MZ_BEST_SPEED;
         break;
-    case CompressionStyle::Type::BestCompression:
+    case slang::foundation::compression::CompressionStyle::Type::BestCompression:
         m_compressionLevel = MZ_BEST_COMPRESSION;
         break;
-    case CompressionStyle::Type::Default:
+    case slang::foundation::compression::CompressionStyle::Type::Default:
         m_compressionLevel = MZ_DEFAULT_LEVEL;
         break;
-    case CompressionStyle::Type::Level:
+    case slang::foundation::compression::CompressionStyle::Type::Level:
         {
             int level = int(style.m_level * 10.0f + 0.5);
             level = (level < 0) ? 0 : level;

@@ -2,13 +2,12 @@
 
 #include "core/slang-blob.h"
 #include "core/slang-castable.h"
-#include "core/slang-deflate-compression-system.h"
 #include "core/slang-file-system.h"
 #include "core/slang-io.h"
-#include "core/slang-lz4-compression-system.h"
 #include "core/slang-memory-file-system.h"
 #include "core/slang-riff-file-system.h"
 #include "core/slang-zip-file-system.h"
+#include "slang/foundation/compression/compression.h"
 #include "unit-test/slang-unit-test.h"
 
 #include <limits>
@@ -370,10 +369,12 @@ static SlangResult _createFileSystem(
         outFileSystem = new RiffFileSystem(nullptr);
         break;
     case FileSystemType::RiffDeflate:
-        outFileSystem = new RiffFileSystem(DeflateCompressionSystem::getSingleton());
+        outFileSystem = new RiffFileSystem(
+            slang::foundation::compression::DeflateCompressionSystem::getSingleton());
         break;
     case FileSystemType::RiffLZ4:
-        outFileSystem = new RiffFileSystem(LZ4CompressionSystem::getSingleton());
+        outFileSystem = new RiffFileSystem(
+            slang::foundation::compression::LZ4CompressionSystem::getSingleton());
         break;
     case FileSystemType::Memory:
         outFileSystem = new MemoryFileSystem;
@@ -527,8 +528,8 @@ static SlangResult _testZipRejectsOversizedUncompressedEntry()
 
 static SlangResult _testRiffRejectsOversizedUncompressedEntry()
 {
-    ComPtr<ISlangMutableFileSystem> fileSystem(
-        new RiffFileSystem(DeflateCompressionSystem::getSingleton()));
+    ComPtr<ISlangMutableFileSystem> fileSystem(new RiffFileSystem(
+        slang::foundation::compression::DeflateCompressionSystem::getSingleton()));
 
     const char contents[] = "small";
     SLANG_RETURN_ON_FAIL(fileSystem->saveFile("bomb.txt", contents, sizeof(contents) - 1));
