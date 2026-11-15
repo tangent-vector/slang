@@ -36,7 +36,7 @@ The following inventory combines the children's dependencies; refining a child m
 - [Compiler](../compiler/compiler.md) supplies linked compilation, reflection, module serialization, built-in-library access, and editor services.
   `slangc` links the final compiler target; `slang-bootstrap` links `slang-without-embedded-core-module`, which aliases the final target when core-module embedding is disabled.
   The WebAssembly binding also directly uses the internal language-server implementation.
-- [Foundation](../foundation/foundation.md) supplies text, collections, native and interface ownership, blobs, output writers, host paths, and executable discovery.
+- [Foundation](../foundation/foundation.md) supplies text, collections, native and interface ownership, blobs, output writers, host paths, executable discovery, and shared tool status codes.
   Each entry-point artifact links `core`.
   The driver's current session-setup and exit-status helpers cross the unresolved utility boundary described below.
 - [Compiler Support](../compiler-support/compiler-support.md) supplies the editor-protocol values converted by the WebAssembly binding.
@@ -101,8 +101,10 @@ Standard-module rules also invoke the bootstrap executable or `slangc` according
 
 `old-source/core/slang-test-tool-util.{h,cpp}` combines several concerns.
 The session-prelude setup and deferred-core-module option query serve compiler-driver integration; path helpers combine host mechanisms with installation-layout policy; subtest selection serves the existing test runner.
-Its exit-status declarations are also used by Foundation's no-exception signal handler, so assigning the entire utility to Tools would introduce a Foundation dependency on tools and compiler-session setup.
-The ancestor must settle those partial assignments while preserving shared status values and current clients.
+Its `ToolReturnCode` enum belongs to Foundation's public ordinary [Tool Status Codes](../foundation/tool-status-codes/tool-status-codes.md) child and is also used by the no-exception signal handler.
+`ToolReturnCodeSpan`, the result/integer converters and `isDone` predicate, entry-point contracts, and the remaining utility services still require ancestor ownership decisions.
+Clients retain their current policies for result conversion, integer validation, test-output comparison, and retries; those decisions do not follow from the shared vocabulary alone.
+The partial assignments must preserve existing names, signatures, values, and behavior.
 The rendering-backend vocabulary and coarse availability probes in `old-source/core/slang-render-api-util.{h,cpp}` likewise serve existing rendering and test applications outside this package's initial mapping, rather than compiler target selection.
 
 The shared test-server schemas in `old-source/compiler-core/slang-test-server-protocol.{h,cpp}` describe test execution, shutdown, and captured results for `tools/slang-test/` and `tools/test-server/`.

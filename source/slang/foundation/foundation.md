@@ -34,6 +34,9 @@ Foundation introduces the following implementation concepts:
   `Func` and `Action` retain their adapters; callable objects are copied into their adapters, while member-function adapters store an unretained receiver pointer.
 - A **signal** in Foundation is a reported assertion failure, invalid operation, or other internal failure.
   It is separate from an operating-system signal and from an ordinary failure returned as a `SlangResult`.
+- A **tool status code** identifies an outcome of a Slang tool invocation.
+  Executable entry points and callers that invoke the corresponding tool in process or through the test server use the same vocabulary.
+  A tool status code is separate from an entry point's `SlangResult` and from the operating system's representation of process termination.
 - A **stream** is a cursor over bytes that supports some combination of reading, writing, seeking, and closing.
   A **file system** provides operations on named files and directories, through either the host operating system or another store.
 - A **relocatable reference** identifies data by an offset relative to a containing buffer or to the reference itself, so the buffer can be relocated without rewriting ordinary pointers.
@@ -77,6 +80,7 @@ The children's own refinement determines their internal public and private organ
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | [Base Types](base-types/base-types.md)                      | Scalar conventions, arithmetic, bit operations, type traits, and small C++ portability facilities.     |
 | [Failure Reporting](failure-reporting/failure-reporting.md) | Assertions, internal failure signals, and their exception or termination behavior.                     |
+| [Tool Status Codes](tool-status-codes/tool-status-codes.md) | Shared outcome vocabulary for Slang executable tools and their in-process and test-server invocations. |
 | [Hashing](hashing/hashing.md)                               | Hash-code computation and combination, including stable hashes.                                        |
 | [Memory](memory/memory.md)                                  | Allocation, arenas, allocation pools, and native C++ ownership.                                        |
 | [Callables](callables/callables.md)                         | Stored function invocation and callable-object capture.                                                |
@@ -103,6 +107,8 @@ The children's own refinement determines their internal public and private organ
 The principal service uses are as follows.
 This list explains current relationships; the unresolved cycles prevent treating it as an accepted dependency graph.
 
+- Tool Status Codes supplies the outcome vocabulary shared by Failure Reporting's no-exception termination branch and clients that execute tools.
+  Result conversion, integer validation, decisions about comparing test output, and retry policy remain with clients rather than the vocabulary owner.
 - Base types and hashing provide the scalar and key operations used by the other services.
   Memory uses hashing for smart-pointer keys; collections use memory for storage and hashing for lookup.
   Callables uses Memory to retain adapters containing the stored function or captured callable state.
@@ -138,7 +144,9 @@ They propose service ownership and do not authorize moving a file wholesale.
   The separate seeded `Random` class formerly in the math header now resides in Random Numbers.
   The scalar aliases, character-code-unit types, move/swap/bit helpers, deferred cleanup utility, componentwise equality macros, compiler compatibility and warning macros, unused-value macros, and runtime export declarations in `slang-common.h` also belong here.
 - **Failure Reporting:** `slang-signal.{h,cpp}` and `slang-exception.h`, together with the assertion and assumption macros in `slang-common.h`.
-  The `ToolReturnCode` and `ToolReturnCodeSpan` declarations in `slang-test-tool-util.h` need a common failure-status owner because the no-exception signal handler uses `InternalCompilerError`; that owner remains unresolved below.
+- **Tool Status Codes:** only the `ToolReturnCode` enum in `slang-test-tool-util.h`.
+  It distinguishes successful execution, ordinary tool or compilation failure, an internal compiler error, an ignored invocation, and an invocation that could not run.
+  The declaration retains its canonical `Slang` identity and existing enumerator names and values.
 - **Hashing:** `slang-hash.h` and `slang-stable-hash.h`.
 - **Memory:** `slang-allocator.h`, `slang-smart-pointer.h`, `slang-memory-arena.{h,cpp}`, `slang-free-list.{h,cpp}`, `slang-virtual-object-pool.h`, and the generic `ScopedAllocation` class in `slang-blob.h`.
 - **Callables:** `slang-func-ptr.h`, which stores and invokes functions, member-function/object pairs, and copied callable objects.
@@ -195,8 +203,9 @@ The following files require ancestor ownership decisions rather than an invented
   It is distinct from Foundation's generic digest-to-blob persistent cache.
 - `slang-render-api-util.{h,cpp}` holds rendering API names, flags, and availability policy used by `tools/gfx/`, `tools/render-test/`, and `tools/slang-test/`.
   The root must determine ownership alongside those existing tools, whose implementations are outside this trial's initial `old-source/` mapping.
-- Apart from the common status declarations noted above, `slang-test-tool-util.{h,cpp}` mixes executable layout, compiler-session prelude setup, command-line compilation modes, and test selection.
-  The compiler-session and test-policy operations require an owner above Foundation; generic path operations may use Host Services without making the entire utility a host service.
+- Apart from the `ToolReturnCode` enum assigned above, `slang-test-tool-util.{h,cpp}` supplies `ToolReturnCodeSpan`, the `TestToolUtil` result/integer converters and `isDone` predicate, entry-point contracts, executable layout, compiler-session prelude setup, command-line compilation modes, and test selection.
+  Those tool-integration and test-policy services remain outside Tool Status Codes and require ancestor ownership decisions.
+  Generic path operations may use Host Services without making the entire utility a host service.
 
 ## Unresolved Boundaries
 
@@ -216,9 +225,9 @@ Before these children are accepted for migration, their refinement must identify
 Grouping every scalar, failure, ownership, collection, and text operation into a generic data module would conceal the problem rather than explain a common responsibility.
 No replacement failure mechanism or change to exception behavior is selected here.
 
-The no-exception handler's use of `ToolReturnCode::InternalCompilerError` is another mixed ownership case.
-The failure-status contract must remain available to the handler without making failure reporting depend on compiler-session setup or the test framework.
-Assigning the whole test-tool utility to Foundation would introduce those unrelated responsibilities.
+The no-exception branch of `handleSignal` uses `ToolReturnCode::InternalCompilerError` from [Tool Status Codes](tool-status-codes/tool-status-codes.md).
+The dependency on that vocabulary requires neither compiler-session setup nor the test framework.
+Assigning the shared enum does not remove the independent failure/text/native-ownership cycle described above.
 
 ### Text Adaptations and Aggregate Headers
 

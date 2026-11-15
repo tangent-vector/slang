@@ -15,7 +15,7 @@ The [dependency cycle with basic data services](#unresolved-boundaries) prevents
 ## Concepts
 
 The [root document](../../slang.md#concepts) defines implementation modules, dependencies, and visibility.
-[Foundation](../foundation.md#concepts) defines signals, strings, and borrowed views.
+[Foundation](../foundation.md#concepts) defines signals, strings, borrowed views, and tool status codes.
 
 - An **assertion** checks a condition that the implementation expects to hold.
   Ordinary assertions check at runtime in `_DEBUG` builds and become optimizer assumptions otherwise; release assertions retain their runtime check in both builds.
@@ -35,8 +35,8 @@ The [root document](../../slang.md#concepts) defines implementation modules, dep
   Those existing contracts remain outside this implementation hierarchy.
 - The host C and C++ environment supplies thread-local storage, environment lookup, bounded assertion-message formatting, exception transfer, and process termination.
   The Windows/MSVC branch additionally queries whether a debugger is attached and can invoke the system assertion facility.
-- The no-exception handler requires the shared meaning of the internal-compiler-error process status currently declared by `ToolReturnCode`.
-  The owner of that contract is [unresolved in Foundation](../foundation.md#failure-reporting-and-basic-data-services); use of one status does not require the test-tool utility's compiler-session or test-selection services.
+- [Tool Status Codes](../tool-status-codes/tool-status-codes.md) supplies the shared `ToolReturnCode` vocabulary.
+  The no-exception branch of `handleSignal` uses `ToolReturnCode::InternalCompilerError` without requiring the test-tool utility's conversion, comparison, compiler-session, or test-selection services.
 
 ## Service Areas
 
@@ -66,8 +66,9 @@ The following files remain in `old-source/core/`:
 - Only the assumption and assertion facilities in `slang-common.h` belong to this concern: `SLANG_ASSUME`, its fallback function, `SLANG_ASSERT`, and `SLANG_RELEASE_ASSERT`.
   The remaining scalar, portability, export, and object-interface facilities retain the assignments in [Foundation's mapping](../foundation.md#existing-implementation-mapping).
 
-`ToolReturnCode` and `ToolReturnCodeSpan` in `slang-test-tool-util.h` remain pending an ancestor ownership decision.
-Their consumers include the no-exception handler and tool-status conversion; the rest of that header and its implementation are not assigned to Failure Reporting.
+The `ToolReturnCode` enum in `slang-test-tool-util.h` belongs to [Tool Status Codes](../tool-status-codes/tool-status-codes.md).
+The no-exception branch of `handleSignal` uses that shared declaration.
+`ToolReturnCodeSpan`, the `TestToolUtil` converters and `isDone` predicate, and the utility's remaining services retain their pending [ancestor assignments](../foundation.md#existing-implementation-mapping); they are outside Failure Reporting.
 
 The current build compiles these services into static `core` and separately into enabled `slang-rt` under its runtime export settings.
 A future move must preserve both consumers and the [root's existing binary-interface contracts](../../slang.md#staged-migration-contracts).
@@ -85,4 +86,3 @@ Disabling exceptions does not remove the string construction that starts this pa
 Foundation must establish a coherent ownership boundary or behavior-preserving separation for those mutually dependent services before migration can be accepted.
 The assertion/assumption portion of `slang-common.h` can be separated from scalar declarations, but that header change does not answer the behavioral ownership question.
 No replacement failure mechanism or broader data-service grouping is selected by this refinement.
-Foundation must also assign the common process-status contract without importing compiler-session setup or test-framework policy into Failure Reporting.
