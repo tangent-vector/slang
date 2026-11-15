@@ -82,6 +82,19 @@ Do not fix those deferred concerns during this phase.
 
 ## Verify and Persist
 
+Run the applicable formatter checks on the owned files before freezing a delivery or its comparison inputs.
+Inspect any emitted corrections even when the formatter subsequently fails; an error exit does not invalidate a useful formatting diff.
+Keep an actual unavailable check distinct from a source correction that can be completed.
+
+In this Windows workspace, Gersemi 0.21 fails with its optional cache enabled but passes the same checks with `--no-cache`.
+That supported control option leaves the formatting rules unchanged.
+Retain the repository's other options and definition inputs, record the cache-disabled invocation, and preserve earlier failure logs rather than relabeling them as passing.
+
+When a dedicated before-and-after observer is needed, keep stable provisional versions for author and independent source/prose review before declaring the final baseline sealed.
+Apply the canonical documentation criteria to its selection adapter, capture helpers, and scratch build comments as well as its main source.
+Seal the accepted original source, inputs, executable, outputs, and provenance before authorizing the production port.
+If a later correction is necessary, preserve the sealed version and create a distinct revised baseline before proceeding; do not rewrite the prior evidence.
+
 Use the platform-aware Slang build skill and Windows-native tools on this host.
 Build with `SLANG_IGNORE_ABORT_MSG=ON`, keep assertions enabled, and avoid assertion modes that deliberately open dialogs.
 Run tests through the trial's bounded process helper and test servers, with finite RPC timeouts.
