@@ -11,9 +11,15 @@ Phase three is excluded; no additional goal may be inferred from that placeholde
 
 ## Resume the Authorized Work
 
-Read the workspace's ignored `tmp/refactor-trial/resume.md`, `journal.md`, and current worklist before selecting work.
+The coordinating agent reads the workspace's ignored `tmp/refactor-trial/resume.md`, relevant `journal.md` entries, and current worklist before selecting or resuming work.
 The checkpoint records the comparison revision, authorized deadline, branch, persistence remote, reviewed milestones, unresolved findings, and next action.
 Verify those facts against the live checkout and current time.
+
+An assigned source-first reviewer already receives its selected scope, deadline, source locations, and applicable requirements from the coordinator.
+It must not read the candidate module's author status, conclusions, findings, or proposed decomposition in the workflow logs before freezing its own source understanding.
+The coordinator supplies any necessary execution or immutable-evidence constraints directly in the assignment.
+Record incidental exposure if it occurs and qualify the review accordingly; obtain the separate clean reader check before calling the result blinded.
+
 At the deadline, preserve a recoverable checkpoint, stop delegated work, and report the result without starting another increment.
 Do not extend the window or create an upstream pull request.
 
