@@ -50,6 +50,7 @@ An element can itself contain references, so copying its containing collection d
   Clients instantiate that backend through the existing public build dependency.
 
 Element construction, assignment, destruction, comparison, hashing, and callbacks can invoke operations supplied by a client's types.
+The storage and linkage descriptions below concern changes made directly by the containers; client-defined operations can have additional effects.
 Those operations do not make Collections depend on every client module.
 The templates require the particular expressions used by the selected operation; they do not establish one common copyability, default-construction, or const-invocation requirement for every collection.
 The concrete `UIntSetVal` adaptation described below differs from those generic operations because it names a compiler type directly.
@@ -95,13 +96,16 @@ Each child's refinement must preserve those differences, including copying, movi
 An array view never extends the backing storage's lifetime.
 Its validity also depends on mutations that relocate storage, remove elements from the described range, or change their positions.
 There is no common iterator-invalidation rule across the containers: `List` exposes pointers, `ShortList` iterators store a container and index, and linked iterators follow nodes.
-The existing const interfaces also differ: `ConstArrayView` exposes const element access, but `List::getArrayView() const` returns a mutable `ArrayView`.
+`ConstArrayView` element accessors return const references or pointers, while its generic searches form element expressions from the stored `T*`.
+`List::getArrayView() const` returns `ArrayView<T>`.
 `ShortList::getArrayView` returns a separate result object that borrows when the requested range is contiguous and owns a temporary copy when the range spans its two buffers.
-The temporary's destruction releases that copy; assigning one of its copied slots does not assign the corresponding list slot.
+The temporary's destruction releases that copy.
+Its slots occupy separate storage; the assignment operation selected for `T` may also affect other storage.
 
 Owning nodes does not imply ownership of objects referenced by their values.
 `LinkedList` copies values into new nodes, while copying an `InternallyLinkedList` copies its head and tail pointers without cloning elements.
-The intrusive list's `append` links the existing chain and leaves the argument's head and tail intact.
+The intrusive list's `append` leaves the argument's head and tail intact; its successor writes use member lookup through `T*`, while iteration explicitly reads the `InternallyLinkedList<T>::Node` base link.
+Those expressions can refer to different members if a client type hides `_next`.
 Clients therefore control the node lifetimes and coordinate changes to shared linkage; one embedded link cannot represent independent simultaneous list memberships.
 
 Ordinary dictionary and hash-set iteration has no promised key or insertion order.
