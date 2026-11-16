@@ -163,6 +163,10 @@ public:
     explicit Mt19937RandomGenerator(int32_t seed);
 
     /// Copy the sequence state of `rhs` without changing this object's reference count.
+    ///
+    /// Self-assignment passes the same state array to `memcpy`, which requires nonoverlapping
+    /// copied ranges. This implementation does not provide a self-assignment guarantee.
+    // TODO(tfoley-refactor): Review the overlapping `memcpy` ranges during self-assignment.
     // TODO(tfoley-refactor): Consider returning `ThisType&` from assignment for C++ conventions.
     void operator=(const ThisType& rhs)
     {

@@ -49,6 +49,7 @@ Random Numbers is a leaf module with three public service areas:
 
 - **Generator lifetime and state:** `RandomGenerator` provides a shared interface for seeded creation, reset, and cloning, with native reference-counted ownership for heap instances.
   Its concrete `Mt19937RandomGenerator` type and `DefaultRandomGenerator` alias also support direct construction and value copying.
+  Assigning a concrete generator to itself passes the same state array as both `memcpy` ranges, so that case has no preservation guarantee.
   Existing clients construct the concrete generator on the stack, so the type remains public.
 - **Scalar selection and buffers:** The common family provides scalar and bulk integer generation, booleans and floats, bounded integer selection, and filling of caller-provided byte buffers.
   These operations belong together because their conversion and buffering rules determine how the same generator state advances.
