@@ -12,7 +12,7 @@ Foundation is the implementation concern currently supplied by the static `core`
 Its children below are candidate ordinary modules within that artifact; they do not introduce additional libraries.
 This decomposition is incomplete because several service dependencies are cyclic.
 The [unresolved boundaries](#unresolved-boundaries) identify the cycles and the ownership decisions required before the affected services can be migrated.
-[Compression](compression/compression.md), [Digests](digests/digests.md), [Hashing](hashing/hashing.md), [Random Numbers](random-numbers/random-numbers.md), and [Tool Status Codes](tool-status-codes/tool-status-codes.md) are implemented in this hierarchy and reexported by `foundation.h` in `slang::foundation`.
+[Compression](compression/compression.md), [Digests](digests/digests.md), [Hashing](hashing/hashing.md), [Random Numbers](random-numbers/random-numbers.md), [Tool Status Codes](tool-status-codes/tool-status-codes.md), and [Versions](versions/versions.md) are implemented in this hierarchy and reexported by `foundation.h` in `slang::foundation`.
 Base Types' [Scalar Types](base-types/scalar-types/scalar-types.md) declarations are also defined in this hierarchy and reexported through the Base Types and Foundation primary headers.
 The other services still use their legacy implementations and headers; these ports do not settle their unresolved boundaries.
 
@@ -168,7 +168,10 @@ They propose service ownership and do not authorize moving a file wholesale.
 - **Collections:** `slang-array.h`, `slang-array-view.h`, `slang-list.h`, `slang-short-list.h`, `slang-chunked-list.h`, `slang-linked-list.h`, `slang-internally-linked-list.{h,cpp}`, `slang-dictionary.h`, `slang-short-dictionary.h`, and `slang-uint-set.{h,cpp}`.
 - **Text:** `slang-string.{h,cpp}`, `slang-char-util.{h,cpp}`, `slang-char-encode.{h,cpp}`, `slang-string-util.{h,cpp}`, `slang-string-escape-util.{h,cpp}`, `slang-string-slice-pool.{h,cpp}`, `slang-string-slice-index-map.{h,cpp}`, `slang-name-value.{h,cpp}`, `slang-token-reader.{h,cpp}`, and `slang-hex-dump-util.{h,cpp}`.
   The miscellaneous token reader parses reusable textual notation; it is separate from the compiler's lexer and token model.
-- **Versions:** `slang-semantic-version.{h,cpp}`, including version ordering, compatibility tests, and matching selection as well as parsing and formatting.
+- **Versions:** `versions/versions.{h,cpp}` in this directory owns numeric version values, ordering, compatibility, candidate selection, parsing, and formatting.
+  The legacy semantic-version pair has been removed, and its include clients use the new primary header.
+  The definitions retain their canonical `Slang` identities; `slang::foundation::versions` and `foundation.h` explicitly reexport the same two types.
+  Versions retains its existing aggregate and text prerequisites while those services remain unported.
 - **Object Interfaces:** `slang-com-object.h` and `slang-castable.{h,cpp}`, plus the `ICastable`/`IClonable` aliases and `clone` utility currently in `slang-common.h`.
 - **Blobs:** `slang-blob.{h,cpp}`, except the `ScopedAllocation` class assigned to Memory.
   The blob-facing `StringUtil` operations in `slang-string-util.{h,cpp}` cross the text/blob boundary discussed below.
@@ -280,12 +283,12 @@ Archives refinement must retain one explicit owner for archive format selection 
 `old-source/slang-rt/CMakeLists.txt` also compiles the core implementations using runtime export settings, rather than linking the `core` archive.
 Every transferred implementation must therefore preserve both the static-core consumer and this separately compiled runtime consumer.
 Moving files into candidate ordinary modules does not change that requirement or establish new installed libraries.
-For Compression, Digests, and Random Numbers, this directory's CMake entries add each leaf implementation to both existing targets, conditionally including `slang-rt` when runtime is enabled.
+For Compression, Digests, Random Numbers, and Versions, this directory's CMake entries add each leaf implementation to both existing targets, conditionally including `slang-rt` when runtime is enabled.
 Hashing, Scalar Types, and Tool Status Codes each list their one defining header on both targets without adding a translation unit.
 Both targets compile the Tool Status Codes enum through `slang-test-tool-util.cpp`, independently of that header registration.
 The Base Types CMake entry only enters its migrated Scalar Types child; it creates no additional artifact or target.
 Root CMake gives the migrated Foundation directory a separate binary directory so the compiler's existing `source/slang` generated-file paths remain available.
-The old targets retain their names and export settings; these unannotated Compression and generator declarations and their implementation headers are not installed product API.
+The old targets retain their names and export settings; these unannotated Compression, generator, and Versions declarations and their implementation headers are not installed product API.
 
 The ancestor must settle the compiler-specific and tool-specific assignments listed above.
 Foundation remains pending while those ownership questions and the low-level service cycles are unresolved.

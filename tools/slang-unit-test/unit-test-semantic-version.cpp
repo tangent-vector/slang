@@ -23,8 +23,8 @@
 //     the same lexicographic ordering. Empty input returns the
 //     default (zero) version.
 
-#include "core/slang-semantic-version.h"
 #include "core/slang-string.h"
+#include "slang/foundation/versions/versions.h"
 #include "unit-test/slang-unit-test.h"
 
 using namespace Slang;

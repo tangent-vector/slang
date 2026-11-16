@@ -1,9 +1,9 @@
 // slang-extension-tracker.h
 #pragma once
 
-#include "core/slang-semantic-version.h"
 #include "core/slang-string-slice-pool.h"
 #include "slang-compiler.h"
+#include "slang/foundation/versions/versions.h"
 
 namespace Slang
 {

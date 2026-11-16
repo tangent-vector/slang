@@ -1,6 +1,5 @@
 #include "slang-parser.h"
 
-#include "core/slang-semantic-version.h"
 #include "core/slang-string-util.h"
 #include "slang-ast-decl.h"
 #include "slang-check-impl.h"
@@ -9,6 +8,7 @@
 #include "slang-lookup.h"
 #include "slang-rich-diagnostics.h"
 #include "slang-visitor.h"
+#include "slang/foundation/versions/versions.h"
 
 #include <climits>
 #include <cmath>

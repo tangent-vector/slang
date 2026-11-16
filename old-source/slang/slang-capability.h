@@ -3,8 +3,8 @@
 
 #include "core/slang-dictionary.h"
 #include "core/slang-list.h"
-#include "core/slang-semantic-version.h"
 #include "core/slang-string.h"
+#include "slang/foundation/versions/versions.h"
 
 #include <optional>
 #include <stdint.h>

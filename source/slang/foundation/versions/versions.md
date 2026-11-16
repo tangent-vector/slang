@@ -9,8 +9,9 @@ Versions provides numeric version values, ordering, compatibility checks, textua
 Clients decide what a version identifies and whether a particular compatibility or selection rule applies.
 Compiler discovery, target requirements, and stored-format validation remain with those clients.
 
-The implementation remains in `old-source/core/`.
-This document refines [Foundation's assignment](../foundation.md#existing-implementation-mapping) as a public leaf within the existing artifact.
+The implementation resides in this directory and remains a public leaf within [Foundation's existing artifact](../foundation.md#existing-implementation-mapping).
+`versions.h` defines the canonical `Slang::SemanticVersion` and `Slang::MatchSemanticVersion` types and explicitly reexports those same declarations in `slang::foundation::versions`.
+Foundation's primary header includes the leaf primary and reexports those two types in `slang::foundation`.
 
 ## Concepts
 
@@ -43,7 +44,9 @@ Version parsing borrows its input characters only for the call; formatting appen
 - The product headers supply `SlangResult`, success/failure codes, and the failure-propagation macro used by parsing.
   The host C++ environment supplies fixed-width integer types and the integer conversion and bit operations used by the representation.
 
-The broad `slang-basic.h` include assembles several Foundation services; it does not assign their implementations to Versions.
+The primary header retains the broad `core/slang-basic.h` prerequisite and directly includes the migrated Hashing primary while the remaining prerequisite services are unported.
+The broad aggregate assembles several Foundation services; it does not assign their implementations to Versions or create a semantic dependency on the assembled Foundation parent interface.
+The implementation directly includes `core/slang-string-util.h` for the existing parsing operations.
 The result-checking macro comes from `include/slang-com-helper.h` without requiring a dependency on an object-interface implementation.
 
 ## Service Areas
@@ -52,33 +55,39 @@ Versions remains a leaf with no child modules.
 The value representation, text conversion, and selection rules share the same component ordering and remain one small service:
 
 - **Values and ordering:** construction, reset, component access, raw-value import/export, comparison, hashing, and earliest/latest queries.
-  Earliest/latest return an all-zero version for an empty candidate range; that result is not a distinct optional value.
+  Earliest/latest return an all-zero version for a nonpositive candidate count; that result is not a distinct optional value.
 - **Text conversion:** parsing the existing separated numeric notation and appending its formatted form.
   Parsing splits into at most three components using `.` by default or a supplied separator.
   The parser uses `StringUtil::parseInt` for each component, including that routine's decimal and hexadecimal integer notation.
   It rejects negative values or values above `0xffff` for major/minor and `0x7fffffff` for patch.
   Missing lower components remain zero.
   Parsing resets the output before inspecting the input and leaves it zero on failure.
+  The component parser accepts an optional sign without whitespace; `SemanticVersion::parse` accepts signed zero and rejects an effective negative value.
+  `StringUtil::split` accepts a trailing separator after one or two components, but rejects one after three: parsing `"1."` and `"1.2."` succeeds, while parsing `"1.2.3."` fails.
   `SemanticVersion::append` always emits major and minor components, with a patch component only when nonzero.
-  `MatchSemanticVersion::append` emits the preference word or the specified numeric components; a complete numeric request delegates to the value formatter and can therefore omit a zero patch without changing its kind.
+  `MatchSemanticVersion::append` emits the preference word or the specified numeric components; for a complete numeric request, the method delegates to the value formatter and can therefore omit a zero patch without changing the request's kind.
 - **Compatibility and matching:** the directional compatibility relation and best-effort choice from caller-supplied candidates.
-  An empty range yields the all-zero version; a single candidate is returned regardless of the request.
-  With multiple candidates, a past preference selects the earliest, while an unknown or future preference selects the latest.
-  Numeric requests use bounds derived by incrementing the last specified component and a sorted copy of the candidates.
+  A nonpositive count yields the all-zero version; a single candidate is returned regardless of the request.
+  Positive counts require a readable input range; unsorted and duplicate candidates are accepted, and selection does not modify the input elements.
+  For multiple candidates, `findAnyBest` returns the earliest for a past preference and the latest for an unknown or future preference.
+  For numeric requests, `findAnyBest` uses bounds derived by incrementing the last specified component and a sorted copy of the candidates.
   The selector skips candidates below the lower bound, then scans forward while candidates are below the upper bound.
-  It returns the last candidate in that span when the span is nonempty; otherwise it returns the following candidate, or the final preceding candidate if no following one exists.
-  For example, a request for `2.1` prefers `2.1.7` over `2.1.3`, but can select `2.2` when no `2.1` candidate is present.
+  It returns the greatest candidate in that span when the span is nonempty; otherwise it returns the least candidate at or above the lower bound, or the greatest below it when no such following candidate exists.
+  For example, for a `2.1` request, `findAnyBest` prefers `2.1.7` over `2.1.3`, but can select `2.2` when no `2.1` candidate is present.
 
 The field widths do not imply that every construction or import entry point accepts every representable bit pattern.
-Constructors narrow their integer arguments to the fields, while `set` first asserts that its signed inputs are nonnegative.
+The integer constructor narrows its arguments directly to the fields without a nonnegative assertion, while `SemanticVersion::set` first asserts that its signed inputs are nonnegative.
+The three `MatchSemanticVersion::set` overloads convert their `Index` arguments to `int` and use the narrowing constructor without that assertion.
 `setRawValue` converts the extracted components to signed `int` and calls `set`; its behavior is not an unconditional full-width round-trip guarantee.
-Migration preserves the existing conversions and finite-width arithmetic in numeric matching.
+If that conversion produces a negative patch value, `set` applies its nonnegative assertion or optimizer assumption, even though the patch's bits fit the unsigned encoding.
+Numeric matching retains finite-width bound arithmetic: incrementing the maximum component can narrow or wrap without carrying into a higher component.
 
 ## Existing Implementation Mapping
 
-The complete `old-source/core/slang-semantic-version.h` belongs to Versions: `SemanticVersion`, `MatchSemanticVersion`, their aliases and request kinds, inline operations, fields, and declarations.
-The complete `old-source/core/slang-semantic-version.cpp` belongs here as well: parsing, formatting, extrema, compatibility, and candidate selection.
-Neither file contains a separate compiler or host-discovery service requiring a partial-file assignment.
+`versions.h` owns the complete declarations formerly in `old-source/core/slang-semantic-version.h`: `SemanticVersion`, `MatchSemanticVersion`, their aliases and request kinds, inline operations, and fields.
+`versions.cpp` owns the complete implementation formerly in `old-source/core/slang-semantic-version.cpp`: parsing, formatting, extrema, compatibility, and candidate selection.
+Both legacy files have been removed; include clients use the new primary rather than a forwarding header.
+Neither transferred file contains a separate compiler or host-discovery service requiring a partial-file assignment.
 
 The following uses remain with their existing owners:
 
@@ -92,12 +101,14 @@ The following uses remain with their existing owners:
 
 ## Migration Constraints
 
-The current `core` target compiles the implementation, and enabled `slang-rt` separately compiles it from the same legacy directory under runtime export settings.
-Migration preserves both consumers under the [root's staged migration contracts](../../slang.md#staged-migration-contracts), without introducing another library or selecting a general source-reuse model.
+The leaf `CMakeLists.txt` registers the new header and implementation on the existing `core` target and, when enabled, the existing `slang-rt` target.
+Foundation's CMake entry enters this child after both legacy target definitions have been evaluated.
+Removing the legacy pair removes those paths from the old source globs; runtime separately compiles `versions.cpp` under its runtime export settings instead of linking `core`.
+This arrangement preserves both consumers under the [root's staged migration contracts](../../slang.md#staged-migration-contracts), without introducing another library or selecting a general source-reuse model.
 
 The canonical `Slang::SemanticVersion` and `Slang::MatchSemanticVersion` identities, declaration names, signatures, layout, request-kind values, and raw encoding remain unchanged.
 The namespace restriction is material even though these structs have no individual export annotation: `DownstreamCompilerDesc` embeds a `SemanticVersion`, and the LLVM adapter returns that descriptor through `IDownstreamCompiler::getDesc` across the loaded-library interface.
 The raw IR/AST encoding and the repro header's embedded representation are additional preservation obligations.
 
 This leaf does not settle Foundation's [failure/text/ownership cycles](../foundation.md#failure-reporting-and-basic-data-services), its [text adaptation cycles](../foundation.md#text-adaptations-and-aggregate-headers), or the root's [artifact and construction questions](../../slang.md#unresolved-architectural-dependencies).
-The relevant dependency boundaries and both compilation consumers still require an agreed migration arrangement before this service is ported.
+The direct prerequisite routes and per-leaf registration provide the concrete staging arrangement for Versions; they do not resolve those broader dependency and construction questions.

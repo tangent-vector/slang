@@ -5,7 +5,6 @@
 #include "core/slang-char-util.h"
 #include "core/slang-common.h"
 #include "core/slang-io.h"
-#include "core/slang-semantic-version.h"
 #include "core/slang-shared-library.h"
 #include "core/slang-string-slice-pool.h"
 #include "core/slang-string-util.h"
@@ -15,6 +14,7 @@
 #include "slang-include-system.h"
 #include "slang-source-loc.h"
 #include "slang-tag-version.h"
+#include "slang/foundation/versions/versions.h"
 
 // Enable calling through to `glslang` on
 // all platforms.

@@ -5,11 +5,11 @@
 #include "core/slang-io.h"
 #include "core/slang-platform.h"
 #include "core/slang-process-util.h"
-#include "core/slang-semantic-version.h"
 #include "core/slang-string.h"
 #include "slang-artifact-associated.h"
 #include "slang-artifact.h"
 #include "slang-com-ptr.h"
+#include "slang/foundation/versions/versions.h"
 
 #include <type_traits>
 

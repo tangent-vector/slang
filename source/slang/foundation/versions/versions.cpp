@@ -1,5 +1,10 @@
-// slang-semantic-version.cpp
-#include "slang-semantic-version.h"
+// Versions implements numeric version conversion, extrema, compatibility, and candidate selection.
+// Numeric value operations come first: parsing and formatting, earliest/latest queries, then the
+// directional compatibility policy. The methods on `MatchSemanticVersion` then select among
+// supplied candidates and append request text. Tool discovery and target policy remain with
+// callers.
+
+#include "slang/foundation/versions/versions.h"
 
 #include "core/slang-string-util.h"
 #include "slang-com-helper.h"
@@ -7,7 +12,10 @@
 namespace Slang
 {
 
-// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! SemanticVersion !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// # Numeric Version Operations
+
+// TODO(tfoley-refactor): Explain the parsing body's bounded split, temporary validation, and
+// publication after all components succeed; its reset-before-parse behavior must remain clear.
 
 SlangResult SemanticVersion::parse(
     const UnownedStringSlice& value,
@@ -18,6 +26,8 @@ SlangResult SemanticVersion::parse(
 
     UnownedStringSlice slices[3];
     Index splitCount;
+    // TODO(tfoley-refactor): Resolve the trailing-separator asymmetry with Text's bounded split
+    // contract: `"1."` and `"1.2."` succeed, but `"1.2.3."` fails with the default separator.
     SLANG_RETURN_ON_FAIL(StringUtil::split(value, separatorChar, 3, slices, splitCount));
     if (splitCount <= 0)
     {
@@ -57,6 +67,8 @@ void SemanticVersion::append(StringBuilder& buf) const
     }
 }
 
+// TODO(tfoley-refactor): Explain the extrema scans' initial candidate and running minimum/maximum
+// invariant, including the all-zero result for nonpositive counts.
 /* static */ SemanticVersion SemanticVersion::getEarliest(const ThisType* versions, Count count)
 {
     if (count <= 0)
@@ -109,13 +121,20 @@ bool SemanticVersion::isBackwardsCompatibleWith(const ThisType& otherVersion) co
 
     // If the major and minor revisions pass our check, then
     // we consider it a match. Note that this intentionally
-    // doesn't check the path version at all.
+    // doesn't check the patch version at all.
     //
     return true;
 }
 
 
-// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! MatchSemanticVersion !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// # Match Selection and Request Formatting
+
+// TODO(tfoley-refactor): Reconsider `findAnyBest`'s name so callers can see its best-effort
+// preference and outside-span fallback rather than infer a strict compatibility search.
+// TODO(tfoley-refactor): Explain the selection body's lower/upper bounds, sorted-copy scans, and
+// fallback cases, including why empty and single-candidate ranges bypass the request.
+// TODO(tfoley-refactor): Replace the maximum-component bound arithmetic only after choosing its
+// intended selection policy; current increments narrow or wrap without carrying to another field.
 
 /* static */ SemanticVersion MatchSemanticVersion::findAnyBest(
     const SemanticVersion* versions,

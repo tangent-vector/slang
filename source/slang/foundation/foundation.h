@@ -10,6 +10,7 @@
 #include "slang/foundation/hashing/hashing.h"
 #include "slang/foundation/random-numbers/random-numbers.h"
 #include "slang/foundation/tool-status-codes/tool-status-codes.h"
+#include "slang/foundation/versions/versions.h"
 
 namespace slang::foundation
 {
@@ -71,6 +72,9 @@ using random_numbers::Random;
 using random_numbers::RandomGenerator;
 
 using tool_status_codes::ToolReturnCode;
+
+using versions::SemanticVersion;
+using versions::MatchSemanticVersion;
 
 } // namespace slang::foundation
 
