@@ -5,7 +5,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Failure Reporting
 
-Failure Reporting provides assertions and internal failure signals, including their exception or termination behavior.
+Failure Reporting provides assertions and signals for failures and compilation aborts, including their exception or termination behavior.
 It records the latest signal message for the reporting thread and supplies the exception types that callers use to distinguish invalid operations, aborted compilation, and internal errors.
 Compiler diagnostics and the decision to recover from a caught failure remain with the caller.
 
@@ -53,8 +53,10 @@ On Windows/MSVC, the policy also supports the system assertion and debugger-brea
 These options affect assertion handling, rather than changing the contract that `handleSignal` does not return normally.
 
 With exceptions enabled, invalid-operation and abort-compilation signals throw their corresponding exception types; other signal kinds throw `InternalError`.
-With exceptions disabled, the handler attempts a breakpoint and then exits with the internal-compiler-error status if execution reaches the exit call.
+With exceptions disabled, the handler attempts a breakpoint and then exits with `ToolReturnCode::InternalCompilerError` for every signal kind if execution reaches the exit call.
 The breakpoint can itself terminate execution.
+The handler also uses that status for `SignalType::AbortCompilation`, including an abort raised after an ordinary input diagnostic.
+That status alone does not mean that a compiler bug caused the failure.
 The existing exception-try macro omits the `try` keyword in that configuration; callers separately exclude their catch clauses.
 
 ## Existing Implementation Mapping
@@ -67,8 +69,8 @@ The following files remain in `old-source/core/`:
   The remaining portability, export, and object-interface facilities retain the assignments in [Foundation's mapping](../foundation.md#existing-implementation-mapping).
   The mixed common header also exposes Scalar Types' declarations through its include of their defining header, `source/slang/foundation/base-types/scalar-types/scalar-types.h`.
 
-The `ToolReturnCode` enum in `slang-test-tool-util.h` belongs to [Tool Status Codes](../tool-status-codes/tool-status-codes.md).
-The no-exception branch of `handleSignal` uses that shared declaration.
+The `ToolReturnCode` enum is defined by [Tool Status Codes](../tool-status-codes/tool-status-codes.md) in `source/slang/foundation/tool-status-codes/tool-status-codes.h`.
+The no-exception branch of `handleSignal` uses that shared declaration through the `slang-test-tool-util.h` compatibility include.
 `ToolReturnCodeSpan`, the `TestToolUtil` converters and `isDone` predicate, and the utility's remaining services retain their pending [ancestor assignments](../foundation.md#existing-implementation-mapping); they are outside Failure Reporting.
 
 The current build compiles these services into static `core` and separately into enabled `slang-rt` under its runtime export settings.

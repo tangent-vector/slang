@@ -2420,7 +2420,7 @@ void OptionsParser::_appendUsageTitle(StringBuilder& out)
 }
 
 // Describes the exit code of `slangc`. The values come from `ToolReturnCode` in
-// `slang-test-tool-util.h`, which `slangc` returns from `main`.
+// `slang/foundation/tool-status-codes/tool-status-codes.h`, which `slangc` returns from `main`.
 void OptionsParser::_appendExitCodes(StringBuilder& out)
 {
     out << "Exit codes:\n";

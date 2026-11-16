@@ -12,7 +12,7 @@ Foundation is the implementation concern currently supplied by the static `core`
 Its children below are candidate ordinary modules within that artifact; they do not introduce additional libraries.
 This decomposition is incomplete because several service dependencies are cyclic.
 The [unresolved boundaries](#unresolved-boundaries) identify the cycles and the ownership decisions required before the affected services can be migrated.
-[Compression](compression/compression.md), [Digests](digests/digests.md), [Hashing](hashing/hashing.md), and [Random Numbers](random-numbers/random-numbers.md) are implemented in this hierarchy and reexported by `foundation.h` in `slang::foundation`.
+[Compression](compression/compression.md), [Digests](digests/digests.md), [Hashing](hashing/hashing.md), [Random Numbers](random-numbers/random-numbers.md), and [Tool Status Codes](tool-status-codes/tool-status-codes.md) are implemented in this hierarchy and reexported by `foundation.h` in `slang::foundation`.
 Base Types' [Scalar Types](base-types/scalar-types/scalar-types.md) declarations are also defined in this hierarchy and reexported through the Base Types and Foundation primary headers.
 The other services still use their legacy implementations and headers; these ports do not settle their unresolved boundaries.
 
@@ -36,10 +36,13 @@ Foundation introduces the following implementation concepts:
   Their generic construction and assignment operations copy callable values when the callable type is deduced.
   An explicitly supplied lvalue-reference type selects an adapter that borrows its callable.
   Member-function adapters borrow their receiver.
-- A **signal** in Foundation is a reported assertion failure, invalid operation, or other internal failure.
-  It is separate from an operating-system signal and from an ordinary failure returned as a `SlangResult`.
-- A **tool status code** identifies an outcome of a Slang tool invocation.
+- A **signal** in Foundation is a reported assertion failure, invalid operation, compilation abort, or other failure condition.
+  A compilation abort can follow an ordinary input diagnostic.
+  A Foundation signal is separate from an operating-system signal and from an ordinary failure returned as a `SlangResult`.
+- A **tool status code** is an outcome reported by a Slang tool or the code that invokes it.
   Executable entry points and callers that invoke the corresponding tool in process or through the test server use the same vocabulary.
+  Calling code can report preparation results or failure to obtain a usable result, so a status alone does not establish whether the tool executed.
+  With exceptions disabled, Failure Reporting can use `InternalCompilerError` for an ordinary diagnosed compilation abort; that status alone does not mean that a compiler bug caused the failure.
   A tool status code is separate from an entry point's `SlangResult` and from the operating system's representation of process termination.
 - A **stream** is a cursor over bytes that supports some combination of reading, writing, seeking, and closing.
   A **file system** provides operations on named files and directories, through either the host operating system or another store.
@@ -153,9 +156,9 @@ They propose service ownership and do not authorize moving a file wholesale.
   They retain their canonical `Slang` identities; the leaf, Base Types, and Foundation primary headers explicitly reexport the same nineteen entities.
   The mixed `slang-common.h` includes that header and still defines the move/swap/bit helpers, deferred cleanup utility, componentwise equality macros, compiler compatibility and warning macros, unused-value macros, and runtime export declarations assigned to Base Types.
 - **Failure Reporting:** `slang-signal.{h,cpp}` and `slang-exception.h`, together with the assertion and assumption macros in `slang-common.h`.
-- **Tool Status Codes:** only the `ToolReturnCode` enum in `slang-test-tool-util.h`.
-  It distinguishes successful execution, ordinary tool or compilation failure, an internal compiler error, an ignored invocation, and an invocation that could not run.
-  The declaration retains its canonical `Slang` identity and existing enumerator names and values.
+- **Tool Status Codes:** `tool-status-codes/tool-status-codes.h` in this directory defines only the `ToolReturnCode` enum.
+  The canonical type is `Slang::ToolReturnCode`; the leaf and Foundation primary headers explicitly reexport that same enum.
+  The mixed `slang-test-tool-util.h` includes that primary for existing clients; its remaining declarations are outside Tool Status Codes.
 - **Hashing:** `hashing/hashing.h` in this directory owns the complete ordinary and stable header-only implementation.
   The two legacy headers have been removed, and their include clients use the new primary header.
   All definitions retain their canonical `Slang` identities; `slang::foundation::hashing` and `foundation.h` explicitly reexport the same eighteen names.
@@ -278,7 +281,8 @@ Archives refinement must retain one explicit owner for archive format selection 
 Every transferred implementation must therefore preserve both the static-core consumer and this separately compiled runtime consumer.
 Moving files into candidate ordinary modules does not change that requirement or establish new installed libraries.
 For Compression, Digests, and Random Numbers, this directory's CMake entries add each leaf implementation to both existing targets, conditionally including `slang-rt` when runtime is enabled.
-Hashing and Scalar Types each list their one defining header on both targets without adding a translation unit.
+Hashing, Scalar Types, and Tool Status Codes each list their one defining header on both targets without adding a translation unit.
+Both targets compile the Tool Status Codes enum through `slang-test-tool-util.cpp`, independently of that header registration.
 The Base Types CMake entry only enters its migrated Scalar Types child; it creates no additional artifact or target.
 Root CMake gives the migrated Foundation directory a separate binary directory so the compiler's existing `source/slang` generated-file paths remain available.
 The old targets retain their names and export settings; these unannotated Compression and generator declarations and their implementation headers are not installed product API.

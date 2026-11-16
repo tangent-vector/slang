@@ -78,6 +78,8 @@ documents:
       - source/slang/foundation/base-types/base-types.h
       - source/slang/foundation/base-types/scalar-types/CMakeLists.txt
       - source/slang/foundation/base-types/scalar-types/scalar-types.h
+      - source/slang/foundation/tool-status-codes/CMakeLists.txt
+      - source/slang/foundation/tool-status-codes/tool-status-codes.h
     depends_on:
       - architecture/overview.md
     size_cap_bytes: 32768
@@ -94,6 +96,7 @@ documents:
       - source/slang/foundation/hashing/CMakeLists.txt
       - source/slang/foundation/base-types/CMakeLists.txt
       - source/slang/foundation/base-types/scalar-types/CMakeLists.txt
+      - source/slang/foundation/tool-status-codes/CMakeLists.txt
     depends_on:
       - architecture/module-map.md
     size_cap_bytes: 16384

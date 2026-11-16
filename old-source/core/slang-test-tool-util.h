@@ -2,6 +2,7 @@
 #define SLANG_CORE_TEST_TOOL_UTIL_H
 
 #include "slang-std-writers.h"
+#include "slang/foundation/tool-status-codes/tool-status-codes.h"
 
 namespace Slang
 {
@@ -12,22 +13,6 @@ namespace Slang
 #define SLANG_TEST_TOOL_API
 #endif
 
-/* When a tool is run as an executable the return code is the code returned from
-the last return of main. On unix this can be up to 8 bits.
-By normal command line tool conventions returning 0 means success. */
-enum class ToolReturnCode
-{
-    InternalCompilerError = -2, ///< The compiler hit an unexpected failure: an internal compiler
-                                ///< error, an assertion, an exception or an abort. This always
-                                ///< indicates a compiler bug and never a mistake in the input.
-    CompilationFailed = -1, ///< Compilation failure (-1 to maintain compatibility). This may still
-                            ///< produce output and may mean a test was successful.
-    Success = 0,            ///< Tool ran normally
-    Failed,                 ///< Tool failed
-    Ignored, ///< The run was ignored because it couldn't be run (because some optional feature was
-             ///< not present for example)
-    FailedToRun, ///< Could not even run the test
-};
 
 enum class ToolReturnCodeSpan
 {
