@@ -85,6 +85,10 @@ class ICompressionSystem : public ISlangUnknown
     /// `decompressedSizeInBytes` bytes at `outDecompressed`, valid for the duration of the call.
     /// `decompressedSizeInBytes` must equal the original uncompressed byte count. The supplied LZ4
     /// implementation requires both byte counts to fit in `int`.
+    /// The supplied implementations provide no general guarantee for overlapping ranges.
+    /// Raw DEFLATE can copy between the input and output with `memcpy`, whose copied spans must
+    /// not overlap. LZ4's supported in-place layouts are codec-specific; readable input and
+    /// writable output alone do not establish that an overlapping layout is valid.
     /// Returns `SLANG_OK` on success and a failure result for a detected decoding error. The output
     /// may have been modified on failure.
     /// The supplied implementations do not retain either buffer after returning.

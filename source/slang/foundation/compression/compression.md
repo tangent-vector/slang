@@ -51,6 +51,8 @@ Its public implementation services are:
   Decompression writes into caller-provided storage; its contract requires the original byte count as the output size.
   Operations report ordinary failures through `SlangResult`.
   The output buffer may have been modified when decompression fails.
+  Readable input and writable output do not establish a general overlap guarantee.
+  Raw DEFLATE can pass overlapping spans to `memcpy`; LZ4's supported in-place layouts remain codec-specific.
 - **Available systems:** `DeflateCompressionSystem` and `LZ4CompressionSystem` provide access to function-local static implementations.
   Their COM `addRef` and `release` operations return a constant value and do not control singleton lifetime.
   The concrete implementation classes and their interface-discovery routines remain private implementation details within this leaf.
