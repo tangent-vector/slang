@@ -261,22 +261,21 @@ IRDecoration* IRInst::findDecorationImpl(IROp decorationOp)
     return nullptr;
 }
 
+UInt IRInst::getOrdinaryOperandCount()
+{
+    // The first attribute starts the trailing attribute list. An instruction without attributes
+    // therefore has `getOperandCount()` ordinary operands.
+    for (UInt i = 0; i < getOperandCount(); i++)
+        if (as<IRAttr>(getOperand(i)))
+            return i;
+    return getOperandCount();
+}
+
 IROperandList<IRAttr> IRInst::getAllAttrs()
 {
-    // We assume as an invariant that all attributes appear at the end of the operand
-    // list, after all the non-attribute operands.
-    //
-    // We will therefore define a range that ends at the end of the operand list ...
-    //
-    IRUse* end = getOperands() + getOperandCount();
-    //
-    // ... and begins after the last non-attribute operand.
-    //
-    IRUse* cursor = getOperands();
-    while (cursor != end && !as<IRAttr>(cursor->get()))
-        cursor++;
-
-    return IROperandList<IRAttr>(cursor, end);
+    return IROperandList<IRAttr>(
+        getOperands() + getOrdinaryOperandCount(),
+        getOperands() + getOperandCount());
 }
 
 // IRConstant
@@ -4183,6 +4182,25 @@ IRInst* IRBuilder::emitIntrinsicInst(IRType* type, IROp op, UInt argCount, IRIns
     if (!inst->parent)
         addInst(inst);
     return inst;
+}
+
+IRInst* IRBuilder::emitIntrinsicInstWithAttrs(
+    IRType* type,
+    IROp op,
+    UInt ordinaryOperandCount,
+    IRInst* const* ordinaryOperands,
+    IRInst* instWithAttrs)
+{
+    // Attributes must be present when the instruction is created, because value numbering uses
+    // every operand to distinguish operations with different contracts.
+    ShortList<IRInst*> operands;
+    for (UInt i = 0; i < ordinaryOperandCount; i++)
+        operands.add(ordinaryOperands[i]);
+    for (auto attr : instWithAttrs->getAllAttrs())
+        operands.add(attr);
+
+    IRBuilderSourceLocRAII sourceLoc(this, instWithAttrs->sourceLoc);
+    return emitIntrinsicInst(type, op, operands.getCount(), operands.getArrayView().getBuffer());
 }
 
 IRInst* IRBuilder::emitDefaultConstructRaw(IRType* type)
@@ -9713,6 +9731,9 @@ bool IRInst::mightHaveSideEffects(
     case kIROp_ExtractExistentialWitnessTable:
     case kIROp_IsNullExistential:
     case kIROp_WrapExistential:
+    case kIROp_MakePrecise:
+    case kIROp_MakePreciseIfTypeContainsPrecise:
+    case kIROp_ValueWithPreciseDependency:
     case kIROp_BuiltinCast:
     case kIROp_BitCast:
     case kIROp_CastFloatToInt:

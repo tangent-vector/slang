@@ -30,6 +30,7 @@
 #include "slang-ir-obfuscate-loc.h"
 #include "slang-ir-operator-shift-overflow.h"
 #include "slang-ir-peephole.h"
+#include "slang-ir-preserve-precise.h"
 #include "slang-ir-sccp.h"
 #include "slang-ir-simplify-cfg.h"
 #include "slang-ir-ssa.h"
@@ -985,8 +986,9 @@ IRInst* AstOrIRType::getIRType(IRGenContext* context)
     return irType;
 }
 
-// Given a `DeclRef` for something callable, along with a bunch of
-// arguments, emit an appropriate call to it.
+// Emit a call to a declaration, lowering builtin operations directly when possible.
+// `isConditionalExpression` identifies `?:`, whose predicate is excluded from backward precision
+// propagation even when lowering uses the same opcode as the eager `select` function.
 LoweredValInfo emitCallToDeclRef(
     IRGenContext* context,
     IRType* type,
@@ -994,7 +996,8 @@ LoweredValInfo emitCallToDeclRef(
     IRType* funcType,
     UInt argCount,
     IRInst* const* args,
-    const TryClauseEnvironment& tryEnv)
+    const TryClauseEnvironment& tryEnv,
+    bool isConditionalExpression = false)
 {
     SLANG_ASSERT(funcType);
 
@@ -1015,6 +1018,28 @@ LoweredValInfo emitCallToDeclRef(
         auto intrinsicOp = IROp(getIntrinsicOp(funcDecl, intrinsicOpModifier));
         switch (intrinsicOp)
         {
+        case kIROp_Select:
+            {
+                SLANG_RELEASE_ASSERT(argCount == 3);
+                IRInst* result = builder->emitIntrinsicInst(type, intrinsicOp, argCount, args);
+                if (isConditionalExpression)
+                    return LoweredValInfo::simple(result);
+
+                // An eager `select(condition, a, b)` demands all three inputs. Even if constant
+                // folding selects `a`, arithmetic used to compute `b` can survive for another use
+                // and must still receive the demand. We record all input dependencies before the
+                // eager call and `?:` become the same `IRSelect` instruction.
+                for (UInt i = 0; i < argCount; ++i)
+                {
+                    IRInst* dependencies[] = {result, args[i]};
+                    result = builder->emitIntrinsicInst(
+                        type,
+                        kIROp_ValueWithPreciseDependency,
+                        SLANG_COUNT_OF(dependencies),
+                        dependencies);
+                }
+                return LoweredValInfo::simple(result);
+            }
         case kIROp_GetOffsetPtr:
             SLANG_ASSERT(argCount == 2);
             return LoweredValInfo::simple(builder->emitGetOffsetPtr(args[0], args[1]));
@@ -1046,7 +1071,8 @@ LoweredValInfo emitCallToDeclRef(
     DeclRef<Decl> funcDeclRef,
     IRType* funcType,
     List<IRInst*> const& args,
-    const TryClauseEnvironment& tryEnv)
+    const TryClauseEnvironment& tryEnv,
+    bool isConditionalExpression = false)
 {
     return emitCallToDeclRef(
         context,
@@ -1055,7 +1081,8 @@ LoweredValInfo emitCallToDeclRef(
         funcType,
         args.getCount(),
         args.getBuffer(),
-        tryEnv);
+        tryEnv,
+        isConditionalExpression);
 }
 
 /// Emit a call to the given `accessorDeclRef`.
@@ -5233,8 +5260,14 @@ struct ExprLoweringContext
                 type = context->irBuilder->getVoidType();
             }
 
-            auto callResult =
-                emitCallToDeclRef(context, type, funcDeclRef, funcTypeInfo.type, irArgs, tryEnv);
+            auto callResult = emitCallToDeclRef(
+                context,
+                type,
+                funcDeclRef,
+                funcTypeInfo.type,
+                irArgs,
+                tryEnv,
+                as<SelectExpr>(expr) != nullptr);
             applyOutArgumentFixups(context, argFixups);
 
             if (funcTypeInfo.returnViaLastRefParam)
@@ -6750,7 +6783,15 @@ struct ExprLoweringVisitorBase : public ExprVisitor<Derived, LoweredValInfo>
         auto paramType = lowerType(context, expr->type.type);
         auto result = builder->emitParam(paramType);
 
-        return LoweredValInfo::simple(result);
+        // For `a && b` and `a || b`, the first operand contributes to the Boolean result even
+        // though control-flow lowering represents that contribution as a branch condition.
+        // Unlike the predicate of `?:`, it must receive a demand placed on the result.
+        IRInst* dependencies[] = {result, irCond};
+        return LoweredValInfo::simple(builder->emitIntrinsicInst(
+            paramType,
+            kIROp_ValueWithPreciseDependency,
+            SLANG_COUNT_OF(dependencies),
+            dependencies));
     }
 
     LoweredValInfo visitInvokeExpr(InvokeExpr* expr)
@@ -7693,6 +7734,19 @@ void lowerRValueExprWithDestination(IRGenContext* context, LoweredValInfo destin
     visitor.dispatch(expr);
 }
 
+// Emit a return of `value` with the policy of the function result that the programmer declared.
+// We materialize the demand during AST lowering because `lowerErrorHandling` later introduces
+// other `IRReturn` instructions for thrown errors. Those errors are not writes to this result.
+static void emitReturnWithPrecisePolicy(IRGenContext* context, IRInst* value)
+{
+    auto builder = context->irBuilder;
+    auto result = emitValueForPreciseStorage(
+        builder,
+        value,
+        context->funcDecl->hasModifier<PreciseModifier>());
+    builder->emitReturn(result);
+}
+
 struct StmtLoweringVisitor : StmtVisitor<StmtLoweringVisitor>
 {
     IRGenContext* context;
@@ -8482,7 +8536,7 @@ struct StmtLoweringVisitor : StmtVisitor<StmtLoweringVisitor>
                 // this = val;
                 // return this;
                 lowerRValueExprWithDestination(context, context->thisVal, expr);
-                getBuilder()->emitReturn(getSimpleVal(context, context->thisVal));
+                emitReturnWithPrecisePolicy(context, getSimpleVal(context, context->thisVal));
                 return;
             }
 
@@ -8498,7 +8552,7 @@ struct StmtLoweringVisitor : StmtVisitor<StmtLoweringVisitor>
             //
             if (!expr->type.type->equals(context->astBuilder->getVoidType()))
             {
-                getBuilder()->emitReturn(getSimpleVal(context, loweredExpr));
+                emitReturnWithPrecisePolicy(context, getSimpleVal(context, loweredExpr));
             }
             else
             {
@@ -8534,7 +8588,7 @@ struct StmtLoweringVisitor : StmtVisitor<StmtLoweringVisitor>
                 {
                     // If we have an ordinary constructor of the form
                     //   Type ctor() { return; }
-                    getBuilder()->emitReturn(getSimpleVal(context, context->thisVal));
+                    emitReturnWithPrecisePolicy(context, getSimpleVal(context, context->thisVal));
                 }
                 return;
             }
@@ -11870,6 +11924,13 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
                 auto initVal = lowerRValueExpr(context, initExpr);
                 initVal = LoweredValInfo::simple(getSimpleVal(context, initVal));
 
+                // An immutable declaration has no store for the pre-SSA preservation pass to
+                // inspect. We record its write demand directly on the initializer's value.
+                initVal = LoweredValInfo::simple(emitValueForPreciseStorage(
+                    getBuilder(),
+                    initVal.val,
+                    decl->hasModifier<PreciseModifier>()));
+
                 // An immutable `let` lowers to the initializer's SSA value with no backing IRVar,
                 // so this is the only site that can attach debug info to it.
                 if (context->debugInfoLevel >= DebugInfoLevel::Standard && decl->loc.isValid() &&
@@ -14138,6 +14199,13 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
                             // wrapper type for the parameter-passing mode).
                             //
                             auto irLocal = subBuilder->emitVar(irParamType);
+                            if (auto paramDecl = paramInfo.decl)
+                            {
+                                // Assignments to a traditional `in` parameter write this proxy
+                                // variable, so the declared storage policy belongs on it too.
+                                if (paramDecl->hasModifier<PreciseModifier>())
+                                    subBuilder->addSimpleDecoration<IRPreciseDecoration>(irLocal);
+                            }
 
                             // A Slang IR `var` instruction conceptually allocates
                             // memory on the stack and returns a pointer, so the
@@ -14237,6 +14305,14 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
                                 //   for the sake of debug-value code.
                                 //
                                 auto irLocal = subBuilder->emitVar(irParamValueType);
+                                if (auto paramDecl = paramInfo.decl)
+                                {
+                                    // Entry-point `in` parameters can use `borrow in` in IR, but
+                                    // their mutable proxies obey the same declared write policy.
+                                    if (paramDecl->hasModifier<PreciseModifier>())
+                                        subBuilder->addSimpleDecoration<IRPreciseDecoration>(
+                                            irLocal);
+                                }
                                 auto localVal = LoweredValInfo::ptr(irLocal);
                                 assign(subContext, localVal, paramVal);
                                 paramVal = localVal;
@@ -14279,6 +14355,10 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
                 //
                 if (paramInfo.isReturnDestination)
                 {
+                    // A non-copyable result is written through this output parameter instead of
+                    // an `IRReturn` operand. Its storage therefore receives the result policy.
+                    if (decl->hasModifier<PreciseModifier>())
+                        subBuilder->addSimpleDecoration<IRPreciseDecoration>(irParam);
                     subContext->returnDestination = paramVal;
                 }
             }
@@ -14425,7 +14505,8 @@ struct DeclLoweringVisitor : DeclVisitor<DeclLoweringVisitor, LoweredValInfo>
                         subContext->irBuilder->emitReturn();
                     else
                     {
-                        subContext->irBuilder->emitReturn(
+                        emitReturnWithPrecisePolicy(
+                            subContext,
                             getSimpleVal(subContext, subContext->thisVal));
                     }
                 }
@@ -15664,6 +15745,9 @@ RefPtr<IRModule> generateIRForTranslationUnit(
     // Next, attempt to promote local variables to SSA
     // temporaries and do basic simplifications.
     //
+    // SSA construction removes local storage. We first transfer its declared precision demands
+    // to the values written, keeping the write policy distinct from later uses of a loaded value.
+    preservePreciseStorageDemands(module);
     constructSSA(module);
     applySparseConditionalConstantPropagation(module, nullptr, compileRequest->getSink());
 

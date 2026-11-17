@@ -558,6 +558,12 @@ struct IRInst
 
     UInt getOperandCount() { return operandCount; }
 
+    /// Returns the number of operands before the trailing attributes.
+    ///
+    /// All `IRAttr` operands must follow the ordinary operands. Arithmetic emission and
+    /// rewriting use this count so an operation's attributes are not interpreted as values.
+    UInt getOrdinaryOperandCount();
+
     // Source location information for this value, if any
     SourceLoc sourceLoc;
 
@@ -2249,8 +2255,11 @@ public:
     // Adding or removing AST classes changes the sequential `ASTNodeType` values. We raise the
     // minimum supported version when those values change so older modules are rejected before
     // their node IDs can be decoded as different AST classes.
-    const static UInt k_minSupportedModuleVersion = 42;
-    const static UInt k_maxSupportedModuleVersion = 42;
+    // Version 43 also changes precision representation: earlier SSA construction could leave a
+    // declared write policy on an arbitrary value decoration instead of a preserved demand.
+    // Requiring recompilation prevents the new resolver from silently ignoring that old form.
+    const static UInt k_minSupportedModuleVersion = 43;
+    const static UInt k_maxSupportedModuleVersion = 43;
     static_assert(k_minSupportedModuleVersion <= k_maxSupportedModuleVersion);
 
     /// Returns whether `version` is in the inclusive range this compiler can load.

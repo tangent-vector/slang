@@ -1064,40 +1064,27 @@ void createVarLayoutForLegalizedGlobalParam(
     IRVarLayout* varLayout = varLayoutBuilder.build();
     builder->addLayoutDecoration(globalParam, varLayout);
 
-    // Use the innermost interpolation mode, but scan the entire declaration
-    // chain for precise. A field may specify nointerpolation while its enclosing
-    // output parameter specifies precise; both qualifiers apply to the field.
-    bool foundInterpolationMode = false;
+    // Copy every interpolation decoration of the innermost declaration that has any:
+    // an interpolation mode and a sampling location combine (`noperspective centroid`).
     for (; outerParamInfo; outerParamInfo = outerParamInfo->next)
     {
         auto paramInfo = outerParamInfo->outerParam;
         auto decorParent = paramInfo;
         if (auto field = as<IRStructField>(decorParent))
             decorParent = field->getKey();
-        // A precise output field or parameter remains precise after scalarization.
-        // Keep that qualifier on the resulting output address so the SPIR-V backend
-        // can trace the values stored into it after the original declaration is gone.
-        if (kind == LayoutResourceKind::VaryingOutput &&
-            decorParent->findDecoration<IRPreciseDecoration>() &&
-            !globalParam->findDecoration<IRPreciseDecoration>())
+        bool foundInterpolationMode = false;
+        for (auto decor : decorParent->getDecorations())
         {
-            builder->addSimpleDecoration<IRPreciseDecoration>(globalParam);
-        }
-        if (!foundInterpolationMode)
-        {
-            // Copy every interpolation decoration of the innermost declaration that has any:
-            // an interpolation mode and a sampling location combine (`noperspective centroid`).
-            for (auto decor : decorParent->getDecorations())
+            if (auto interpolationModeDecor = as<IRInterpolationModeDecoration>(decor))
             {
-                if (auto interpolationModeDecor = as<IRInterpolationModeDecoration>(decor))
-                {
-                    builder->addInterpolationModeDecoration(
-                        globalParam,
-                        interpolationModeDecor->getMode());
-                    foundInterpolationMode = true;
-                }
+                builder->addInterpolationModeDecoration(
+                    globalParam,
+                    interpolationModeDecor->getMode());
+                foundInterpolationMode = true;
             }
         }
+        if (foundInterpolationMode)
+            break;
     }
 
     if (declarator && declarator->flavor == GlobalVaryingDeclarator::Flavor::meshOutputPrimitives)

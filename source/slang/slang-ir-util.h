@@ -142,7 +142,8 @@ bool isAddressInst(IRInst* inst);
 /// storage supplied through `use`.
 ///
 /// This predicate recognizes only operand zero of address projections, pointer-to-pointer casts,
-/// `GetAddress`, `AssumeAddress`, and l-value implicit casts. Address operations and pointer casts
+/// `GetAddress`, `AssumeAddress`, l-value implicit casts, and pointer-valued precision identities.
+/// Precision identities forward operand zero unchanged. Address operations and pointer casts
 /// can make a later access through the result affect storage reached from operand zero. The
 /// predicate therefore treats both reads and writes as transferable; a caller that needs an exact
 /// whole-value, subobject, or unknown relation must classify that relation separately.
@@ -151,10 +152,12 @@ bool isAddressInst(IRInst* inst);
 /// every later access conservatively.
 bool doesUserResultTransferStorageAccessFromUse(IRUse* use);
 
-/// Return the function-type operand for the formal parameter corresponding to `argumentUse`, after
+/// Return the function-type operand for the parameter corresponding to `argumentUse`, after
 /// removing outer attributed and rate-qualified wrappers. Parameter-direction wrappers such as
 /// `BorrowIn` and `Out` are preserved. A generic type parameter need not derive from `IRType`, so
 /// callers must test the returned instruction for the specific wrapper they need.
+/// Concrete type-pack parameters are flattened to match expanded call arguments; this query may
+/// intern the expanded function type in the module containing `call`.
 ///
 /// Returns null when `argumentUse` does not belong to `call`, when the callee's data type is not a
 /// function type, or when that function type has no corresponding parameter.
@@ -760,7 +763,8 @@ IRInst* registerTranslation(IRModule* module, IRInst* from, IRInst* to);
 
 // Peel `addr` through instructions that forward the address of the same underlying
 // storage without changing which storage it refers to (field/element access, casts,
-// offset computation), stopping at the first instruction that is not one of these.
+// offset computation, and precision value identities), stopping at the first instruction
+// that is not one of these.
 // Returns that terminal instruction. This is the shape-independent counterpart to
 // `getRootAddr`: `getRootAddr` only peels `FieldAddress`/`GetElementPtr`/
 // `NodeOutputRecordGetElementPtr`, so a `BitCast`/`Reinterpret`/`PtrCast`/`GetOffsetPtr`

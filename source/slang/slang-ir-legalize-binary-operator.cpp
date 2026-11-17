@@ -108,9 +108,14 @@ static void replaceMatrixDividedByScalarWithMul(IRInst* inst)
     builder.setInsertBefore(inst);
 
     auto scalarType = inst->getOperand(1)->getDataType();
+    // Both arithmetic operations implement the original division. We retain its attributes on
+    // each operation, including the precise contract that WGSL emission diagnoses as unsupported.
+    IRInst* reciprocalArgs[] = {builder.getFloatValue(scalarType, 1.0), inst->getOperand(1)};
     auto newRhs =
-        builder.emitDiv(scalarType, builder.getFloatValue(scalarType, 1.0), inst->getOperand(1));
-    auto newOp = builder.emitMul(inst->getDataType(), inst->getOperand(0), newRhs);
+        builder.emitIntrinsicInstWithAttrs(scalarType, kIROp_Div, 2, reciprocalArgs, inst);
+    IRInst* multiplyArgs[] = {inst->getOperand(0), newRhs};
+    auto newOp =
+        builder.emitIntrinsicInstWithAttrs(inst->getDataType(), kIROp_Mul, 2, multiplyArgs, inst);
 
     inst->replaceUsesWith(newOp);
     inst->transferDecorationsTo(newOp);

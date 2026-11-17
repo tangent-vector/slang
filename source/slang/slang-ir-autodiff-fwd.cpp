@@ -1641,6 +1641,19 @@ struct ForwardDiffTranslationContext
         return InstPair(primalSwizzle, nullptr);
     }
 
+    // Preserve a precision marker on the primal computation and forward its value's derivative.
+    //
+    // The marker's runtime function is the identity on operand zero. Any additional operand
+    // records a precision dependency, not a differentiable input to that identity. The declared
+    // write policy constrains primal arithmetic; it does not propagate forward into the separate
+    // arithmetic that autodiff generates for the derivative.
+    InstPair translatePreciseMarker(IRBuilder* builder, IRInst* origInst)
+    {
+        auto primal = maybeCloneForPrimalInst(builder, origInst);
+        auto differential = findOrTranslateDiffInst(builder, origInst->getOperand(0));
+        return InstPair(primal, differential);
+    }
+
     InstPair translateByPassthrough(IRBuilder* builder, IRInst* origInst)
     {
         IRInst* primalInst = maybeCloneForPrimalInst(builder, origInst);
@@ -2603,6 +2616,11 @@ struct ForwardDiffTranslationContext
 
         case kIROp_Select:
             return translateSelect(builder, origInst);
+
+        case kIROp_MakePrecise:
+        case kIROp_MakePreciseIfTypeContainsPrecise:
+        case kIROp_ValueWithPreciseDependency:
+            return translatePreciseMarker(builder, origInst);
 
         case kIROp_MakeVector:
         case kIROp_MakeMatrix:

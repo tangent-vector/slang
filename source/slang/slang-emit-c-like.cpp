@@ -1736,6 +1736,11 @@ CLikeSourceEmitter::FoldPolicy CLikeSourceEmitter::getFoldPolicy(IRInst* inst)
 
 bool CLikeSourceEmitter::shouldFoldInstIntoUseSites(IRInst* inst)
 {
+    // A constrained operation needs its own `precise` declaration, including a constant
+    // computation at module scope that the general folding policy would otherwise inline.
+    if (inst->findAttr<IRPreciseAttr>())
+        return false;
+
     switch (getFoldPolicy(inst))
     {
     case FoldPolicy::Never:
@@ -1757,14 +1762,6 @@ bool CLikeSourceEmitter::shouldFoldInstIntoUseSites(IRInst* inst)
 
     // Don't fold something that might have side effects:
     if (inst->mightHaveSideEffects(SideEffectAnalysisOptions::None, &m_calleeSideEffectCache))
-        return false;
-
-    // Don't fold instructions that are marked `[precise]`.
-    // This could in principle be extended to any other
-    // decorations that affect the semantics of an instruction
-    // in ways that require a temporary to be introduced.
-    //
-    if (inst->findDecoration<IRPreciseDecoration>())
         return false;
 
     // In general, undefined value should be emitted as an uninitialized
@@ -2119,7 +2116,7 @@ void CLikeSourceEmitter::emitOperandImpl(IRInst* inst, EmitOpInfo const& outerPr
 
 void CLikeSourceEmitter::emitArgs(IRInst* inst)
 {
-    UInt argCount = inst->getOperandCount();
+    UInt argCount = inst->getOrdinaryOperandCount();
     IRUse* args = inst->getOperands();
 
     m_writer->emit("(");
@@ -4826,7 +4823,7 @@ void CLikeSourceEmitter::emitMeshShaderModifiers(IRInst* varInst)
 /// Emit modifiers that should apply even for a declaration of an SSA temporary.
 void CLikeSourceEmitter::emitTempModifiers(IRInst* temp)
 {
-    if (temp->findDecoration<IRPreciseDecoration>())
+    if (temp->findAttr<IRPreciseAttr>())
     {
         m_writer->emit("precise ");
     }

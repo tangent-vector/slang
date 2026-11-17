@@ -1960,6 +1960,19 @@ AttributeBase* SemanticsVisitor::checkGLSLLayoutAttribute(
     return attr;
 }
 
+// Return whether `decl` declares a field directly in a struct or class, including static fields.
+// Parameters and variables inside member-function bodies have different storage contracts and are
+// excluded even though they also have an aggregate declaration among their ancestors.
+static bool isStructOrClassField(Decl* decl)
+{
+    if (!as<VarDecl>(decl))
+        return false;
+    auto parent = getParentDecl(decl);
+    if (as<StructDecl>(parent))
+        return true;
+    return as<ClassDecl>(parent) != nullptr;
+}
+
 Modifier* SemanticsVisitor::checkModifier(
     Modifier* m,
     ModifiableSyntaxNode* syntaxNode,
@@ -2004,6 +2017,22 @@ Modifier* SemanticsVisitor::checkModifier(
                 return nullptr;
             }
             return m;
+        }
+
+        if (as<PreciseModifier>(m))
+        {
+            if (isStructOrClassField(decl))
+            {
+                // Earlier language versions allow field policies for HLSL compatibility. We
+                // retain the modifier after warning so lowering can still honor those writes.
+                if (isSlang202cOrLater(this))
+                {
+                    getSink()->diagnose(
+                        Diagnostics::PreciseOnFieldNotAllowedInSlang202c{.location = m->loc});
+                    return nullptr;
+                }
+                getSink()->diagnose(Diagnostics::PreciseOnFieldIsDeprecated{.location = m->loc});
+            }
         }
 
         // Reference parameters are a core-module mechanism, so the `__ref_readonly` and

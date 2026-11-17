@@ -4,6 +4,7 @@
 #include "slang-ir-dominators.h"
 #include "slang-ir-inst-pass-base.h"
 #include "slang-ir-layout.h"
+#include "slang-ir-preserve-precise.h"
 #include "slang-ir-sccp.h"
 #include "slang-ir-util.h"
 #include "slang-target-program.h"
@@ -374,6 +375,37 @@ struct PeepholeContext : InstPassBase
 
         switch (inst->getOp())
         {
+        case kIROp_MakePrecise:
+        case kIROp_MakePreciseIfTypeContainsPrecise:
+            {
+                auto value = inst->getOperand(0);
+                IRInst* replacement = nullptr;
+
+                // Specialization can prove that a formerly generic value contains no precise
+                // fields. We then restore its original shape before consumers such as autodiff
+                // and existential specialization inspect its defining instruction. That type
+                // proof applies only to a conditional demand.
+                if (as<IRMakePreciseIfTypeContainsPrecise>(inst))
+                {
+                    PreciseFieldContainmentQuery containment;
+                    if (containment.get(inst->getDataType()) == PreciseFieldContainment::No)
+                        replacement = value;
+                }
+
+                // `precise Optional<float> x = none; if (let v = x) ...` must still fold the
+                // absent case before diagnosing payload access. A known `none` has no payload
+                // computation to constrain, even under an unconditional demand. Runtime payloads
+                // and precision-only dependencies do not qualify for this fold.
+                if (as<IRMakeOptionalNone>(value))
+                    replacement = value;
+
+                if (!replacement)
+                    break;
+                inst->replaceUsesWith(replacement);
+                maybeRemoveOldInst(inst);
+                changed = true;
+            }
+            break;
         case kIROp_AlignOf:
         case kIROp_SizeOf:
             {

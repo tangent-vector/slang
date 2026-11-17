@@ -3,6 +3,7 @@
 
 #include "slang-ir-clone.h"
 #include "slang-ir-insts.h"
+#include "slang-ir-preserve-precise.h"
 #include "slang-ir-util.h"
 #include "slang-ir-validate.h"
 #include "slang-ir.h"
@@ -708,15 +709,6 @@ static void cloneRelevantDecorations(IRVar* var, IRInst* val)
             // TODO: Should we include or exclude by default?
             break;
 
-        case kIROp_PreciseDecoration:
-            // Copy these decorations if the target doesn't already have them,
-            // but don't make duplicate decorations on the target.
-            //
-            if (!val->findDecorationImpl(decoration->getOp()))
-            {
-                cloneDecoration(nullptr, decoration, val, var->getModule());
-            }
-            break;
         case kIROp_NameHintDecoration:
             // If the target already contains a linkage decoration, don't add
             // a name decoration to avoid issues with emit logic.
@@ -1191,6 +1183,15 @@ void processBlock(ConstructSSAContext* context, IRBlock* block, SSABlockInfo* bl
 
                 if (auto var = asPromotableVar(context, ptrArg))
                 {
+                    // Promoting a pointer variable can expose a store to precise storage after
+                    // the initial write-preservation pass. We capture that declaration policy
+                    // before deleting this store and the destination variable's identity.
+                    if (var->findDecoration<IRPreciseDecoration>())
+                    {
+                        IRBuilderSourceLocRAII sourceLoc(&blockInfo->builder, storeInst->sourceLoc);
+                        valArg = emitValueForPreciseStorage(&blockInfo->builder, valArg, true);
+                    }
+
                     // We are storing to a promotable variable,
                     // so we want to register the value being
                     // stored as the value for the given SSA

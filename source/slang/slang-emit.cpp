@@ -102,6 +102,7 @@
 #include "slang-ir-metal-legalize.h"
 #include "slang-ir-missing-return.h"
 #include "slang-ir-optix-entry-point-uniforms.h"
+#include "slang-ir-precise.h"
 #include "slang-ir-pytorch-cpp-binding.h"
 #include "slang-ir-ray-tracing-legalize.h"
 #include "slang-ir-redundancy-removal.h"
@@ -1587,12 +1588,6 @@ Result linkAndOptimizeIR(
             return SLANG_FAIL;
     }
 
-    // It's important that this takes place before defunctionalization as we
-    // want to be able to easily discover the cooperate and fallback funcitons
-    // being passed to saturated_cooperation
-    if (!targetProgram->getOptionSet().shouldPerformMinimumOptimizations())
-        SLANG_PASS(fuseCallsToSaturatedCooperation);
-
     switch (target)
     {
     case CodeGenTarget::CUDASource:
@@ -1652,6 +1647,18 @@ Result linkAndOptimizeIR(
     // assumes that each mutable global has a supported type.
     if (!validateMutableGlobalVariableTypes(irModule, sink))
         return SLANG_FAIL;
+
+    // Mandatory early inlining gives its calls substitution semantics. Ordinary calls still
+    // delimit local precision propagation, so we resolve their demands before later inliners
+    // erase those boundaries. Pending demands must survive the preceding specialization and
+    // simplification passes; the resolved operation attributes survive subsequent lowering.
+    SLANG_PASS(propagatePreciseDemands);
+
+    // Fusion can inline `saturated_cooperation`, so it follows precision resolution. It still
+    // precedes higher-order specialization, while the cooperate and fallback functions remain
+    // directly discoverable as callable operands.
+    if (!targetProgram->getOptionSet().shouldPerformMinimumOptimizations())
+        SLANG_PASS(fuseCallsToSaturatedCooperation);
 
     if (requiredLoweringPassSet.higherOrderFunc)
     {

@@ -81,6 +81,14 @@ bool opCanBeConstExpr(IROp op)
 {
     switch (op)
     {
+    case kIROp_MakePrecise:
+    case kIROp_MakePreciseIfTypeContainsPrecise:
+    case kIROp_ValueWithPreciseDependency:
+        // Precision markers are value identities and may participate in constant evaluation.
+        // The forward pass still requires every operand, including a precision-only dependency,
+        // to be constexpr before it assigns the marker a constexpr rate.
+        return true;
+
     case kIROp_IntLit:
     case kIROp_FloatLit:
     case kIROp_BoolLit:

@@ -887,5 +887,9 @@ return {
 	["Type.TraceProgramDescriptor"] = 911,
 	["metalTraceRay"] = 912,
 	["Decoration.Artificial"] = 913,
-	["Decoration.assumeValidResourceOperands"] = 914
+	["Decoration.assumeValidResourceOperands"] = 914,
+	["MakePrecise"] = 915,
+	["MakePreciseIfTypeContainsPrecise"] = 916,
+	["ValueWithPreciseDependency"] = 917,
+	["Attr.Precise"] = 918
 }

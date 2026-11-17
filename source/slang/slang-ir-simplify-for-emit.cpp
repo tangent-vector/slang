@@ -376,7 +376,7 @@ struct SimplifyForEmitContext : public InstPassBase
         case kIROp_Eql:
         case kIROp_Neq:
             builder.setInsertBefore(inst);
-            SLANG_ASSERT(inst->getOperandCount() == 2);
+            SLANG_ASSERT(inst->getOrdinaryOperandCount() == 2);
             if (as<IRVectorType>(inst->getDataType()))
             {
                 for (UInt a = 0; a < 2; a++)

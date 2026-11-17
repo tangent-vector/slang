@@ -146,6 +146,9 @@ struct SCCPContext
         case kIROp_IntCast:
         case kIROp_FloatCast:
         case kIROp_Select:
+        case kIROp_MakePrecise:
+        case kIROp_MakePreciseIfTypeContainsPrecise:
+        case kIROp_ValueWithPreciseDependency:
         case kIROp_ConstexprAdd:
         case kIROp_ConstexprSub:
         case kIROp_ConstexprMul:
@@ -971,6 +974,22 @@ struct SCCPContext
         case kIROp_StringLit:
         case kIROp_BoolLit:
             return LatticeVal::getConstant(inst);
+
+        case kIROp_MakePrecise:
+        case kIROp_MakePreciseIfTypeContainsPrecise:
+            // A constant has no surviving arithmetic contributors, so its precision marker can
+            // fold to that constant. An unknown runtime value keeps the marker unresolved.
+            return getLatticeVal(inst->getOperand(0));
+
+        case kIROp_ValueWithPreciseDependency:
+            {
+                // Even a constant result can demand precision from its separate dependency.
+                // We remove the marker only when that dependency has become constant too.
+                auto dependency = getLatticeVal(inst->getOperand(1));
+                if (dependency.flavor != LatticeVal::Flavor::Constant)
+                    return dependency;
+                return getLatticeVal(inst->getOperand(0));
+            }
 
         // We might also want to special-case certain
         // instructions where we shouldn't bother trying to
@@ -2059,6 +2078,9 @@ bool isEvaluableOpCode(IROp op)
     case kIROp_IntCast:
     case kIROp_FloatCast:
     case kIROp_Select:
+    case kIROp_MakePrecise:
+    case kIROp_MakePreciseIfTypeContainsPrecise:
+    case kIROp_ValueWithPreciseDependency:
     case kIROp_ConstexprAdd:
     case kIROp_ConstexprSub:
     case kIROp_ConstexprMul:

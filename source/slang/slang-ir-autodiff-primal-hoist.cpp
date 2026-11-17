@@ -2663,6 +2663,15 @@ static bool shouldStoreInst(IRInst* inst)
 
     switch (inst->getOp())
     {
+    case kIROp_MakePrecise:
+    case kIROp_MakePreciseIfTypeContainsPrecise:
+    case kIROp_ValueWithPreciseDependency:
+        // A precision marker returns its value operand without a runtime computation. Storing
+        // the marker's result would turn an otherwise recomputable value, such as `select`,
+        // into a checkpoint array for each loop iteration. We recompute the identity and let
+        // checkpoint policy classify its operands without discarding the precision demand.
+        return false;
+
     // Never store these opcodes because they are not real computations.
     case kIROp_CastFloatToInt:
     case kIROp_CastIntToFloat:

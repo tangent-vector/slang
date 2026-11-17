@@ -96,6 +96,22 @@ static ParameterCheckType isPotentiallyUnintended(IRParam* param, Stage stage, i
     return Never;
 }
 
+// Return the runtime value forwarded by a precision marker, or null for any other instruction.
+// The extra operand of `ValueWithPreciseDependency` records a precision demand only; it neither
+// supplies the returned value nor adds a runtime read of that operand.
+static IRInst* findPreciseMarkerValue(IRInst* inst)
+{
+    switch (inst->getOp())
+    {
+    case kIROp_MakePrecise:
+    case kIROp_MakePreciseIfTypeContainsPrecise:
+    case kIROp_ValueWithPreciseDependency:
+        return inst->getOperand(0);
+    default:
+        return nullptr;
+    }
+}
+
 static bool isAliasable(IRInst* inst)
 {
     switch (inst->getOp())
@@ -226,6 +242,15 @@ static void getAliasableInstructionsRec(
         // Type-only queries do not observe whether the value is initialized.
         if (doesInstOnlyDependOnOperandTypes(user))
             continue;
+
+        // A precision marker returns operand zero unchanged. We follow that value to its real
+        // uses, but do not alias a precision-only dependency with the marker's returned value.
+        if (findPreciseMarkerValue(user))
+        {
+            if (use == user->getOperandUse(0))
+                getAliasableInstructionsRec(user, visited, addresses);
+            continue;
+        }
 
         if (isAliasable(user))
         {
@@ -412,6 +437,11 @@ static ModuleWideOperandUseClassification classifyModuleWideOperandUse(IRUse* us
 
     // Debug records describe the program without reading or writing its runtime values.
     if (isDebugInfoInst(user))
+        return ModuleWideOperandUseClassification::Ignored;
+
+    // The alias walk follows a precision marker's returned value. Its other operand, when
+    // present, adds no runtime read: the original expression already contains that use.
+    if (findPreciseMarkerValue(user))
         return ModuleWideOperandUseClassification::Ignored;
 
     // `getAliasableInstructions` follows each alias-producing instruction to its eventual users.
@@ -1335,14 +1365,22 @@ static bool isInstStoredInto(ReachabilityContext& reachability, IRInst* referenc
     return false;
 }
 
+// Find the storage or value returned by a constructor, ignoring loads and precision identities.
+// Precision preservation wraps the returned value before SSA construction; field-initialization
+// checks must still inspect the original value rather than treat the marker as newly initialized.
 static IRInst* traceInstOrigin(IRInst* inst)
 {
     if (auto load = as<IRLoad>(inst))
         return traceInstOrigin(load->getPtr());
+    if (auto value = findPreciseMarkerValue(inst))
+        return traceInstOrigin(value);
 
     return inst;
 }
 
+// Return whether `inst` is forwarded as a constructor's returned value through loads or identity
+// markers. A precision-only dependency is not part of that returned value, so only operand zero
+// can forward the constructor-result role.
 static bool isReturnedValue(IRInst* inst)
 {
     for (auto use = inst->firstUse; use; use = use->nextUse)
@@ -1350,6 +1388,16 @@ static bool isReturnedValue(IRInst* inst)
         IRInst* user = use->getUser();
         if (as<IRReturn>(user))
             return true;
+
+        if (findPreciseMarkerValue(user))
+        {
+            if (use == user->getOperandUse(0))
+            {
+                if (isReturnedValue(user))
+                    return true;
+            }
+            continue;
+        }
 
         // Loading from a Ptr type should be
         // treated as an aliased path to any return

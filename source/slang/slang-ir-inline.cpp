@@ -2,6 +2,7 @@
 #include "slang-ir-inline.h"
 
 #include "core/slang-performance-profiler.h"
+#include "slang-ir-preserve-precise.h"
 #include "slang-ir-specialize-address-space.h"
 #include "slang-ir-ssa-simplification.h"
 #include "slang-ir-util.h"
@@ -32,6 +33,10 @@ struct InliningPassBase
     IRModule* m_module = nullptr;
 
     HashSet<IRInst*>* m_modifiedFuncs = nullptr;
+
+    /// Whether intrinsic replacements retain dependencies for pending local precise inference.
+    /// Later inlining leaves operation policies settled and must not create unresolved requests.
+    bool m_preservePreciseDependencies = false;
 
     /// Initialize an inlining pass to operate on the given `module`
     InliningPassBase(IRModule* module)
@@ -469,6 +474,27 @@ struct InliningPassBase
                     op,
                     args.getCount(),
                     args.getBuffer());
+                if (m_preservePreciseDependencies)
+                {
+                    if (op == kIROp_Select)
+                    {
+                        // A call to intrinsic `select` evaluates all three inputs. Later constant
+                        // folding may replace the selection by one value, while computation of
+                        // another input survives for a different use. We retain each evaluated
+                        // input explicitly so precision inference still demands that computation.
+                        // A conditional expression does not acquire these eager-call dependencies.
+                        SLANG_RELEASE_ASSERT(args.getCount() == 3);
+                        for (auto argument : args)
+                        {
+                            IRInst* dependencies[] = {newCall, argument};
+                            newCall = builder.emitIntrinsicInst(
+                                call->getFullType(),
+                                kIROp_ValueWithPreciseDependency,
+                                SLANG_COUNT_OF(dependencies),
+                                dependencies);
+                        }
+                    }
+                }
                 call->replaceUsesWith(newCall);
             }
             call->removeAndDeallocate();
@@ -1012,6 +1038,7 @@ struct MandatoryEarlyInliningPass : InliningPassBase
     MandatoryEarlyInliningPass(IRModule* module)
         : Super(module)
     {
+        m_preservePreciseDependencies = true;
     }
 
     bool shouldInline(CallSiteInfo const& info)
@@ -1032,7 +1059,15 @@ bool performMandatoryEarlyInlining(IRModule* module, HashSet<IRInst*>* modifiedF
 
     MandatoryEarlyInliningPass pass(module);
     pass.m_modifiedFuncs = modifiedFuncs;
-    return pass.considerAllCallSites();
+    bool changed = pass.considerAllCallSites();
+    if (changed)
+    {
+        // Source substitution can expose a write to precise caller storage through a callee's
+        // ordinary reference parameter. Preserve that declaration demand before the caller's
+        // next simplification removes the destination storage.
+        preservePreciseStorageDemands(module);
+    }
+    return changed;
 }
 
 // Return whether a call to `callee` may keep its `groupshared` parameters, which are `Workgroup`

@@ -246,9 +246,13 @@ bool doesUserResultTransferStorageAccessFromUse(IRUse* use)
     case kIROp_PtrCast:
     case kIROp_OutImplicitCast:
     case kIROp_InOutImplicitCast:
+    case kIROp_MakePrecise:
+    case kIROp_MakePreciseIfTypeContainsPrecise:
+    case kIROp_ValueWithPreciseDependency:
         // Only the pointer-to-pointer form can transfer access to operand-zero storage. An `inout`
         // cast transfers reads into its temporary and writes back; an `out` cast transfers only
-        // writes back. This direction-independent predicate accepts either relation. Type
+        // writes back. Precision markers preserve the identity of their value operand.
+        // This direction-independent predicate accepts either relation. Type
         // attributes do not change the pointer relation, so we remove them before testing it.
         return as<IRPtrTypeBase>(unwrapAttributedType(use->get()->getDataType())) != nullptr &&
                as<IRPtrTypeBase>(unwrapAttributedType(user->getDataType())) != nullptr;
@@ -260,8 +264,8 @@ bool doesUserResultTransferStorageAccessFromUse(IRUse* use)
 IRInst* findCallArgumentParameterType(IRCall* call, IRUse* argumentUse)
 {
     // We match the exact operand use rather than its value, because one value may be passed to
-    // multiple parameters with different direction contracts. Operand zero is the callee, and the
-    // remaining operands correspond positionally to the function-type parameters.
+    // multiple parameters with different direction contracts. Operand zero is the callee; the
+    // remaining operands determine the argument position to match against the expanded signature.
     if (argumentUse == call->getCalleeUse())
         return nullptr;
 
@@ -277,10 +281,16 @@ IRInst* findCallArgumentParameterType(IRCall* call, IRUse* argumentUse)
     if (argumentIndex < 0)
         return nullptr;
 
-    // The callee's data type is the signature at this call site. It already contains generic
-    // substitutions and also covers indirect function-valued callees.
+    // The callee's data type is the signature at this call site, including for indirect calls.
+    // A witness lookup can still have `(This, TypePack<Float, Float>)` after the call arguments
+    // have expanded to `(thisValue, a, b)`. The shared concrete-pack expansion supplies the
+    // corresponding parameter positions without changing the callee's representation.
     auto funcType = as<IRFuncType>(call->getCallee()->getDataType());
-    if (!funcType || UInt(argumentIndex) >= funcType->getParamCount())
+    if (!funcType)
+        return nullptr;
+    IRBuilder builder(call->getModule());
+    funcType = maybeExpandConcreteFuncTypePacks(&builder, funcType);
+    if (UInt(argumentIndex) >= funcType->getParamCount())
         return nullptr;
     // `IRFuncType::getParamType` assumes that every parameter operand derives from `IRType`.
     // Generic functions can instead use a type parameter directly as a parameter type. We only
@@ -3607,6 +3617,9 @@ IRInst* peelAddressForwardingOps(IRInst* addr)
         case kIROp_BitCast:
         case kIROp_Reinterpret:
         case kIROp_PtrCast:
+        case kIROp_MakePrecise:
+        case kIROp_MakePreciseIfTypeContainsPrecise:
+        case kIROp_ValueWithPreciseDependency:
             addr = addr->getOperand(0);
             continue;
         default:

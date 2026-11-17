@@ -1397,11 +1397,23 @@ struct LLVMEmitter
         return builder->emitCompareOp(op, a, aSigned, b, bSigned);
     }
 
+    // Emit a scalar or vector arithmetic operation through the LLVM builder interface.
+    // We use only ordinary operands to distinguish unary and binary operations. The builder
+    // applies the compilation-wide floating-point mode and cannot encode a per-operation
+    // precise contract, so we diagnose that unsupported contract before emitting the operation.
     LLVMInst* emitArithmetic(IRInst* inst)
     {
         auto resultType = types->getValueType(inst->getDataType());
 
-        if (inst->getOperandCount() == 1)
+        if (inst->findAttr<IRPreciseAttr>())
+        {
+            codeGenContext->getSink()->diagnose(Diagnostics::PreciseQualifierUnsupportedOnTarget{
+                .target = TypeTextUtil::getCompileTargetName(
+                    SlangCompileTarget(codeGenContext->getTargetReq()->getTarget())),
+                .location = inst->sourceLoc});
+        }
+
+        if (inst->getOrdinaryOperandCount() == 1)
         {
             auto llvmValue = findValue(inst->getOperand(0));
             LLVMUnaryOp op;
@@ -1420,7 +1432,7 @@ struct LLVMEmitter
             }
             return builder->emitUnaryOp(op, llvmValue);
         }
-        else if (inst->getOperandCount() == 2)
+        else if (inst->getOrdinaryOperandCount() == 2)
         {
             LLVMBinaryOp op;
             switch (inst->getOp())

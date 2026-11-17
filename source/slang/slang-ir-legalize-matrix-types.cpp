@@ -253,12 +253,16 @@ struct MatrixTypeLoweringContext
         return builder.emitMakeArray(arrayType, rowVectors.getCount(), rowVectors.getBuffer());
     }
 
+    // Apply a matrix binary operation to corresponding row vectors in the legalized arrays.
+    // Each row operation receives the matrix operation's attributes, so splitting a precise
+    // matrix operation does not permit contraction or reassociation within any row.
     IRInst* legalizeMatrixMatrixBinaryOperation(
         IRBuilder& builder,
         IRInst* legalizedA,
         IRInst* legalizedB,
         IRMatrixType* resultMatrixType,
-        IROp binaryOp)
+        IROp binaryOp,
+        IRInst* instWithAttrs)
     {
         auto elementType = resultMatrixType->getElementType();
         auto rowCount = as<IRIntLit>(resultMatrixType->getRowCount());
@@ -286,7 +290,8 @@ struct MatrixTypeLoweringContext
 
             // Apply the binary operation to the vectors
             IRInst* args[] = {vectorA, vectorB};
-            auto resultVector = builder.emitIntrinsicInst(vectorType, binaryOp, 2, args);
+            auto resultVector =
+                builder.emitIntrinsicInstWithAttrs(vectorType, binaryOp, 2, args, instWithAttrs);
 
             resultVectors.add(resultVector);
         }
@@ -299,13 +304,16 @@ struct MatrixTypeLoweringContext
     }
 
 
+    // Apply a binary operation to each matrix row and the same scalar or vector operand.
+    // We preserve both operand order and the matrix operation's arithmetic contract.
     template<bool matrixIsFirst>
     IRInst* legalizeMatrixMixedBinaryOperation(
         IRBuilder& builder,
         IRInst* legalizedMatrix,
         IRInst* legalizedOther,
         IRMatrixType* resultMatrixType,
-        IROp binaryOp)
+        IROp binaryOp,
+        IRInst* instWithAttrs)
     {
         // Verify that the other operand is either a vector or scalar type
         auto otherType = legalizedOther->getDataType();
@@ -349,7 +357,8 @@ struct MatrixTypeLoweringContext
                 args[0] = legalizedOther;
                 args[1] = matrixRowVector;
             }
-            auto resultVector = builder.emitIntrinsicInst(vectorType, binaryOp, 2, args);
+            auto resultVector =
+                builder.emitIntrinsicInstWithAttrs(vectorType, binaryOp, 2, args, instWithAttrs);
 
             resultVectors.add(resultVector);
         }
@@ -398,7 +407,8 @@ struct MatrixTypeLoweringContext
                 legalizedA,
                 legalizedB,
                 resultMatrixType,
-                binaryOp);
+                binaryOp,
+                inst);
         }
         else if (shouldLowerA && !shouldLowerB)
         {
@@ -407,7 +417,8 @@ struct MatrixTypeLoweringContext
                 legalizedA,
                 legalizedB,
                 resultMatrixType,
-                binaryOp);
+                binaryOp,
+                inst);
         }
         else if (!shouldLowerA && shouldLowerB)
         {
@@ -416,7 +427,8 @@ struct MatrixTypeLoweringContext
                 legalizedB,
                 legalizedA,
                 resultMatrixType,
-                binaryOp);
+                binaryOp,
+                inst);
         }
 
         // Neither operand is a matrix that needs lowering, shouldn't reach here
@@ -518,6 +530,8 @@ struct MatrixTypeLoweringContext
             resultVectors.getBuffer());
     }
 
+    // Apply a matrix unary operation to each legalized row and rebuild the aggregate result.
+    // The row operations receive the matrix operation's attributes, including `IRPreciseAttr`.
     IRInst* legalizeUnaryOperation(IRInst* inst, IROp unaryOp, IRMatrixType* resultMatrixType)
     {
         IRInst* operand = inst->getOperand(0);
@@ -553,7 +567,8 @@ struct MatrixTypeLoweringContext
 
             // Apply the unary operation to the vector
             IRInst* args[] = {vector};
-            auto resultVector = builder.emitIntrinsicInst(vectorType, unaryOp, 1, args);
+            auto resultVector =
+                builder.emitIntrinsicInstWithAttrs(vectorType, unaryOp, 1, args, inst);
 
             resultVectors.add(resultVector);
         }

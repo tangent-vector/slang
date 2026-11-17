@@ -1305,7 +1305,7 @@ void CPPSourceEmitter::emitLoopControlDecorationImpl(IRLoopControlDecoration* de
 void CPPSourceEmitter::emitTempModifiers(IRInst* temp)
 {
     // C/C++ (and, via inheritance, CUDA) has no `precise` keyword; drop it and warn.
-    if (temp->findDecoration<IRPreciseDecoration>())
+    if (temp->findAttr<IRPreciseAttr>())
     {
         getSink()->diagnose(Diagnostics::PreciseQualifierUnsupportedOnTarget{
             .target = TypeTextUtil::getCompileTargetName(SlangCompileTarget(getTarget())),

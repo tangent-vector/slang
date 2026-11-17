@@ -17,7 +17,10 @@ struct IRInst;
 /// strings, references, and HLSL output aggregates containing matrices with non-default layouts.
 Result performTypeInlining(IRModule* module, TargetProgram* targetProgram, DiagnosticSink* sink);
 
-/// Inline any call sites to functions marked `[unsafeForceInlineEarly]`
+/// Inline intrinsic operations and functions marked `[__unsafeForceInlineEarly]`.
+///
+/// Runs before local precise inference. Intrinsic replacements preserve evaluated expression
+/// dependencies as unresolved precision metadata; later inlining must not create that metadata.
 bool performMandatoryEarlyInlining(IRModule* module, HashSet<IRInst*>* modifiedFuncs = nullptr);
 
 /// Inline any call sites to functions marked `[ForceInline]`

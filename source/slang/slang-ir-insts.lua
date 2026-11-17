@@ -2004,6 +2004,9 @@ local insts = {
 			{ glslFragDepthGreater = { struct_name = "GLSLFragDepthGreaterDecoration" } },
 			{ glslFragDepthLess = { struct_name = "GLSLFragDepthLessDecoration" } },
 			{ shader64BitIndexing = { struct_name = "Shader64BitIndexingDecoration" } },
+			-- Records a declared write policy on storage declarations and field keys. Preparation
+			-- preserves demands before storage removal; local precise resolution consumes this
+			-- decoration after every scope is analyzed. Resolved arithmetic uses `PreciseAttr`.
 			{ precise = { struct_name = "PreciseDecoration" } },
 			{ public = { struct_name = "PublicDecoration" } },
 			{ hlslExport = { struct_name = "HLSLExportDecoration" } },
@@ -2210,11 +2213,12 @@ local insts = {
 			},
 			{
 				synthesizedParameterGroup = {
-					-- Marks a parameter-group element struct that was synthesized by the
-					-- compiler (e.g. by collecting entry-point `uniform`/resource parameters)
-					-- rather than written by the user. Diagnostics that only make sense for
-					-- source-authored groups (such as "special type leaks from parameter
-					-- group") are suppressed for these.
+					-- Marks a struct formed by collecting separately declared shader parameters,
+					-- including entry-point `uniform`/resource parameters and global parameters.
+					-- Each field key preserves one collected parameter's declaration identity;
+					-- consumers copying this marker must preserve that association. The group
+					-- itself was not written by the user, so diagnostics such as "special type
+					-- leaks from parameter group" are suppressed for these structs.
 					struct_name = "SynthesizedParameterGroupDecoration",
 				},
 			},
@@ -2827,6 +2831,18 @@ local insts = {
 	-- a regular reinterpret on the inner value if present.
 	{ ReinterpretOptional = { operands = { { "val" } } } },
 	{ unmodified = { operands = { { "val" } } } },
+	-- `MakePrecise` returns `value` and requests precise computation of its contributors.
+	-- Lowering emits the request at a write to explicitly precise storage. Local precise
+	-- inference resolves the request to attributes on arithmetic operations and removes it.
+	{ MakePrecise = { operands = { { "value" } } } },
+	-- This identity requests precise computation only when `value` has an aggregate type that
+	-- contains precise fields. Inference checks the field information available after ordinary
+	-- specialization before removing the operation; some generic types can remain unresolved.
+	{ MakePreciseIfTypeContainsPrecise = { operands = { { "value" } } } },
+	-- This identity propagates a demand on its result to both `value` and `dependency`.
+	-- Lowering uses it to preserve evaluated expression operands whose values are absent from
+	-- the result's ordinary dataflow, such as the left operand of a short-circuit `&&`.
+	{ ValueWithPreciseDependency = { operands = { { "value" }, { "dependency" } } } },
 	{ outImplicitCast = { operands = { { "value" } } } },
 	{ inOutImplicitCast = { operands = { { "value" } } } },
 	{ intCast = { operands = { { "value" } } } },
@@ -3020,6 +3036,7 @@ local insts = {
 				},
 			},
 			{ no_diff = { struct_name = "NoDiffAttr" } },
+			{ Precise = { struct_name = "PreciseAttr" } },
 			{
 				nonuniform = {
 					struct_name = "NonUniformAttr",

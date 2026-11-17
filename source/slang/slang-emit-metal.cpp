@@ -246,7 +246,7 @@ void MetalSourceEmitter::emitFuncParamLayoutImpl(IRInst* param)
 void MetalSourceEmitter::emitTempModifiers(IRInst* temp)
 {
     // Metal has no `precise` keyword; drop it and warn.
-    if (temp->findDecoration<IRPreciseDecoration>())
+    if (temp->findAttr<IRPreciseAttr>())
     {
         getSink()->diagnose(Diagnostics::PreciseQualifierUnsupportedOnTarget{
             .target = TypeTextUtil::getCompileTargetName(SlangCompileTarget(getTarget())),

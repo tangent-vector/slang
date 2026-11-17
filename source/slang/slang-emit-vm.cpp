@@ -1074,7 +1074,12 @@ public:
             }
             break;
         case kIROp_BitCast:
+        case kIROp_MakePrecise:
+        case kIROp_MakePreciseIfTypeContainsPrecise:
+        case kIROp_ValueWithPreciseDependency:
             {
+                // Precision markers return operand zero unchanged. Their extra dependencies
+                // describe compiler policy and do not require a runtime copy or computation.
                 auto operand = ensureInst(inst->getOperand(0));
                 mapInstToOperand[inst] = operand;
             }

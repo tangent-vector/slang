@@ -1842,6 +1842,15 @@ struct TypeFlowSpecializationContext
         case kIROp_MakeExistential:
             info = analyzeMakeExistential(context, as<IRMakeExistential>(inst));
             break;
+        case kIROp_MakePrecise:
+        case kIROp_MakePreciseIfTypeContainsPrecise:
+        case kIROp_ValueWithPreciseDependency:
+            // `precise IValue value = concreteValue` preserves a demand around an existential.
+            // The marker must retain the concrete binding discovered for its first operand;
+            // falling back to its declared interface type would lose that information. The
+            // extra operand of `ValueWithPreciseDependency` affects precision, not runtime flow.
+            info = tryGetInfo(context, inst->getOperand(0));
+            break;
         case kIROp_LookupWitnessMethod:
             info = analyzeLookupWitnessMethod(context, as<IRLookupWitnessMethod>(inst));
             break;
@@ -4894,6 +4903,19 @@ struct TypeFlowSpecializationContext
         // IRParam), and then register users for updates to propagate the updated information
         // to any access chain instructions.
         //
+
+        switch (inst->getOp())
+        {
+        case kIROp_MakePrecise:
+        case kIROp_MakePreciseIfTypeContainsPrecise:
+        case kIROp_ValueWithPreciseDependency:
+            // An identity around a pointer names the same storage. Updates through that pointer
+            // refine its original address, while the marker remains for precision resolution.
+            maybeUpdateInfoForAddress(context, inst->getOperand(0), info, workQueue);
+            return;
+        default:
+            break;
+        }
 
         if (auto getElementPtr = as<IRGetElementPtr>(inst))
         {

@@ -6299,6 +6299,20 @@ warning(
     span { loc = "location" }
 )
 
+warning(
+    "precise-on-field-is-deprecated",
+    56022,
+    "'precise' on a field is deprecated",
+    span { loc = "location", message = "'precise' on struct and class fields, including static fields, is deprecated and will be rejected in Slang 202c" }
+)
+
+err(
+    "precise-on-field-not-allowed-in-slang-202c",
+    56023,
+    "'precise' on a field is not allowed in Slang 202c",
+    span { loc = "location", message = "'precise' is not allowed on struct and class fields, including static fields, in Slang 202c" }
+)
+
 err(
     "mutable-resource-used-by-function-without-rewritable-call",
     56006,

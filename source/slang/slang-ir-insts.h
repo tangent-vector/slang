@@ -1018,6 +1018,17 @@ struct IRAttr : public IRInst
     FIDDLE(baseInst())
 };
 
+/// An operation contract that forbids implicit floating-point contraction and reassociation.
+///
+/// Local precise inference adds this attribute to arithmetic operations after resolving
+/// `IRMakePrecise` requests. As a trailing operand, the attribute participates in instruction
+/// identity, so deduplication distinguishes constrained arithmetic from unrestricted arithmetic.
+FIDDLE()
+struct IRPreciseAttr : IRAttr
+{
+    FIDDLE(leafInst())
+};
+
 /// An attribute that specifies layout information for a single resource kind.
 FIDDLE()
 struct IRLayoutResourceInfoAttr : public IRAttr
@@ -3886,6 +3897,18 @@ $(type_info.return_type) $(type_info.method_name)(
         IRInst* const* const* listOperands);
 
     IRInst* emitIntrinsicInst(IRType* type, IROp op, UInt argCount, IRInst* const* args);
+
+    /// Emit an instruction with the given ordinary operands and another instruction's attributes.
+    ///
+    /// Requires every copied attribute to be valid for the new operation. Rewrites that split
+    /// constrained arithmetic use this operation for each arithmetic instruction they produce.
+    /// The emitted instruction also uses `instWithAttrs`'s source location for diagnostics.
+    IRInst* emitIntrinsicInstWithAttrs(
+        IRType* type,
+        IROp op,
+        UInt ordinaryOperandCount,
+        IRInst* const* ordinaryOperands,
+        IRInst* instWithAttrs);
 
     /// Emits appropriate inst for constructing a default value of `type`.
     /// If `fallback` is true, will emit `DefaultConstruct` inst on unknown types.
