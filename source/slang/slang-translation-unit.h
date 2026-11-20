@@ -111,6 +111,9 @@ public:
     /// The name that will be used for the module this translation unit produces.
     Name* moduleName = nullptr;
 
+    /// Whether the compile request inferred its module name from its first input.
+    bool hasDefaultModuleName = false;
+
     /// Result of compiling this translation unit (a module)
     RefPtr<Module> module;
 

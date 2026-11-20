@@ -27,16 +27,29 @@ SlangResult IncludeSystem::findFile(
     const String& path,
     PathInfo& outPathInfo)
 {
+    String lookupPath;
+    SLANG_RETURN_ON_FAIL(calcLookupPath(fromPathType, fromPath, path, lookupPath));
+    return findFileAtPath(lookupPath, outPathInfo);
+}
+
+SlangResult IncludeSystem::calcLookupPath(
+    SlangPathType fromPathType,
+    const String& fromPath,
+    const String& path,
+    String& outPath)
+{
+    // We combine a relative request with its search base before probing, so
+    // callers can remember results by the full spelling sent to the filesystem.
     String combinedPath;
 
     if (fromPath.getLength() == 0 || Path::isAbsolute(path))
     {
-        // If the path is absolute or the fromPath is empty, the combined path is just the path
         combinedPath = path;
     }
     else
     {
-        // Get relative path
+        // The filesystem owns the meaning of its paths. Its combination
+        // operation knows whether the base denotes a file or a directory.
         ComPtr<ISlangBlob> combinedPathBlob;
         SLANG_RETURN_ON_FAIL(m_fileSystemExt->calcCombinedPath(
             fromPathType,
@@ -50,41 +63,36 @@ SlangResult IncludeSystem::findFile(
         }
     }
 
-    // The combined spelling can contain redundant ".." segments that inflate it past the OS
-    // path-length limit (MAX_PATH on Windows, PATH_MAX on POSIX) even though the simplified
-    // path is short, so collapse them before handing the path to the file system.
-    //
-    // We resolve every include through this one lexically-simplified spelling: the existence
-    // check, the unique-identity lookup, and the found path handed back to the caller all see
-    // the same minimal form, so consumers such as the preprocessor can push the found path as
-    // the next include base without re-simplifying. A file system that does not implement
-    // getPath(PathKind::Simplified) keeps the unsimplified spelling, and with it the original
-    // length-limit behavior.
-    combinedPath = simplifyPath(combinedPath);
+    // We simplify a spelling such as `include/tmp/../common.slang` before
+    // probing. Removing redundant components can bring a long spelling
+    // below the filesystem's path-length limit.
+    outPath = simplifyPath(combinedPath);
+    return SLANG_OK;
+}
 
-    // This checks the path exists
+SlangResult IncludeSystem::findFileAtPath(const String& lookupPath, PathInfo& outPathInfo)
+{
+    // We use the same spelling to check for a file, obtain its identity, and
+    // record the found path. A later load or nested include uses that path.
     SlangPathType pathType;
-    SLANG_RETURN_ON_FAIL(m_fileSystemExt->getPathType(combinedPath.begin(), &pathType));
+    SLANG_RETURN_ON_FAIL(m_fileSystemExt->getPathType(lookupPath.begin(), &pathType));
     if (pathType != SLANG_PATH_TYPE_FILE)
     {
         return SLANG_E_NOT_FOUND;
     }
 
-    // Get the uniqueIdentity
     ComPtr<ISlangBlob> uniqueIdentityBlob;
-    SLANG_RETURN_ON_FAIL(m_fileSystemExt->getFileUniqueIdentity(
-        combinedPath.begin(),
-        uniqueIdentityBlob.writeRef()));
+    SLANG_RETURN_ON_FAIL(
+        m_fileSystemExt->getFileUniqueIdentity(lookupPath.begin(), uniqueIdentityBlob.writeRef()));
 
-    // If the rel path exists -> a uniqueIdentity MUST exists too
+    // A normal `PathInfo` requires a nonempty filesystem identity.
     String uniqueIdentity(StringUtil::getString(uniqueIdentityBlob));
     if (uniqueIdentity.getLength() <= 0)
     {
-        // Unique identity can't be empty
         return SLANG_FAIL;
     }
 
-    outPathInfo = PathInfo::makeNormal(combinedPath, uniqueIdentity);
+    outPathInfo = PathInfo::makeNormal(lookupPath, uniqueIdentity);
     return SLANG_OK;
 }
 

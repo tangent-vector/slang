@@ -1248,11 +1248,13 @@ void Linkage::loadParsedModule(
     //
     RefPtr<Module> loadedModule = translationUnit->getModule();
 
-    // Get a path
-    String mostUniqueIdentity = pathInfo.getMostUniqueIdentity();
-    SLANG_ASSERT(mostUniqueIdentity.getLength() > 0);
+    // Older explicit loads can use a provider's identity to recognize a
+    // module. A provider can give different files the same identity, so a
+    // later contextual import may need a distinct module under its own name.
+    String pathKey = pathInfo.getMostUniqueIdentity();
+    SLANG_ASSERT(pathKey.getLength() > 0);
 
-    mapPathToLoadedModule.add(mostUniqueIdentity, loadedModule);
+    bool addedPath = mapPathToLoadedModule.addIfNotExists(pathKey, loadedModule);
     mapNameToLoadedModules.add(name, loadedModule);
 
     auto sink = translationUnit->compileRequest->getSink();
@@ -1266,7 +1268,8 @@ void Linkage::loadParsedModule(
 #if SLANG_HAS_EXCEPTIONS
     catch (...)
     {
-        mapPathToLoadedModule.remove(mostUniqueIdentity);
+        if (addedPath)
+            mapPathToLoadedModule.remove(pathKey);
         mapNameToLoadedModules.remove(name);
         throw;
     }
@@ -1285,7 +1288,8 @@ void Linkage::loadParsedModule(
         {
             // There must have been an error in the loaded module.
             // Remove from maps if there were errors during semantic checking
-            mapPathToLoadedModule.remove(mostUniqueIdentity);
+            if (addedPath)
+                mapPathToLoadedModule.remove(pathKey);
             mapNameToLoadedModules.remove(name);
         }
         else
@@ -1385,7 +1389,8 @@ RefPtr<Module> Linkage::findOrLoadSerializedModuleForModuleLibrary(
         moduleChunk,
         libraryChunk,
         SourceLoc(),
-        sink);
+        sink,
+        ModuleNameOrigin::Registered);
 }
 
 RefPtr<Module> Linkage::loadSerializedModule(
@@ -1395,13 +1400,16 @@ RefPtr<Module> Linkage::loadSerializedModule(
     ModuleChunk const* moduleChunk,
     RIFF::ListChunk const* containerChunk,
     SourceLoc const& requestingLoc,
-    DiagnosticSink* sink)
+    DiagnosticSink* sink,
+    ModuleNameOrigin nameOrigin)
 {
     auto astBuilder = getASTBuilder();
     SLANG_AST_BUILDER_RAII(astBuilder);
 
     auto module = RefPtr(new Module(this, astBuilder));
     module->setName(moduleName);
+    module->setNameOrigin(nameOrigin);
+    module->setPathInfo(moduleFilePathInfo);
 
     // Just as if we were processing an `import` declaration in
     // source code, we will track the fact that this serialized
@@ -1415,10 +1423,10 @@ RefPtr<Module> Linkage::loadSerializedModule(
     // track loaded modules, and then remove it in the case
     // where there is some kind of failure.
     //
-    String mostUniqueIdentity = moduleFilePathInfo.getMostUniqueIdentity();
-    SLANG_ASSERT(mostUniqueIdentity.getLength() > 0);
+    String pathKey = moduleFilePathInfo.getMostUniqueIdentity();
+    SLANG_ASSERT(pathKey.getLength() > 0);
 
-    mapPathToLoadedModule.add(mostUniqueIdentity, module);
+    bool addedPath = mapPathToLoadedModule.addIfNotExists(pathKey, module);
     mapNameToLoadedModules.add(moduleName, module);
     SLANG_EXCEPTION_TRY
     {
@@ -1430,7 +1438,8 @@ RefPtr<Module> Linkage::loadSerializedModule(
                 containerChunk,
                 sink)))
         {
-            mapPathToLoadedModule.remove(mostUniqueIdentity);
+            if (addedPath)
+                mapPathToLoadedModule.remove(pathKey);
             mapNameToLoadedModules.remove(moduleName);
             return nullptr;
         }
@@ -1441,27 +1450,23 @@ RefPtr<Module> Linkage::loadSerializedModule(
 #if SLANG_HAS_EXCEPTIONS
     catch (...)
     {
-        mapPathToLoadedModule.remove(mostUniqueIdentity);
+        if (addedPath)
+            mapPathToLoadedModule.remove(pathKey);
         mapNameToLoadedModules.remove(moduleName);
         throw;
     }
 #endif
 }
 
-RefPtr<Module> Linkage::loadBinaryModuleImpl(
-    Name* moduleName,
+ModuleChunk const* Linkage::findLoadableBinaryModule(
     const PathInfo& moduleFilePathInfo,
     ISlangBlob* moduleFileContents,
     SourceLoc const& requestingLoc,
     DiagnosticSink* sink,
     bool isSpeculativeLoad)
 {
-    auto astBuilder = getASTBuilder();
-    SLANG_AST_BUILDER_RAII(astBuilder);
-
-    // We start by reading the content of the file as
-    // an in-memory RIFF container.
-    //
+    // We can check whether a binary is a candidate before deserializing it.
+    // Deserialization registers a module and can recursively load its imports.
     auto rootChunk = RIFF::RootChunk::getFromBlob(moduleFileContents);
     if (!rootChunk)
     {
@@ -1475,7 +1480,6 @@ RefPtr<Module> Linkage::loadBinaryModuleImpl(
     }
 
     auto irChunk = moduleChunk->findIR();
-    // Missing IR is malformed rather than a version mismatch.
     if (!irChunk)
         return nullptr;
 
@@ -1485,7 +1489,7 @@ RefPtr<Module> Linkage::loadBinaryModuleImpl(
         readSerializedModuleInfo(irChunk, nullptr, moduleVersion, nullptr, &serializationVersion);
     if (SLANG_FAILED(readResult))
     {
-        if (readResult == SLANG_E_NOT_AVAILABLE)
+        if (sink && readResult == SLANG_E_NOT_AVAILABLE)
         {
             if (isSpeculativeLoad)
             {
@@ -1506,6 +1510,9 @@ RefPtr<Module> Linkage::loadBinaryModuleImpl(
 
     if (!IRModule::isModuleVersionSupported(moduleVersion))
     {
+        if (!sink)
+            return nullptr;
+
         if (isSpeculativeLoad)
         {
             sink->diagnose(Diagnostics::IgnoringUnsupportedSerializedModuleVersion{
@@ -1525,13 +1532,7 @@ RefPtr<Module> Linkage::loadBinaryModuleImpl(
         return nullptr;
     }
 
-    // Next, we attempt to check if the binary module is up to
-    // date with the compilation options in use as well as
-    // the contents of all the files its compilation depended
-    // on (as determined by its hash).
-    //
-    String mostUniqueIdentity = moduleFilePathInfo.getMostUniqueIdentity();
-    SLANG_ASSERT(mostUniqueIdentity.getLength() > 0);
+    // When freshness checks are enabled, an outdated binary is ineligible.
     if (m_optionSet.getBoolOption(CompilerOptionName::UseUpToDateBinaryModule))
     {
         if (!isBinaryModuleUpToDate(moduleFilePathInfo.foundPath, moduleChunk))
@@ -1540,19 +1541,31 @@ RefPtr<Module> Linkage::loadBinaryModuleImpl(
         }
     }
 
-    // If everything seems reasonable, then we will go ahead and load
-    // the module more completely from that serialized representation.
-    //
-    RefPtr<Module> module = loadSerializedModule(
+    return moduleChunk->findAST() ? moduleChunk : nullptr;
+}
+
+RefPtr<Module> Linkage::loadBinaryModuleImpl(
+    Name* moduleName,
+    const PathInfo& moduleFilePathInfo,
+    ISlangBlob* moduleFileContents,
+    SourceLoc const& requestingLoc,
+    DiagnosticSink* sink,
+    bool isSpeculativeLoad)
+{
+    auto moduleChunk = findLoadableBinaryModule(
+        moduleFilePathInfo, moduleFileContents, requestingLoc, sink, isSpeculativeLoad);
+    if (!moduleChunk)
+        return nullptr;
+
+    return loadSerializedModule(
         moduleName,
         moduleFilePathInfo,
         moduleFileContents,
         moduleChunk,
-        rootChunk,
+        RIFF::RootChunk::getFromBlob(moduleFileContents),
         requestingLoc,
-        sink);
-
-    return module;
+        sink,
+        ModuleNameOrigin::Registered);
 }
 
 void Linkage::_diagnoseErrorInImportedModule(DiagnosticSink* sink)
@@ -1597,7 +1610,8 @@ RefPtr<Module> Linkage::loadModuleImpl(
             moduleBlob,
             requestingLoc,
             sink,
-            additionalLoadedModules);
+            additionalLoadedModules,
+            ModuleNameOrigin::Registered);
 
     default:
         SLANG_UNEXPECTED("unknown module blob type");
@@ -1611,7 +1625,8 @@ RefPtr<Module> Linkage::loadSourceModuleImpl(
     ISlangBlob* sourceBlob,
     SourceLoc const& srcLoc,
     DiagnosticSink* sink,
-    const LoadedModuleDictionary* additionalLoadedModules)
+    const LoadedModuleDictionary* additionalLoadedModules,
+    ModuleNameOrigin nameOrigin)
 {
     RefPtr<FrontEndCompileRequest> frontEndReq = new FrontEndCompileRequest(this, nullptr, sink);
 
@@ -1643,6 +1658,8 @@ RefPtr<Module> Linkage::loadSourceModuleImpl(
     frontEndReq->addTranslationUnit(translationUnit);
 
     auto module = translationUnit->getModule();
+    module->setNameOrigin(nameOrigin);
+    module->setPathInfo(filePathInfo);
 
     ModuleBeingImportedRAII moduleBeingImported(this, module, name, srcLoc);
 
@@ -1671,12 +1688,22 @@ RefPtr<Module> Linkage::loadSourceModuleImpl(
         return nullptr;
     }
 
-    translationUnit->addSourceArtifact(sourceArtifact);
-
-    if (SLANG_FAILED(translationUnit->requireSourceFiles()))
+    if (nameOrigin != ModuleNameOrigin::Registered)
     {
-        // Some problem accessing source files
-        return nullptr;
+        // The resolver read the bytes at this path. Use that path for the
+        // primary file even if an earlier include loaded identical bytes
+        // from another directory under the same filesystem identity.
+        SLANG_ASSERT(sourceBlob);
+        auto sourceManager = getSourceManager();
+        auto sourceFile = sourceManager->createSourceFileWithBlob(filePathInfo, sourceBlob);
+        sourceManager->addSourceFileIfNotExist(filePathInfo.getMostUniqueIdentity(), sourceFile);
+        translationUnit->addSource(sourceArtifact, sourceFile);
+    }
+    else
+    {
+        translationUnit->addSourceArtifact(sourceArtifact);
+        if (SLANG_FAILED(translationUnit->requireSourceFiles()))
+            return nullptr;
     }
     int errorCountBefore = sink->getErrorCount();
     frontEndReq->parseTranslationUnit(translationUnit);
@@ -1712,10 +1739,6 @@ RefPtr<Module> Linkage::loadSourceModuleImpl(
         return nullptr;
     }
 
-    if (!module)
-        return nullptr;
-
-    module->setPathInfo(filePathInfo);
     return module;
 }
 
@@ -1791,13 +1814,290 @@ String getFileNameFromModuleName(Name* name, bool translateUnderScore)
     return fileName;
 }
 
+/// A file candidate that can be loaded as a module under the session's current options.
+struct ModuleFileCandidate
+{
+    PathInfo path;
+    ComPtr<ISlangBlob> contents;
+    ModuleChunk const* binary = nullptr; ///< Points into `contents` for a binary module.
+    Index directoryIndex = 0;
+};
+
+/// Locate module files before registering their names or deserializing their imports.
+///
+/// With roots `X` and `Y`, searching from `Y/tools/main.slang` can find
+/// `Y/tools/palette.slang` before either root is searched. We resolve the
+/// root-only name `tools/palette` separately when the import needs to bind that
+/// name. Both searches use the session filesystem's cached reads.
+class ModuleFileSearch
+{
+public:
+    ModuleFileSearch(Linkage* linkage, const SourceLoc& requestingLoc, DiagnosticSink* sink)
+        : m_linkage(linkage)
+        , m_requestingLoc(requestingLoc)
+        , m_sink(sink)
+        , m_includes(
+              &linkage->getSearchDirectories(),
+              linkage->getFileSystemExt())
+    {
+        // Virtual paths are relative to the provider's working directory.
+        // Only native paths can be compared using the process working directory.
+        if (linkage->getFileSystemExt()->getOSPathKind() == OSPathKind::Direct)
+            m_nativeWorkingDirectory = Path::getCurrentPath();
+    }
+
+    /// Select a candidate from the requesting directory and the configured roots.
+    ///
+    /// With an empty requesting path, the working directory precedes the
+    /// configured roots. Returns failure with a diagnostic if directory order
+    /// and artifact preference disagree.
+    Result select(
+        Name* name,
+        const String& requestingPath,
+        ModuleFileCandidate& outCandidate,
+        bool diagnoseIneligibleBinaries = true)
+    {
+        List<SearchBase> directories;
+        directories.add({SLANG_PATH_TYPE_FILE, requestingPath});
+        for (auto roots = m_includes.getSearchDirectoryList(); roots; roots = roots->parent)
+        {
+            for (const auto& root : roots->searchDirectories)
+                directories.add({SLANG_PATH_TYPE_DIRECTORY, root.path});
+        }
+
+        // Within each artifact kind, try the existing filename spellings
+        // in order. Compare the directories of the winners for the two
+        // kinds. A preferred artifact in the first directory already wins
+        // under both policies.
+        bool preferSource = m_linkage->isInLanguageServer();
+        auto preferred = _find(
+            name,
+            directories.getArrayView(),
+            preferSource ? ModuleBlobType::Source : ModuleBlobType::IR,
+            diagnoseIneligibleBinaries ? m_sink : nullptr);
+
+        if (preferred.contents && preferred.directoryIndex == 0)
+        {
+            outCandidate = _Move(preferred);
+            return SLANG_OK;
+        }
+        auto alternative = _find(
+            name,
+            directories.getArrayView(),
+            preferSource ? ModuleBlobType::IR : ModuleBlobType::Source,
+            nullptr);
+
+        if (!preferred.contents)
+        {
+            outCandidate = _Move(alternative);
+            return SLANG_OK;
+        }
+        if (alternative.contents && alternative.directoryIndex < preferred.directoryIndex)
+        {
+            m_sink->diagnose(Diagnostics::ModuleImportHasConflictingArtifacts{
+                .directoryPath = alternative.path.foundPath,
+                .artifactPath = preferred.path.foundPath,
+                .location = m_requestingLoc});
+            return SLANG_FAIL;
+        }
+
+        outCandidate = _Move(preferred);
+        return SLANG_OK;
+    }
+
+    /// Return the normalized path shared by source and binary siblings.
+    ///
+    /// Filesystem identity tokens can equate different paths based on contents.
+    /// The directory matters for module names and requester-relative imports.
+    String getLocation(const String& filePath) const
+    {
+        auto path = _normalize(filePath);
+        return Path::getPathWithoutExt(maybeStripLiterateFileExtension(path));
+    }
+
+    /// Check whether two paths can supply the same module.
+    ///
+    /// A source and its compiled sibling share a name. Two actual source
+    /// files, such as `palette.slang` and `palette.slang.md`, can differ.
+    bool isSameModule(const String& first, const String& second) const
+    {
+        if (_normalize(first) == _normalize(second))
+            return true;
+        bool firstIsBinary = first.getUnownedSlice().endsWithCaseInsensitive(".slang-module");
+        bool secondIsBinary = second.getUnownedSlice().endsWithCaseInsensitive(".slang-module");
+        return firstIsBinary != secondIsBinary && getLocation(first) == getLocation(second);
+    }
+
+    /// Return the path-derived module name, or null for a file outside the roots.
+    Name* findQualifiedName(const String& location) const
+    {
+        String bestRoot;
+        String workingDirectory = _normalize(".");
+        if (_contains(workingDirectory, location))
+            bestRoot = workingDirectory;
+
+        // All containing roots are prefixes of the same path. The longest
+        // containing prefix is the deepest root.
+        for (auto roots = m_includes.getSearchDirectoryList(); roots; roots = roots->parent)
+        {
+            for (const auto& root : roots->searchDirectories)
+            {
+                auto normalizedRoot = _normalize(root.path);
+                if (_contains(normalizedRoot, location) &&
+                    normalizedRoot.getLength() > bestRoot.getLength())
+                    bestRoot = normalizedRoot;
+            }
+        }
+
+        if (bestRoot.getLength() == 0)
+            return nullptr;
+        if (bestRoot == ".")
+            return m_linkage->getNamePool()->getName(location);
+
+        Index start = bestRoot.getLength();
+        if (!bestRoot.endsWith("/"))
+            ++start;
+        return m_linkage->getNamePool()->getName(location.getUnownedSlice().tail(start));
+    }
+
+private:
+    /// A filesystem path from which a module lookup can start.
+    ///
+    /// The provider needs to know whether the base names the requesting file
+    /// or a directory from the search path.
+    struct SearchBase
+    {
+        SlangPathType type;
+        String path;
+    };
+
+    /// Find the cached read for a candidate, reading it on first use.
+    ///
+    /// A failed read is cached as well. This lets the root search reuse
+    /// results from contextual imports without depending on their order.
+    Linkage::ModuleFileRead _read(const SearchBase& base, const String& fileName)
+    {
+        String lookupPath;
+        if (SLANG_FAILED(m_includes.calcLookupPath(base.type, base.path, fileName, lookupPath)))
+            return {};
+
+        auto key = _normalize(lookupPath);
+        if (auto cachedRead = m_linkage->m_moduleFileReads.tryGetValue(key))
+            return *cachedRead;
+
+        Linkage::ModuleFileRead read;
+        if (SLANG_SUCCEEDED(m_includes.findFileAtPath(lookupPath, read.path)))
+        {
+            if (SLANG_FAILED(m_includes.loadFile(read.path, read.contents)))
+                read.contents.setNull();
+        }
+        m_linkage->m_moduleFileReads.add(key, read);
+        return read;
+    }
+
+    /// Find the first readable candidate of the requested artifact kind.
+    ///
+    /// Compiled candidates must also pass the binary module checks before
+    /// they can influence the ordering decision.
+    ModuleFileCandidate _find(
+        Name* name,
+        ArrayView<SearchBase> directories,
+        ModuleBlobType type,
+        DiagnosticSink* sink)
+    {
+        // Search every directory for the exact spelling before trying the
+        // dash or literate alternatives. The plain and literate forms can
+        // both map to the same binary filename.
+        auto exact = getFileNameFromModuleName(name, false);
+        auto dashed = getFileNameFromModuleName(name, true);
+        String names[] = {exact, dashed, exact + ".md", dashed + ".md"};
+        HashSet<String> searched;
+        List<String> fileNames;
+        for (auto& fileName : names)
+        {
+            if (type == ModuleBlobType::IR)
+                fileName =
+                    Path::replaceExt(maybeStripLiterateFileExtension(fileName), "slang-module");
+            if (searched.add(fileName))
+                fileNames.add(fileName);
+        }
+
+        for (const auto& fileName : fileNames)
+        {
+            Index directoryCount = Path::isAbsolute(fileName) ? 1 : directories.getCount();
+            for (Index i = 0; i < directoryCount; ++i)
+            {
+                auto read = _read(directories[i], fileName);
+                if (!read.contents)
+                    continue;
+
+                ModuleFileCandidate candidate;
+                candidate.path = _Move(read.path);
+                candidate.contents = _Move(read.contents);
+                if (type == ModuleBlobType::IR)
+                {
+                    candidate.binary = m_linkage->findLoadableBinaryModule(
+                        candidate.path, candidate.contents, m_requestingLoc, sink, true);
+                    if (!candidate.binary)
+                        continue;
+                }
+                candidate.directoryIndex = i;
+                return candidate;
+            }
+        }
+        return {};
+    }
+
+    /// Normalize a lookup path within the provider's namespace.
+    String _normalize(const String& path) const
+    {
+        if (Path::isAbsolute(path))
+            return Path::simplify(path);
+        return Path::simplify(Path::combine(m_nativeWorkingDirectory, path));
+    }
+
+    /// Test lexical containment using normalized paths.
+    static bool _contains(const String& root, const String& path)
+    {
+        if (root == ".")
+            return !Path::isAbsolute(path) &&
+                   Path::getFirstElement(path.getUnownedSlice()) !=
+                       UnownedStringSlice::fromLiteral("..");
+        auto prefix = root.endsWith("/") ? root : root + "/";
+        return path.startsWith(prefix.getUnownedSlice());
+    }
+
+    Linkage* m_linkage;
+    SourceLoc m_requestingLoc;
+    DiagnosticSink* m_sink;
+    IncludeSystem m_includes;
+    String m_nativeWorkingDirectory;
+};
+
+Name* Linkage::findPathDerivedModuleName(const String& path)
+{
+    ModuleFileSearch search(this, SourceLoc(), nullptr);
+    return search.findQualifiedName(search.getLocation(path));
+}
+
 RefPtr<Module> Linkage::findOrImportModule(
     Name* moduleName,
     SourceLoc const& requestingLoc,
     DiagnosticSink* sink,
-    const LoadedModuleDictionary* loadedModules)
+    const LoadedModuleDictionary* loadedModules,
+    ModuleImportMode mode)
 {
-    auto module = _findOrImportModuleWithoutPolicy(moduleName, requestingLoc, sink, loadedModules);
+    auto module =
+        _findOrImportModuleWithoutPolicy(moduleName, requestingLoc, sink, loadedModules, mode);
+    // A module can already be registered while its declarations are being
+    // checked or decoded. Diagnose a cycle before looking at those declarations.
+    if (module && isBeingImported(module))
+    {
+        sink->diagnose(Diagnostics::RecursiveModuleImport{
+            .module = moduleName,
+            .location = requestingLoc});
+        return nullptr;
+    }
     return _getImportableModuleOrDiagnose(module, moduleName, requestingLoc, sink);
 }
 
@@ -1805,35 +2105,15 @@ RefPtr<Module> Linkage::_findOrImportModuleWithoutPolicy(
     Name* moduleName,
     SourceLoc const& requestingLoc,
     DiagnosticSink* sink,
-    const LoadedModuleDictionary* loadedModules)
+    const LoadedModuleDictionary* loadedModules,
+    ModuleImportMode mode)
 {
-    // Have we already loaded a module matching this name?
-    //
+    // Explicit API, library, and builtin registrations can be imported by
+    // name. A filesystem module first needs a search in the caller's context.
     RefPtr<LoadedModule> previouslyLoadedModule;
-    if (mapNameToLoadedModules.tryGetValue(moduleName, previouslyLoadedModule))
-    {
-        // If the map shows a null module having been loaded,
-        // then that means there was a prior load attempt,
-        // but it failed, so we won't bother trying again.
-        //
-        if (!previouslyLoadedModule)
-            return nullptr;
-
-        // If state shows us that the module is already being
-        // imported deeper on the call stack, then we've
-        // hit a recursive case, and that is an error.
-        //
-        if (isBeingImported(previouslyLoadedModule))
-        {
-            // We seem to be in the middle of loading this module
-            sink->diagnose(Diagnostics::RecursiveModuleImport{
-                .module = moduleName,
-                .location = requestingLoc});
-            return nullptr;
-        }
-
+    if (mapNameToLoadedModules.tryGetValue(moduleName, previouslyLoadedModule) &&
+        previouslyLoadedModule->getNameOrigin() == ModuleNameOrigin::Registered)
         return previouslyLoadedModule;
-    }
 
     // If the user is providing an additional list of loaded modules, we find
     // if the module being imported is in that list. This allows a translation
@@ -1876,187 +2156,108 @@ RefPtr<Module> Linkage::_findOrImportModuleWithoutPolicy(
         return glslModule;
     }
 
-    // We are going to use a loop to search for a suitable file to
-    // load the module from, to account for a few key choices:
-    //
-    // * We can both load modules from a source `.slang` file,
-    //   or from a binary `.slang-module` file.
-    //
-    // * For a variety of reasons, the `import` logic has historically
-    //   translated underscores in a module name into dashes (so that
-    //   `import my_module` will look for `my-module.slang`), and we
-    //   try to support both that convention as well as a convention
-    //   that preserves underscores.
-    //
-    // To try to keep this logic as orthogonal as possible, we first
-    // construct lists of the options we want to iterate over, and
-    // then do the actual loop later.
+    // Resolve the import in its own context before consulting loaded modules.
+    // In particular, a local `import palette;` in `tools/main.slang` can
+    // claim `tools/palette`, but it cannot assign a meaning to bare `palette`.
+    String requestingPath;
+    if (mode == ModuleImportMode::Relative)
+        requestingPath =
+            getSourceManager()->getPathInfo(requestingLoc, SourceLocType::Actual).foundPath;
+    ModuleFileSearch search(this, requestingLoc, sink);
+    ModuleFileCandidate candidate;
+    if (SLANG_FAILED(search.select(moduleName, requestingPath, candidate)))
+        return nullptr;
 
-    ShortList<ModuleBlobType, 2> typesToTry;
-    if (isInLanguageServer())
+    if (candidate.contents)
     {
-        // When in language server, we always prefer to use source module if it is available.
-        typesToTry.add(ModuleBlobType::Source);
-        typesToTry.add(ModuleBlobType::IR);
-    }
-    else
-    {
-        // Look for a precompiled module first, if not exist, load from source.
-        typesToTry.add(ModuleBlobType::IR);
-        typesToTry.add(ModuleBlobType::Source);
-    }
-
-    // We will always search for a file name that directly matches the
-    // module name as written first, and then search for one with
-    // underscores replaced by dashes. The latter is the original
-    // behavior that `import` provided, but it seems safest to prefer
-    // the exact name spelled in the user's code when there might
-    // actually be ambiguity.
-    //
-    auto defaultSourceFileName = getFileNameFromModuleName(moduleName, false);
-    auto alternativeSourceFileName = getFileNameFromModuleName(moduleName, true);
-    auto defaultMDFileName = defaultSourceFileName + ".md";
-    auto alternativeMDFileName = alternativeSourceFileName + ".md";
-    String sourceFileNamesToTry[] = {
-        defaultSourceFileName,
-        alternativeSourceFileName,
-        defaultMDFileName,
-        alternativeMDFileName};
-
-    // We are going to look for the candidate file using the same
-    // logic that would be used for a preprocessor `#include`,
-    // so we set up the necessary state.
-    //
-    IncludeSystem includeSystem(&getSearchDirectories(), getFileSystemExt(), getSourceManager());
-
-    // Just like with a `#include`, the search will take into
-    // account the path to the file where the request to import
-    // this module came from (e.g. the source file with the
-    // `import` declaration), if such a path is available.
-    //
-    PathInfo requestingPathInfo =
-        getSourceManager()->getPathInfo(requestingLoc, SourceLocType::Actual);
-
-    HashSet<String> serializedModulePathsTried;
-    for (auto type : typesToTry)
-    {
-        for (auto sourceFileName : sourceFileNamesToTry)
+        auto location = search.getLocation(candidate.path.foundPath);
+        auto qualifiedName = search.findQualifiedName(location);
+        if (qualifiedName && (qualifiedName != moduleName || requestingPath.getLength() != 0))
         {
-            // The `sourceFileName` will have a `.slang` or `.slang.md`
-            // extension, so if we are looking for a binary module, we
-            // need to change the extension we will look for. For
-            // `.slang.md` files, we first strip the `.md` suffix so
-            // that `Path::replaceExt` replaces `.slang` correctly.
-            //
-            String fileName;
-            switch (type)
+            // A module name belongs to the file selected by the roots, even
+            // when the first request for it comes from a relative import.
+            ModuleFileCandidate rootCandidate;
+            if (SLANG_FAILED(search.select(qualifiedName, String(), rootCandidate, false)))
+                return nullptr;
+            if (rootCandidate.contents &&
+                !search.isSameModule(candidate.path.foundPath, rootCandidate.path.foundPath))
             {
-            case ModuleBlobType::Source:
-                fileName = sourceFileName;
-                break;
-
-            case ModuleBlobType::IR:
-                fileName = Path::replaceExt(
-                    maybeStripLiterateFileExtension(sourceFileName),
-                    "slang-module");
-                break;
-            }
-
-            // We now search for a file matching the desired name,
-            // using the same logic as for a `#include`.
-            //
-            // TODO: We might want to consider how to handle the case
-            // of an `import` with a relative path a little specially,
-            // since it could in theory be possible for two `.slang`
-            // files with the same base name to exist in different
-            // directories in a project, and we'd want file-relative
-            // `import`s to work for each, without having either one
-            // be able to "claim" the bare identifier of the base
-            // name for itself.
-            //
-            PathInfo filePathInfo;
-            if (SLANG_FAILED(
-                    includeSystem.findFile(fileName, requestingPathInfo.foundPath, filePathInfo)))
-            {
-                // If we failed to find the file at this step, we
-                // will continue the search for our other options.
-                //
-                continue;
-            }
-            if (type == ModuleBlobType::IR &&
-                !serializedModulePathsTried.add(filePathInfo.getMostUniqueIdentity()))
-            {
-                // The source and literate-source candidates can map to the same binary path.
-                // Avoid loading and diagnosing that path more than once.
-                continue;
-            }
-
-            // We will *again* search for a previously loaded module.
-            //
-            // It is possible that the same file will have been loaded
-            // as a module under two different module names. The easiest
-            // way for this to happen is if there are `import` declarations
-            // using both the underscore and dash conventions (e.g., both
-            // `import "my-module.slang"` and `import my_module`).
-            //
-            // This case may also arise if one file `import`s a module using
-            // just an identifier for its name, but another `import`s it
-            // using a path (e.g., `import "subdir/file.slang"`).
-            //
-            // No matter how the situation arises, we only want to have one
-            // copy of the "same" module loaded at a given time, so we
-            // will re-use the existing module if we find one here.
-            //
-            if (mapPathToLoadedModule.tryGetValue(
-                    filePathInfo.getMostUniqueIdentity(),
-                    previouslyLoadedModule))
-            {
-                // TODO: If we find a previously-loaded module at this step,
-                // then we should probably register that module under the
-                // given `moduleName` in the map of loaded modules, so
-                // that subsequent `import`s using the same form will find it.
-                //
-                return previouslyLoadedModule;
-            }
-
-            // Now we try to load the content of the file.
-            //
-            // If for some reason we could find a file at the
-            // given path, but for some reason couldn't *open*
-            // and *read* it, then we continue the search
-            // using whatever other candidate file names are left.
-            //
-            ComPtr<ISlangBlob> fileContents;
-            if (SLANG_FAILED(includeSystem.loadFile(filePathInfo, fileContents)))
-            {
-                continue;
-            }
-
-            // If we found a real file and were able to load its contents,
-            // then we'll go ahead and try to load a module from it,
-            // whether by compiling it or decoding the binary.
-            //
-            auto module = loadModuleImpl(
-                moduleName,
-                filePathInfo,
-                fileContents,
-                requestingLoc,
-                sink,
-                loadedModules,
-                type,
-                /*isSpeculativeLoad*/ true);
-
-            // If the attempt to load the module from the given path
-            // was successful, we go ahead and use it, without trying
-            // out any other options.
-            //
-            if (module)
-            {
-                if (type == ModuleBlobType::Source)
-                    module->setSourceDigest(computeSourceBlobDigest(fileContents));
-                return module;
+                StringBuilder dottedName;
+                for (auto ch : qualifiedName->text)
+                    dottedName.appendChar(ch == '/' ? '.' : ch);
+                sink->diagnose(Diagnostics::ModuleImportConflictsWithRootLookup{
+                    .qualifiedName = dottedName.produceString(),
+                    .importPath = candidate.path.foundPath,
+                    .rootPath = rootCandidate.path.foundPath,
+                    .location = requestingLoc});
+                return nullptr;
             }
         }
+
+        Name* name = qualifiedName ? qualifiedName : moduleName;
+        // Files outside the roots still use the import spelling for
+        // compatibility. They must resolve again on another import, and
+        // two files cannot claim that same spelling as their module name.
+        if (mapNameToLoadedModules.tryGetValue(name, previouslyLoadedModule))
+        {
+            String loadedPath = previouslyLoadedModule->getFilePath();
+            if (!search.isSameModule(candidate.path.foundPath, loadedPath))
+            {
+                sink->diagnose(Diagnostics::ModuleImportConflictsWithLoadedModule{
+                    .importPath = candidate.path.foundPath,
+                    .moduleName = name,
+                    .loadedPath = loadedPath,
+                    .location = requestingLoc});
+                return nullptr;
+            }
+            return previouslyLoadedModule;
+        }
+
+        // A caller can register a module from an existing file under an
+        // explicit alias. Reuse that registration when the paths agree.
+        if (mapPathToLoadedModule.tryGetValue(
+                candidate.path.getMostUniqueIdentity(),
+                previouslyLoadedModule))
+        {
+            if (previouslyLoadedModule->getNameOrigin() == ModuleNameOrigin::Registered &&
+                search.isSameModule(candidate.path.foundPath, previouslyLoadedModule->getFilePath()))
+                return previouslyLoadedModule;
+        }
+
+        auto nameOrigin =
+            qualifiedName ? ModuleNameOrigin::RootRelative : ModuleNameOrigin::ImportSpelling;
+        if (candidate.binary)
+        {
+            int errorCount = sink->getErrorCount();
+            auto module = loadSerializedModule(
+                name,
+                candidate.path,
+                candidate.contents,
+                candidate.binary,
+                RIFF::RootChunk::getFromBlob(candidate.contents),
+                requestingLoc,
+                sink,
+                nameOrigin);
+            if (!module && sink->getErrorCount() == errorCount)
+            {
+                sink->diagnose(Diagnostics::CannotOpenFile{
+                    .path = candidate.path.foundPath,
+                    .location = requestingLoc});
+            }
+            return module;
+        }
+
+        auto module = loadSourceModuleImpl(
+            name,
+            candidate.path,
+            candidate.contents,
+            requestingLoc,
+            sink,
+            loadedModules,
+            nameOrigin);
+        if (module)
+            module->setSourceDigest(computeSourceBlobDigest(candidate.contents));
+        return module;
     }
 
     // Fallback: If the normal search failed, we will just search the whatever modules
@@ -2132,15 +2333,8 @@ RefPtr<Module> Linkage::_findOrImportModuleWithoutPolicy(
     // nothing was even found via the include system).
     //
     sink->diagnose(
-        Diagnostics::CannotOpenFile{.path = defaultSourceFileName, .location = requestingLoc});
+        Diagnostics::CannotOpenFile{.path = getFileNameFromModuleName(moduleName, false), .location = requestingLoc});
 
-    // If the attempt to import the module failed, then
-    // we will stick a null pointer into the map of loaded
-    // modules, so that subsequent attempts to load a module
-    // with this name will return null without having to
-    // go through all the above steps yet again.
-    //
-    mapNameToLoadedModules[moduleName] = nullptr;
     return nullptr;
 }
 
@@ -2438,6 +2632,8 @@ Linkage::IncludeResult Linkage::findAndIncludeFile(
 
 void Linkage::setFileSystem(ISlangFileSystem* inFileSystem)
 {
+    m_moduleFileReads.clear();
+
     // Set the fileSystem
     m_fileSystem = inFileSystem;
 
@@ -2637,7 +2833,6 @@ SlangResult Linkage::loadSerializedModuleContents(
             module->addFileDependency(sourceFile);
         }
     }
-    module->setPathInfo(moduleFilePathInfo);
     module->setDigest(moduleChunk->getDigest());
     module->_collectShaderParams(sink);
 

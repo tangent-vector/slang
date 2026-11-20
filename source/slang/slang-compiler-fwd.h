@@ -15,6 +15,7 @@ class FrontEndCompileRequest;
 struct IRModule;
 class Linkage;
 class Module;
+enum class ModuleNameOrigin;
 struct ModuleChunk;
 class ProgramLayout;
 class Session;

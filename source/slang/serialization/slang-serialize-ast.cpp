@@ -747,7 +747,9 @@ public:
     SerialSourceLocReader* getSourceLocReader() { return _sourceLocReader; }
 
 private:
-    ModuleDecl* _readImportedModule(ASTSerializer const& serializer);
+    ModuleDecl* _readImportedModule(
+        ASTSerializer const& serializer,
+        Linkage::ModuleImportMode mode);
     NodeBase* _readImportedDecl(ASTSerializer const& serializer);
 
     void _cleanUpASTNode(NodeBase* node);
@@ -1387,6 +1389,7 @@ enum class PseudoASTNodeType
     None,
     ImportedModule,
     ImportedDecl,
+    RootImportedModule,
 };
 
 // All valid `ASTNodeType`s will be non-negative integers,
@@ -1424,7 +1427,7 @@ void ASTSerialReadContext::handleASTNode(ASTSerializer const& serializer, NodeBa
     // values, we can delegate to the correct
     // subroutine to handle that case.
     //
-    // These two cases mirror the cases for imported
+    // These cases mirror the cases for imported
     // modules and declarations in
     // `ASTSerialWriter::handleASTNode()`.
     //
@@ -1434,7 +1437,11 @@ void ASTSerialReadContext::handleASTNode(ASTSerializer const& serializer, NodeBa
         break;
 
     case PseudoASTNodeType::ImportedModule:
-        outNode = _readImportedModule(serializer);
+        outNode = _readImportedModule(serializer, Linkage::ModuleImportMode::Relative);
+        return;
+
+    case PseudoASTNodeType::RootImportedModule:
+        outNode = _readImportedModule(serializer, Linkage::ModuleImportMode::RootsOnly);
         return;
 
     case PseudoASTNodeType::ImportedDecl:
@@ -1489,14 +1496,22 @@ void ASTSerialWriteContext::_writeImportedModule(
     ASTSerializer const& serializer,
     ModuleDecl* moduleDecl)
 {
-    ASTNodeType type = _getAsASTNodeType(PseudoASTNodeType::ImportedModule);
+    // We checked a path-derived name against the roots when loading the
+    // dependency. Search those roots again when loading the archive, whose
+    // directory can differ from the one containing the original import.
+    ASTNodeType type = _getAsASTNodeType(
+        moduleDecl->module->getNameOrigin() == ModuleNameOrigin::RootRelative
+            ? PseudoASTNodeType::RootImportedModule
+            : PseudoASTNodeType::ImportedModule);
     auto moduleName = String(moduleDecl->module->getName());
 
     serialize(serializer, type);
     serialize(serializer, moduleName);
 }
 
-ModuleDecl* ASTSerialReadContext::_readImportedModule(ASTSerializer const& serializer)
+ModuleDecl* ASTSerialReadContext::_readImportedModule(
+    ASTSerializer const& serializer,
+    Linkage::ModuleImportMode mode)
 {
     // In the reading direction, we need to actually
     // kick off the logic to import the module
@@ -1512,7 +1527,8 @@ ModuleDecl* ASTSerialReadContext::_readImportedModule(ASTSerializer const& seria
     //
     Name* moduleName = nullptr;
     serialize(serializer, moduleName);
-    auto module = _linkage->findOrImportModule(moduleName, _requestingSourceLoc, _sink);
+    auto module =
+        _linkage->findOrImportModule(moduleName, _requestingSourceLoc, _sink, nullptr, mode);
     if (!module)
     {
         if (_sink)

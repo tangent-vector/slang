@@ -19137,6 +19137,16 @@ void SemanticsDeclHeaderVisitor::visitIncludeDecl(IncludeDecl* decl)
         // The file we are including must be implementing the current module.
         auto moduleName = getSimpleModuleName(implementing->moduleNameAndLoc.name);
         auto expectedModuleName = moduleDecl->getName();
+
+        // An implicit module name can now include the primary file's
+        // directories. An implementing file still names that primary by its
+        // simple name, unless a module declaration supplies the name below.
+        const auto translationUnit = getShared()->getTranslationUnitRequest();
+        const bool hasInferredName = translationUnit && translationUnit->hasDefaultModuleName;
+        if (hasInferredName || parentModule->getNameOrigin() == ModuleNameOrigin::RootRelative)
+            expectedModuleName =
+                getNamePool()->getName(Path::getFileName(getText(expectedModuleName)));
+
         bool shouldSkipDiagnostic = false;
 
         if (auto firstDeclInModule = moduleDecl->getFirstDirectMemberDecl())

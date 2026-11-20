@@ -5117,6 +5117,27 @@ err(
     span { loc = "location", message = "a module named '~moduleName:Name' is already loaded from different source contents in this session. Use a different module name or drop references to the previous module before reloading." }
 )
 
+err(
+    "module-import-conflicts-with-root-lookup",
+    38220,
+    "module import conflicts with root lookup",
+    span { loc = "location", message = "the import of '~qualifiedName' resolves to '~importPath', but root-only lookup selects '~rootPath'" }
+)
+
+err(
+    "module-import-has-conflicting-artifacts",
+    38221,
+    "module import has conflicting source and binary candidates",
+    span { loc = "location", message = "directory order selects '~directoryPath', but artifact preference selects '~artifactPath'" }
+)
+
+err(
+    "module-import-conflicts-with-loaded-module",
+    38222,
+    "module import conflicts with a loaded module",
+    span { loc = "location", message = "this import selects '~importPath', and the name '~moduleName:Name' is already bound to '~loadedPath'" }
+)
+
 -- Note: compilationCeased is a fatal diagnostic that is locationless
 fatal(
     "compilation-ceased",

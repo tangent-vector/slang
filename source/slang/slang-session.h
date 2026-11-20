@@ -332,7 +332,8 @@ public:
         ISlangBlob* fileContentsBlob,
         SourceLoc const& loc,
         DiagnosticSink* sink,
-        const LoadedModuleDictionary* additionalLoadedModules);
+        const LoadedModuleDictionary* additionalLoadedModules,
+        ModuleNameOrigin nameOrigin);
 
     RefPtr<Module> loadBinaryModuleImpl(
         Name* name,
@@ -368,7 +369,8 @@ public:
         ModuleChunk const* moduleChunk,
         RIFF::ListChunk const* containerChunk, //< The outer container, if there is one.
         SourceLoc const& requestingLoc,
-        DiagnosticSink* sink);
+        DiagnosticSink* sink,
+        ModuleNameOrigin nameOrigin);
 
     SlangResult loadSerializedModuleContents(
         Module* module,
@@ -388,11 +390,24 @@ public:
 
     bool isBinaryModuleUpToDate(String fromPath, RIFF::ListChunk const* baseChunk);
 
+    /// Find the default qualified name of a module file under the compilation roots.
+    ///
+    /// Returns null if the file is outside the roots.
+    Name* findPathDerivedModuleName(const String& path);
+
+    /// Where a filesystem search begins after checking registered modules.
+    enum class ModuleImportMode
+    {
+        Relative,  ///< Search from the requester before consulting the roots.
+        RootsOnly, ///< Use the roots regardless of the requester's location.
+    };
+
     RefPtr<Module> findOrImportModule(
         Name* name,
         SourceLoc const& loc,
         DiagnosticSink* sink,
-        const LoadedModuleDictionary* loadedModules = nullptr);
+        const LoadedModuleDictionary* loadedModules = nullptr,
+        ModuleImportMode mode = ModuleImportMode::Relative);
 
     SourceFile* findFile(Name* name, SourceLoc loc, IncludeSystem& outIncludeSystem);
     struct IncludeResult
@@ -451,10 +466,40 @@ public:
     RefPtr<SharedSemanticsContext> getSemanticsForReflection();
 
 private:
+    friend class ModuleFileSearch;
+
     /// The global Slang library session that this linkage is a child of
     Session* m_session = nullptr;
 
     RefPtr<Session> m_retainedSession;
+
+    /// The result of reading one concrete path from the session's filesystem.
+    ///
+    /// A null blob records a failed lookup or read.
+    struct ModuleFileRead
+    {
+        PathInfo path;
+        ComPtr<ISlangBlob> contents;
+    };
+
+    /// Root-only and contextual searches consult the same read results.
+    ///
+    /// Keys are normalized lookup paths. A successful read from a requesting
+    /// directory therefore remains available when a later search reaches that
+    /// path through a root.
+    Dictionary<String, ModuleFileRead> m_moduleFileReads;
+
+    /// Validate a binary candidate's header before loading the module.
+    ///
+    /// Checks for AST and IR chunks, a supported version, and freshness if the
+    /// session requires it. A null sink suppresses version diagnostics during
+    /// candidate comparison.
+    ModuleChunk const* findLoadableBinaryModule(
+        const PathInfo& pathInfo,
+        ISlangBlob* blob,
+        const SourceLoc& loc,
+        DiagnosticSink* sink,
+        bool isSpeculativeLoad);
 
     /// Tracks state of modules currently being loaded.
     ///
@@ -501,7 +546,8 @@ private:
         Name* moduleName,
         SourceLoc const& requestingLoc,
         DiagnosticSink* sink,
-        const LoadedModuleDictionary* loadedModules);
+        const LoadedModuleDictionary* loadedModules,
+        ModuleImportMode mode);
 
     /// Returns `module` when it may be imported, or `nullptr` when it is absent or rejected.
     ///

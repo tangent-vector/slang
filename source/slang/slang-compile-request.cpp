@@ -459,6 +459,20 @@ void FrontEndCompileRequest::parseTranslationUnit(TranslationUnitRequest* transl
     ModuleDecl* translationUnitSyntax = astBuilder->create<ModuleDecl>();
 
     translationUnitSyntax->nameAndLoc.name = translationUnit->moduleName;
+    // An imported module and a binary built from the same primary file
+    // need matching linkage names. The search directories are available here,
+    // including options given after the input on the command line. The
+    // module header keeps the name used for explicit library registration.
+    if (translationUnit->hasDefaultModuleName && sourceFilesToParse.getCount() == 1 &&
+        translationUnit->sourceLanguage == SourceLanguage::Slang)
+    {
+        const auto& path = sourceFilesToParse[0]->getPathInfo();
+        if (path.hasFileFoundPath())
+        {
+            if (auto name = getLinkage()->findPathDerivedModuleName(path.foundPath))
+                translationUnitSyntax->nameAndLoc.name = name;
+        }
+    }
     translationUnitSyntax->module = module;
     module->setModuleDecl(translationUnitSyntax);
 
@@ -921,6 +935,7 @@ void FrontEndCompileRequest::addTranslationUnitSourceArtifact(
         String artifactName = maybeStripLiterateFileExtension(sourceArtifact->getName());
         translationUnit->setModuleName(
             getNamePool()->getName(Path::getFileNameWithoutExt(artifactName)));
+        translationUnit->hasDefaultModuleName = true;
     }
     if (translationUnit->module->getFilePath() == nullptr)
         translationUnit->module->setPathInfo(PathInfo::makePath(sourceArtifact->getName()));

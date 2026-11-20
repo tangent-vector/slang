@@ -14,6 +14,14 @@
 namespace Slang
 {
 
+/// How a module received the name used by the loader.
+enum class ModuleNameOrigin
+{
+    Registered,     ///< The module was registered independently of filesystem import lookup.
+    ImportSpelling, ///< The file was outside the compilation roots.
+    RootRelative,   ///< Resolution through the roots established the name.
+};
+
 /// A module of code that has been compiled through the front-end
 ///
 /// A module comprises all the code from one translation unit (which
@@ -347,6 +355,9 @@ public:
     void setName(Name* name) { m_name = name; }
     Name* getNameObj() { return m_name; }
 
+    ModuleNameOrigin getNameOrigin() const { return m_nameOrigin; }
+    void setNameOrigin(ModuleNameOrigin origin) { m_nameOrigin = origin; }
+
     void setPathInfo(PathInfo pathInfo) { m_pathInfo = pathInfo; }
 
     /// Set the IR for this module.
@@ -471,6 +482,7 @@ protected:
 
 private:
     Name* m_name = nullptr;
+    ModuleNameOrigin m_nameOrigin = ModuleNameOrigin::Registered;
     PathInfo m_pathInfo;
 
     // The AST for the module

@@ -51,6 +51,26 @@ struct IncludeSystem
         const String& fromPath,
         const String& path,
         PathInfo& outPathInfo);
+
+    /// Compute the spelling to use when looking up a file in the filesystem.
+    ///
+    /// Combines a relative `path` with a nonempty `fromPath`, then uses the
+    /// filesystem's simplified spelling when available. On success, writes
+    /// the spelling to `outPath` so the caller can use it as a cache key before
+    /// probing for the file.
+    SlangResult calcLookupPath(
+        SlangPathType fromPathType,
+        const String& fromPath,
+        const String& path,
+        String& outPath);
+
+    /// Find the file at the supplied lookup path and obtain its filesystem identity.
+    ///
+    /// Uses `lookupPath` verbatim and records it in `outPathInfo` on success.
+    /// Forwards filesystem failures and returns `SLANG_E_NOT_FOUND` when the
+    /// filesystem reports a non-file path type.
+    SlangResult findFileAtPath(const String& lookupPath, PathInfo& outPathInfo);
+
     String simplifyPath(const String& path);
     SlangResult loadFile(
         const PathInfo& pathInfo,
